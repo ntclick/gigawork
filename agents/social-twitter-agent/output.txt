@@ -1,0 +1,40 @@
+﻿
+> gigawork-social-twitter-agent@1.0.0 start
+> tsx run-job.ts The future of Web3 AI Agents
+
+
+== GigaWork Agent Workflow (Copywriter AI) ==
+Target Topic: "The future of Web3 AI Agents"
+
+[Client] Transferring Native Gas to Agent (Starter Fund)...
+
+[transfer starter gas] Waiting for confirmation... => Confirmed in Block 35148710
+
+[Client] Creating On-chain Job for Tweet writing task...
+
+[createJob] Waiting for confirmation... => Confirmed in Block 35148720
+node.exe : Error: Could 
+not extract JobId
+At C:\Program 
+Files\nodejs\npm.ps1:29 
+char:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~
+    + CategoryInfo         
+     : NotSpecified: (Err  
+  or: Could not extract    
+ JobId:String) [], Remo    
+teException
+    + FullyQualifiedErrorI 
+   d : NativeCommandError
+ 
+    at main 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+run-job.ts:82:28)
+    at process.processTicks
+AndRejections (node:interna
+l/process/task_queues:105:5
+)

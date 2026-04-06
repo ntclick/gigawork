@@ -1,0 +1,209 @@
+[
+  {
+    "type": "function",
+    "name": "postJob",
+    "inputs": [
+      { "name": "jobType", "type": "uint8" },
+      { "name": "estimatedHours", "type": "uint256" },
+      { "name": "agentAddress", "type": "address" },
+      { "name": "spec", "type": "bytes" }
+    ],
+    "outputs": [{ "name": "jobId", "type": "uint256" }],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "acceptBid",
+    "inputs": [
+      { "name": "jobId", "type": "uint256" },
+      { "name": "worker", "type": "address" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "bid",
+    "inputs": [
+      { "name": "jobId", "type": "uint256" },
+      { "name": "note", "type": "string" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "submitResult",
+    "inputs": [
+      { "name": "jobId", "type": "uint256" },
+      { "name": "resultHash", "type": "bytes32" },
+      { "name": "proofURI", "type": "string" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "approveResult",
+    "inputs": [
+      { "name": "jobId", "type": "uint256" },
+      { "name": "rating", "type": "int256" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "autoSettle",
+    "inputs": [{ "name": "jobId", "type": "uint256" }],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "raiseDispute",
+    "inputs": [
+      { "name": "jobId", "type": "uint256" },
+      { "name": "reason", "type": "string" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "resolveDispute",
+    "inputs": [
+      { "name": "jobId", "type": "uint256" },
+      { "name": "workerWon", "type": "bool" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getJob",
+    "inputs": [{ "name": "jobId", "type": "uint256" }],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          { "name": "jobId", "type": "uint256" },
+          { "name": "employer", "type": "address" },
+          { "name": "workerAgent", "type": "address" },
+          { "name": "jobType", "type": "uint8" },
+          { "name": "hourlyRateUSDC", "type": "uint256" },
+          { "name": "estimatedHours", "type": "uint256" },
+          { "name": "depositAmount", "type": "uint256" },
+          { "name": "startTimestamp", "type": "uint256" },
+          { "name": "endTimestamp", "type": "uint256" },
+          { "name": "resultSubmittedAt", "type": "uint256" },
+          { "name": "resultHash", "type": "bytes32" },
+          { "name": "proofURI", "type": "string" },
+          { "name": "spec", "type": "bytes" },
+          { "name": "status", "type": "uint8" },
+          { "name": "employerRating", "type": "int256" }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getBids",
+    "inputs": [{ "name": "jobId", "type": "uint256" }],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "components": [
+          { "name": "agent", "type": "address" },
+          { "name": "proposedRate", "type": "uint256" },
+          { "name": "note", "type": "string" },
+          { "name": "accepted", "type": "bool" }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalJobs",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "JobPosted",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "employer", "type": "address", "indexed": true },
+      { "name": "jobType", "type": "uint8", "indexed": false },
+      { "name": "estimatedHours", "type": "uint256", "indexed": false },
+      { "name": "deposit", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "BidSubmitted",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "agent", "type": "address", "indexed": true },
+      { "name": "proposedRate", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "BidAccepted",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "worker", "type": "address", "indexed": true },
+      { "name": "agreedRate", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "EscrowFunded",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "amount", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "ResultSubmitted",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "worker", "type": "address", "indexed": true },
+      { "name": "resultHash", "type": "bytes32", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "JobSettled",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "workerPayout", "type": "uint256", "indexed": false },
+      { "name": "platformFee", "type": "uint256", "indexed": false },
+      { "name": "refund", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "DisputeRaised",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "raisedBy", "type": "address", "indexed": true },
+      { "name": "reason", "type": "string", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "DisputeResolved",
+    "inputs": [
+      { "name": "jobId", "type": "uint256", "indexed": true },
+      { "name": "workerWon", "type": "bool", "indexed": false }
+    ]
+  }
+]

@@ -1,0 +1,100 @@
+﻿Scanner (Token #2001): 
+execution reverted
+2026/04/04 12:14:51 [Cron] 
+Failed to check owner for 
+Agent Report Composer 
+Agent (Token #2004): 
+execution reverted
+2026/04/04 12:14:51 [Cron] 
+Failed to check owner for 
+Agent Social Sentiment 
+Agent (Token #2002): 
+execution reverted
+2026/04/04 12:14:58 "GET http://localhost:8181/app/post-job HTTP/1.1" from [::1]:50261 - 200 32700B in 208.1448ms
+2026/04/04 12:15:22 "POST http://localhost:8181/api/intent/parse HTTP/1.1" from [::1]:50261 - 500 40B in 4.0799161s
+2026/04/04 12:16:34 "GET http://localhost:8181/app/post-job?agent=0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 32700B in 443.6861ms
+2026/04/04 12:16:35 "GET http://localhost:8181/api/agents/0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 1458B in 219.1545ms
+2026/04/04 12:16:42 "GET http://localhost:8181/app/post-job?agent=0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 32700B in 391.1214ms
+2026/04/04 12:16:42 "GET http://localhost:8181/api/agents/0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 1458B in 198.8394ms
+2026/04/04 12:17:05 "GET http://localhost:8181/app/agents HTTP/1.1" from [::1]:59437 - 200 11438B in 413.2573ms
+2026/04/04 12:17:27 "GET http://localhost:8181/app/post-job?agent=0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7 HTTP/1.1" from [::1]:59437 - 200 32700B in 405.7497ms
+2026/04/04 12:17:28 "GET http://localhost:8181/api/agents/0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7 HTTP/1.1" from [::1]:59437 - 200 1458B in 197.7561ms
+2026/04/04 12:17:32 "GET http://localhost:8181/app/post-job?agent=0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 32700B in 394.0932ms
+2026/04/04 12:17:33 "GET http://localhost:8181/api/agents/0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 1458B in 195.0348ms
+2026/04/04 12:17:37 "GET http://localhost:8181/app/jobs HTTP/1.1" from [::1]:59437 - 200 17190B in 406.1266ms
+2026/04/04 12:17:38 "GET http://localhost:8181/api/jobs HTTP/1.1" from [::1]:59437 - 200 3B in 199.7903ms
+2026/04/04 12:17:43 "GET http://localhost:8181/app/agents?wallet=0x7589C5AD...2C9D HTTP/1.1" from [::1]:59437 - 200 11438B in 396.2946ms
+2026/04/04 12:17:50 "GET http://localhost:8181/app/post-job?agent=0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 32700B in 402.972ms
+2026/04/04 12:17:50 "GET http://localhost:8181/api/agents/0x742d1316e10EdB87612A098797D8C04F0eBAf734 HTTP/1.1" from [::1]:59437 - 200 1458B in 192.0091ms
+2026/04/04 12:24:49 [Cron] 
+Verifying ERC-8004 
+ownership for all active 
+agents...
+2026/04/04 12:24:51 [Cron] 
+Failed to check owner for 
+Agent Document Digest 
+Agent (Token #2003): 
+execution reverted
+2026/04/04 12:24:51 [Cron] 
+Failed to check owner for 
+Agent Crypto Project 
+Scanner (Token #2001): 
+execution reverted
+2026/04/04 12:24:51 [Cron] 
+Failed to check owner for 
+Agent Report Composer 
+Agent (Token #2004): 
+execution reverted
+2026/04/04 12:24:52 [Cron] 
+Failed to check owner for 
+Agent Social Sentiment 
+Agent (Token #2002): 
+execution reverted
+2026/04/04 12:34:49 [Cron] 
+Verifying ERC-8004 
+ownership for all active 
+agents...
+2026/04/04 12:34:51 [Cron] 
+Failed to check owner for 
+Agent Document Digest 
+Agent (Token #2003): 
+execution reverted
+2026/04/04 12:34:51 [Cron] 
+Failed to check owner for 
+Agent Crypto Project 
+Scanner (Token #2001): 
+execution reverted
+2026/04/04 12:34:52 [Cron] 
+Failed to check owner for 
+Agent Report Composer 
+Agent (Token #2004): 
+execution reverted
+2026/04/04 12:34:52 [Cron] 
+Failed to check owner for 
+Agent Social Sentiment 
+Agent (Token #2002): 
+execution reverted
+2026/04/04 12:44:49 [Cron] 
+Verifying ERC-8004 
+ownership for all active 
+agents...
+2026/04/04 12:44:52 [Cron] 
+Failed to check owner for 
+Agent Document Digest 
+Agent (Token #2003): 
+execution reverted
+2026/04/04 12:44:52 [Cron] 
+Failed to check owner for 
+Agent Crypto Project 
+Scanner (Token #2001): 
+execution reverted
+2026/04/04 12:44:52 [Cron] 
+Failed to check owner for 
+Agent Report Composer 
+Agent (Token #2004): 
+execution reverted
+2026/04/04 12:44:52 [Cron] 
+Failed to check owner for 
+Agent Social Sentiment 
+Agent (Token #2002): 
+execution reverted

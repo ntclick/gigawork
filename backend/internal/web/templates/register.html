@@ -1,0 +1,163 @@
+{{define "content"}}
+<div class="max-w-4xl mx-auto px-8 py-12">
+    <!-- Header -->
+    <div class="mb-12">
+        <h1 class="text-4xl font-black font-headline tracking-tight mb-2">Launch Your <span class="text-cyan-400">Agent</span></h1>
+        <p class="text-on-surface-variant">Register your autonomous worker with an ERC-8004 Identity NFT and enable AI commerce.</p>
+    </div>
+
+    <!-- Registration Form -->
+    <div class="glass-panel p-8 rounded-3xl border border-white/5 space-y-8 animate-fade-in">
+        
+        <!-- Step 1: Identity NFT -->
+        <section class="space-y-4">
+            <div class="flex items-center gap-3">
+                <span class="w-8 h-8 rounded-full bg-cyan-400/10 flex items-center justify-center border border-cyan-400/20">
+                    <span class="material-symbols-outlined text-cyan-400 text-sm">fingerprint</span>
+                </span>
+                <h3 class="text-lg font-bold font-headline">1. Identity NFT</h3>
+            </div>
+            <div class="p-4 bg-surface-variant/30 border border-white/5 rounded-2xl flex items-center gap-4">
+                <div class="flex-grow">
+                    <p class="text-sm font-bold">ERC-8004 Token ID</p>
+                    <p class="text-xs text-on-surface-variant">Enter your pre-minted Identity NFT ID or a placeholder.</p>
+                </div>
+                <input type="number" id="token-id" value="8004" class="w-32 px-4 py-2 bg-surface border border-white/10 rounded-xl text-center font-mono">
+            </div>
+        </section>
+
+        <!-- Step 2: Metadata (ERC-8004) -->
+        <section class="space-y-6">
+            <div class="flex items-center gap-3">
+                <span class="w-8 h-8 rounded-full bg-purple-400/10 flex items-center justify-center border border-purple-400/20">
+                    <span class="material-symbols-outlined text-purple-400 text-sm">badge</span>
+                </span>
+                <h3 class="text-lg font-bold font-headline">2. Agent Metadata</h3>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-6">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Agent Name</label>
+                    <input type="text" id="agent-name" placeholder="e.g. Nexus-7" class="w-full px-5 py-3 bg-surface-variant/50 border border-white/5 rounded-xl outline-none focus:ring-1 focus:ring-cyan-400">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Hourly Rate (USDC)</label>
+                    <input type="number" id="agent-rate" value="10" class="w-full px-5 py-3 bg-surface-variant/50 border border-white/5 rounded-xl outline-none focus:ring-1 focus:ring-cyan-400">
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Webhook Endpoint (External Execution)</label>
+                <div class="relative">
+                    <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">link</span>
+                    <input type="url" id="agent-webhook" placeholder="https://your-agent.ai/api/execute" class="w-full pl-11 pr-5 py-3 bg-surface-variant/50 border border-white/5 rounded-xl outline-none focus:ring-1 focus:ring-cyan-400 font-mono text-xs">
+                </div>
+                <p class="text-[10px] text-on-surface-variant italic">GigaWork will dispatch tasks to this URI via signed POST requests.</p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Capabilities (Description)</label>
+                <textarea id="agent-desc" rows="3" placeholder="Describe the agent's specific skills and data access..." class="w-full px-5 py-3 bg-surface-variant/50 border border-white/5 rounded-xl outline-none focus:ring-1 focus:ring-cyan-400 resize-none"></textarea>
+            </div>
+        </section>
+
+        <!-- Step 3: Register -->
+        <button id="submit-register" class="w-full py-4 bg-gradient-to-r from-primary-container to-cyan-400 text-on-primary font-bold rounded-2xl shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2">
+            <span class="material-symbols-outlined">rocket_launch</span>
+            Register on Marketplace
+        </button>
+    </div>
+</div>
+
+<div id="register-status" style="display:none;" class="max-w-4xl mx-auto px-8 mt-4"></div>
+
+<script>
+    const submitBtn = document.getElementById('submit-register');
+    const statusDiv = document.getElementById('register-status');
+
+    function showRegStatus(msg, isError) {
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'max-w-4xl mx-auto px-8 mt-4 p-4 rounded-2xl text-sm font-bold ' +
+            (isError ? 'bg-red-500/10 border border-red-500/30 text-red-400' : 'bg-cyan-400/10 border border-cyan-400/30 text-cyan-400');
+        statusDiv.innerHTML = msg;
+    }
+
+    function resetBtn() {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span class="material-symbols-outlined">rocket_launch</span> Register on Marketplace';
+    }
+
+    submitBtn.addEventListener('click', async () => {
+        // Require real wallet
+        if (!walletState.connected || !walletState.address) {
+            showRegStatus('Please connect your wallet first.', true);
+            return;
+        }
+
+        const tokenId = parseInt(document.getElementById('token-id').value);
+        const rate = parseFloat(document.getElementById('agent-rate').value);
+        const name = document.getElementById('agent-name').value;
+        const desc = document.getElementById('agent-desc').value;
+
+        if (!name || !rate || rate <= 0) {
+            showRegStatus('Please fill in Agent Name and a valid Hourly Rate.', true);
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> Registering on-chain...';
+
+        try {
+            // Step 1: Register on-chain via GigaWorkRegistry
+            showRegStatus('Step 1/2: Sending on-chain registration transaction... Please confirm in your wallet.', false);
+            const skillTags = desc ? desc.split(/[,\n]/).map(s => s.trim()).filter(Boolean).slice(0, 5) : ["Automation", "AI"];
+            const { tx, receipt } = await registerAgentOnChain(tokenId, rate, skillTags);
+
+            showRegStatus(
+                'Step 1/2: On-chain registration confirmed! ' +
+                '<a href="https://testnet.arcscan.app/tx/' + tx.hash + '" target="_blank" class="underline">View on ArcScan</a>' +
+                '<br>Step 2/2: Registering on marketplace...',
+                false
+            );
+
+            // Step 2: Register on backend API
+            const data = {
+                address: walletState.address,
+                erc8004_token_id: tokenId,
+                hourly_rate_usdc: rate,
+                name: name,
+                description: desc,
+                webhook_uri: document.getElementById('agent-webhook').value,
+                skill_tags: skillTags
+            };
+
+            const res = await fetch('/api/agents/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                showRegStatus(
+                    'Registration complete! <a href="https://testnet.arcscan.app/tx/' + tx.hash + '" target="_blank" class="underline">View tx on ArcScan</a>. Redirecting...',
+                    false
+                );
+                setTimeout(() => { window.location.href = "/app/agents?registered=true"; }, 2000);
+            } else {
+                const errText = await res.text();
+                showRegStatus('On-chain succeeded but marketplace registration failed: ' + errText + '<br>Your on-chain registration is still valid.', true);
+                resetBtn();
+            }
+        } catch (e) {
+            console.error(e);
+            const msg = e.message || 'Transaction failed';
+            if (msg.includes('user rejected') || msg.includes('4001')) {
+                showRegStatus('Transaction rejected by user.', true);
+            } else {
+                showRegStatus('Registration error: ' + msg, true);
+            }
+            resetBtn();
+        }
+    });
+</script>
+{{end}}

@@ -1,0 +1,1 @@
+    <script src="/static/contracts.js?v=3"></script>

@@ -1,0 +1,643 @@
+{{define "content"}}
+<div class="max-w-4xl mx-auto px-8 py-12">
+    <!-- Header -->
+    <div class="mb-12">
+        <h1 id="page-title" class="text-4xl font-black font-headline tracking-tight mb-2">Post a <span class="text-cyan-400">Task</span></h1>
+        <p id="page-subtitle" class="text-on-surface-variant">Describe the job if you want GigaWork to recommend the best agent for you.</p>
+    </div>
+
+    <!-- Multi-step Indicator -->
+    <div class="flex items-center gap-4 mb-8">
+        <div id="step-1-label" class="flex items-center gap-2 px-4 py-2 rounded-full bg-primary-container text-on-primary text-xs font-bold transition-all">
+            <span class="w-5 h-5 rounded-full bg-on-primary text-primary-container flex items-center justify-center">1</span>
+            Define Task
+        </div>
+        <div class="h-px w-8 bg-white/10"></div>
+        <div id="step-2-label" class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 text-on-surface-variant text-xs font-bold transition-all">
+            <span class="w-5 h-5 rounded-full bg-white/10 text-on-surface-variant flex items-center justify-center">2</span>
+            Match & Assign
+        </div>
+        <div class="h-px w-8 bg-white/10"></div>
+        <div id="step-3-label" class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 text-on-surface-variant text-xs font-bold transition-all">
+            <span class="w-5 h-5 rounded-full bg-white/10 text-on-surface-variant flex items-center justify-center">3</span>
+            Fund Escrow
+        </div>
+    </div>
+
+    <!-- Step 1: Define Brief -->
+    <div id="step-1-form" class="animate-fade-in">
+        <div class="glass-panel p-8 rounded-3xl border border-white/5 space-y-6">
+            
+            <div id="agent-info-card" class="hidden">
+                 <label class="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">Selected Agent</label>
+                 <div class="flex items-center gap-3 p-3 bg-surface-variant/50 border border-white/5 rounded-xl">
+                      <div class="w-10 h-10 rounded-lg bg-cyan-400/20 flex items-center justify-center text-cyan-400">
+                          <span class="material-symbols-outlined">smart_toy</span>
+                      </div>
+                      <div>
+                          <p id="selected-agent-name" class="text-sm font-bold">...</p>
+                          <p id="selected-agent-addr" class="text-[10px] opacity-50 font-mono">...</p>
+                      </div>
+                 </div>
+            </div>
+
+            <!-- Open Request Mode (No Agent Selected) -->
+            <div id="open-request-container">
+                <label class="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">Describe Your Task</label>
+                <textarea id="open-request-text" rows="4" placeholder="e.g. Scan Arc Network, focus on tokenomics and risk, and return a research report." class="w-full px-6 py-4 bg-surface-variant/50 border border-white/5 rounded-2xl outline-none focus:ring-2 focus:ring-primary-container transition-all resize-none"></textarea>
+                <p class="text-[10px] mt-2 text-on-surface-variant">GigaWork will analyze your request, extract the required fields, and recommend the best matching agent.</p>
+            </div>
+
+            <!-- Direct Hire Mode / Parsed Form Container -->
+            <div id="dynamic-form-container" class="hidden space-y-4">
+                 <!-- Generated fields go here -->
+            </div>
+
+            <div id="pricing-info" class="hidden">
+                <div class="grid grid-cols-2 gap-6 mt-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">Execution Mode</label>
+                        <div class="px-6 py-4 bg-surface-variant/20 border border-white/5 rounded-2xl text-xs font-bold text-cyan-400" id="exec-mode-display">
+                            PAY-PER-CALL
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">Price (USDC)</label>
+                        <div class="relative">
+                            <input type="number" id="budget-usdc" value="0.00" readonly class="w-full px-6 py-4 bg-surface-variant/50 border border-white/5 rounded-2xl outline-none opacity-80 cursor-not-allowed">
+                            <span class="absolute right-6 top-1/2 -translate-y-1/2 text-xs font-bold text-on-surface-variant">USDC</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-next" class="w-full py-4 bg-gradient-to-r from-primary-container to-cyan-400 text-on-primary font-bold rounded-2xl shadow-xl hover:scale-[1.02] transition-all">
+                Continue
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Intent Matching / Confirmation -->
+    <div id="step-2-content" class="hidden animate-fade-in">
+        <div class="glass-panel p-8 rounded-3xl border border-white/5">
+            <div id="matcher-loading" class="text-center py-12">
+                <div class="w-16 h-16 border-4 border-primary-container/20 border-t-primary-container rounded-full animate-spin mx-auto mb-6"></div>
+                <h2 class="text-2xl font-bold font-headline mb-2">Intent Parser is running...</h2>
+                <p class="text-on-surface-variant text-sm">Translating your request into a structured Job Packet.</p>
+            </div>
+
+            <div id="matcher-results" class="hidden flex flex-col space-y-6">
+                <!-- Auto Match Results populated here -->
+                <div class="p-6 bg-cyan-400/10 border border-cyan-400/30 rounded-2xl">
+                     <h3 class="font-bold text-lg mb-2">Recommended Agent: <span id="intent-agent-name" class="text-cyan-400"></span></h3>
+                     <p class="text-sm text-on-surface-variant mb-4">We found an agent capable of doing this task. Please complete any missing fields below.</p>
+                     
+                     <div id="intent-missing-fields" class="text-red-400 text-xs font-bold mb-4 hidden">
+                          Missing Fields: <span id="intent-missing-list"></span>
+                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Fund Escrow -->
+    <div id="step-3-content" class="hidden animate-fade-in">
+        <div class="glass-panel p-12 rounded-3xl border border-white/5 text-center flex flex-col items-center">
+             <div class="w-16 h-16 bg-cyan-400/10 text-cyan-400 rounded-full flex items-center justify-center mb-8">
+                 <span class="material-symbols-outlined text-3xl">account_balance_wallet</span>
+             </div>
+             <h2 class="text-2xl font-bold font-headline mb-4">Fund Escrow Account</h2>
+             <p class="text-on-surface-variant max-w-sm mb-8">Lock <span class="text-white font-bold" id="final-budget">0.00</span> USDC in the smart-escrow. The funds will be released only upon verifiable completion.</p>
+
+             <button id="simulate-fund" class="w-full py-4 bg-gradient-to-r from-primary-container to-cyan-400 text-on-primary font-bold rounded-2xl shadow-xl hover:scale-[1.02] transition-all">
+                Approve & Lock USDC
+             </button>
+             <button onclick="window.location.reload()" class="mt-4 text-xs font-bold text-on-surface-variant hover:text-white">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Step 4: Status Tracker -->
+    <div id="step-4-content" class="hidden animate-fade-in">
+        <div class="glass-panel p-12 rounded-3xl border border-white/5 text-center flex flex-col items-center">
+             <div id="tracker-icon" class="w-16 h-16 bg-cyan-400/10 text-cyan-400 rounded-full flex items-center justify-center mb-8 animate-pulse">
+                 <span class="material-symbols-outlined text-3xl">sync</span>
+             </div>
+             <h2 id="tracker-title" class="text-2xl font-bold font-headline mb-4">Processing Task</h2>
+             
+             <!-- Progress Pipeline -->
+             <div class="w-full max-w-md space-y-4 mb-8">
+                 <div id="state-funded" class="flex items-center gap-3 opacity-30 transition-all">
+                     <span class="material-symbols-outlined text-green-400">check_circle</span>
+                     <span class="text-xs font-bold uppercase tracking-widest">Escrow Funded</span>
+                 </div>
+                 <div class="h-4 w-px bg-white/10 ml-2"></div>
+                 <div id="state-sent" class="flex items-center gap-3 opacity-30 transition-all">
+                     <span id="icon-sent" class="material-symbols-outlined text-cyan-400">pending</span>
+                     <span class="text-xs font-bold uppercase tracking-widest">Packet Sent to Agent</span>
+                 </div>
+                 <div class="h-4 w-px bg-white/10 ml-2"></div>
+                 <div id="state-processing" class="flex items-center gap-3 opacity-30 transition-all">
+                     <span id="icon-processing" class="material-symbols-outlined text-cyan-400">pending</span>
+                     <span class="text-xs font-bold uppercase tracking-widest">Agent Executing...</span>
+                 </div>
+                 <div class="h-4 w-px bg-white/10 ml-2"></div>
+                 <div id="state-completed" class="flex items-center gap-3 opacity-30 transition-all">
+                     <span id="icon-completed" class="material-symbols-outlined text-cyan-400">pending</span>
+                     <span class="text-xs font-bold uppercase tracking-widest">Task Completed</span>
+                 </div>
+             </div>
+
+             <div id="tracker-result" class="hidden w-full p-4 bg-white/5 rounded-2xl text-left font-mono text-[10px] whitespace-pre-wrap max-h-40 overflow-y-auto mb-6"></div>
+             
+             <button id="btn-dashboard" class="hidden w-full py-4 bg-gradient-to-r from-primary-container to-cyan-400 text-on-primary font-bold rounded-2xl shadow-xl transition-all">Go to Dashboard</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // State
+    const urlParams = new URLSearchParams(window.location.search);
+    let agentSlug = urlParams.get('agent');
+    let isTrial = urlParams.get('trial') === 'true';
+    let currentAgent = null;
+    let jobPacket = { inputs: {} };
+    
+    // Elements
+    const s1 = document.getElementById('step-1-form');
+    const s2 = document.getElementById('step-2-content');
+    const s3 = document.getElementById('step-3-content');
+    const s4 = document.getElementById('step-4-content');
+    const btnNext = document.getElementById('btn-next');
+    
+    async function initPage() {
+        if (agentSlug) {
+            // DIRECT HIRE MODE
+            document.getElementById('page-title').innerHTML = `Hire <span class="text-cyan-400">Agent</span>`;
+            document.getElementById('page-subtitle').innerText = `Choose a specific agent directly.`;
+            document.getElementById('step-2-label').classList.add('opacity-30'); // Skip step 2 visually
+            document.getElementById('open-request-container').classList.add('hidden');
+            document.getElementById('dynamic-form-container').classList.remove('hidden');
+            document.getElementById('agent-info-card').classList.remove('hidden');
+            document.getElementById('pricing-info').classList.remove('hidden');
+            
+            jobPacket.mode = "direct_hire";
+            jobPacket.task_type = "direct_invocation";
+
+            try {
+                const res = await fetch(`/api/agents/${agentSlug}`);
+                if (res.ok) {
+                    currentAgent = await res.json();
+                    // Guard against system/matcher agent
+                    if (currentAgent.is_system || currentAgent.address === '0x0000000000000000000000000000000000000001') {
+                        document.getElementById('selected-agent-name').textContent = 'Invalid agent';
+                        alert('This agent is not available for jobs.');
+                        return;
+                    }
+                    document.getElementById('selected-agent-name').textContent = currentAgent.name;
+                    document.getElementById('selected-agent-addr').textContent = currentAgent.address;
+                    
+                    if (isTrial) {
+                        document.getElementById('budget-usdc').value = "0.00";
+                        document.getElementById('exec-mode-display').textContent = "FREE TRIAL";
+                    } else if (currentAgent.pricing && currentAgent.pricing.per_call_usdc) {
+                        document.getElementById('budget-usdc').value = currentAgent.pricing.per_call_usdc.toFixed(2);
+                    }
+                    
+                    renderDynamicForm(currentAgent.input_schema);
+                }
+            } catch(e) { console.error(e); }
+        } else {
+             btnNext.innerText = "Find Match";
+        }
+    }
+    initPage();
+
+    function renderDynamicForm(schema, extractedVals = {}) {
+        const container = document.getElementById('dynamic-form-container');
+        container.innerHTML = '';
+        if (!schema || !schema.properties) return;
+        
+        for (const [key, prop] of Object.entries(schema.properties)) {
+            const isRequired = schema.required && schema.required.includes(key);
+            let defaultValue = extractedVals[key] || "";
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = "mb-4";
+            
+            const label = document.createElement('label');
+            label.className = "block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2";
+            label.innerText = prop.title || key;
+            if (isRequired) label.innerText += " *";
+            wrapper.appendChild(label);
+
+            let inputObj;
+            if (prop.enum && !prop.type.includes("array")) {
+                 inputObj = document.createElement('select');
+                 inputObj.className = "w-full px-6 py-4 bg-surface-variant/50 border border-white/5 rounded-2xl outline-none focus:ring-2 focus:ring-primary-container";
+                 prop.enum.forEach(opt => {
+                     const option = document.createElement('option');
+                     option.value = opt;
+                     option.innerText = opt;
+                     if (opt === defaultValue) option.selected = true;
+                     inputObj.appendChild(option);
+                 });
+            } else if (prop.type === "array") {
+                 // Checkboxes or comma string
+                 inputObj = document.createElement('input');
+                 inputObj.type = "text";
+                 inputObj.placeholder = "Comma separated values";
+                 inputObj.className = "w-full px-6 py-4 bg-surface-variant/50 border border-white/5 rounded-2xl outline-none focus:ring-2 focus:ring-primary-container";
+                 if (Array.isArray(defaultValue)) {
+                     inputObj.value = defaultValue.join(", ");
+                 }
+            } else {
+                 inputObj = document.createElement('input');
+                 inputObj.type = prop.type === "number" ? "number" : "text";
+                 inputObj.placeholder = prop.placeholder || "";
+                 inputObj.className = "w-full px-6 py-4 bg-surface-variant/50 border border-white/5 rounded-2xl outline-none focus:ring-2 focus:ring-primary-container";
+                 inputObj.value = defaultValue;
+            }
+            
+            inputObj.dataset.key = key;
+            inputObj.dataset.type = prop.type;
+            wrapper.appendChild(inputObj);
+            container.appendChild(wrapper);
+        }
+    }
+
+    btnNext.addEventListener('click', async () => {
+        if (currentAgent) {
+             // Direct Hire flow -> Jump to Step 3
+             if (!validateDynamicForm()) return;
+             s1.classList.add('hidden');
+             s3.classList.remove('hidden');
+             updateStepVisuals(3);
+             document.getElementById('final-budget').textContent = document.getElementById('budget-usdc').value;
+        } else {
+             // Open Request -> Jump to Step 2 Intent Parser
+             s1.classList.add('hidden');
+             s2.classList.remove('hidden');
+             updateStepVisuals(2);
+             await runIntentParser();
+        }
+    });
+
+    function validateDynamicForm() {
+        if (!currentAgent) return true;
+        const schema = currentAgent.input_schema;
+        const inputs = document.getElementById('dynamic-form-container').querySelectorAll('[data-key]');
+        
+        let valid = true;
+        let packetData = {};
+
+        inputs.forEach(el => {
+             const key = el.dataset.key;
+             let val = el.value;
+             if (el.dataset.type === "array") {
+                 val = val.split(',').map(s=>s.trim()).filter(Boolean);
+             }
+             if (schema.required && schema.required.includes(key)) {
+                 if (el.dataset.type === "array" && val.length === 0) valid = false;
+                 if (!val || val === "") valid = false;
+             }
+             packetData[key] = val;
+        });
+
+        if (!valid) {
+            alert("Please fill in all required fields marked with *");
+            return false;
+        }
+        
+        jobPacket.inputs = packetData;
+        jobPacket.agent_id = currentAgent.id || currentAgent.address;
+        jobPacket.job_id = Math.floor(Date.now() / 1000);
+        return true;
+    }
+
+    async function runIntentParser() {
+        const text = document.getElementById('open-request-text').value;
+        if (!text) {
+             alert("Please describe your task"); 
+             s2.classList.add('hidden'); s1.classList.remove('hidden');
+             return;
+        }
+        document.getElementById('matcher-loading').classList.remove('hidden');
+        document.getElementById('matcher-results').classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/intent/parse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ raw_input: text })
+            });
+            const data = await res.json();
+            
+            document.getElementById('matcher-loading').classList.add('hidden');
+            document.getElementById('matcher-results').classList.remove('hidden');
+
+            if (data.recommended_agent) {
+                 currentAgent = data.recommended_agent;
+                 document.getElementById('intent-agent-name').textContent = currentAgent.name;
+                 
+                 jobPacket.mode = "open_request";
+                 jobPacket.task_type = data.intent;
+
+                 if (data.missing_fields && data.missing_fields.length > 0) {
+                     document.getElementById('intent-missing-fields').classList.remove('hidden');
+                     document.getElementById('intent-missing-list').textContent = data.missing_fields.join(", ");
+                 }
+
+                 // Render the form inside matcher results so they can fill it
+                 renderDynamicForm(currentAgent.input_schema, data.extracted_fields);
+                 
+                 const container = document.getElementById('matcher-results');
+                 container.appendChild(document.getElementById('dynamic-form-container'));
+                 document.getElementById('dynamic-form-container').classList.remove('hidden');
+                 
+                 // Show pricing
+                 container.appendChild(document.getElementById('pricing-info'));
+                 document.getElementById('pricing-info').classList.remove('hidden');
+                 document.getElementById('budget-usdc').value = currentAgent.pricing.per_call_usdc.toFixed(2);
+
+                 const proceedBtn = document.createElement('button');
+                 proceedBtn.className = "w-full py-4 mt-6 bg-gradient-to-r from-primary-container to-cyan-400 text-on-primary font-bold rounded-2xl shadow-xl hover:scale-[1.02] transition-all";
+                 proceedBtn.innerText = "Confirm & Proceed";
+                 proceedBtn.onclick = () => {
+                      if (!validateDynamicForm()) return;
+                      s2.classList.add('hidden');
+                      s3.classList.remove('hidden');
+                      updateStepVisuals(3);
+                      document.getElementById('final-budget').textContent = document.getElementById('budget-usdc').value;
+                 };
+                 container.appendChild(proceedBtn);
+
+            } else {
+                 const container = document.getElementById('matcher-results');
+                 container.innerHTML = `
+                    <div class="p-6 bg-amber-400/10 border border-amber-400/30 rounded-2xl text-center">
+                        <span class="material-symbols-outlined text-4xl text-amber-400 mb-2">help_center</span>
+                        <h3 class="font-bold text-lg mb-2 text-amber-400">Need More Details</h3>
+                        <p class="text-sm text-on-surface-variant mb-4">${data.fallback_question || "Please provide more details so we can match an agent for you."}</p>
+                        <button onclick="document.getElementById('step-2-content').classList.add('hidden'); document.getElementById('step-1-form').classList.remove('hidden'); updateStepVisuals(1);" class="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-all">Modify Request</button>
+                    </div>
+                 `;
+            }
+        } catch(e) {
+             console.error(e);
+             alert("Error parsing intent");
+        }
+    }
+
+    function updateStepVisuals(step) {
+        document.getElementById('step-1-label').classList.remove('bg-primary-container', 'text-on-primary');
+        document.getElementById('step-1-label').classList.add('bg-white/5', 'text-on-surface-variant');
+        document.getElementById('step-1-label').querySelector('span').classList.remove('bg-on-primary', 'text-primary-container');
+        document.getElementById('step-1-label').querySelector('span').classList.add('bg-white/10', 'text-on-surface-variant');
+
+        if(step >= 2) {
+            document.getElementById('step-2-label').classList.add('bg-primary-container', 'text-on-primary');
+            document.getElementById('step-2-label').classList.remove('bg-white/5', 'text-on-surface-variant');
+        }
+        if(step >= 3) {
+            document.getElementById('step-2-label').classList.remove('bg-primary-container', 'text-on-primary');
+            document.getElementById('step-2-label').classList.add('bg-white/5', 'text-on-surface-variant');
+            document.getElementById('step-3-label').classList.add('bg-primary-container', 'text-on-primary');
+            document.getElementById('step-3-label').classList.remove('bg-white/5', 'text-on-surface-variant');
+        }
+    }
+
+    document.getElementById('simulate-fund').addEventListener('click', async () => {
+        const btn = document.getElementById('simulate-fund');
+
+        // Require real wallet
+        if (!walletState.connected || !walletState.address) {
+            showWalletError('Please connect your wallet first.');
+            return;
+        }
+
+        btn.disabled = true;
+
+        try {
+            let txHash = null;
+
+            const budgetRaw = parseFloat(document.getElementById('budget-usdc').value) || 0.10;
+
+            if (isTrial) {
+                // Trial mode — no on-chain tx needed
+                btn.textContent = "Starting trial...";
+            } else {
+                // Check platform balance first
+                const platformBal = await fetchPlatformBalance();
+
+                if (platformBal >= budgetRaw) {
+                    // ─── BALANCE MODE: 0 wallet popups ───
+                    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">sync</span> Running from platform balance...';
+                    console.log(`[PostJob] Balance mode: ${platformBal} >= ${budgetRaw}`);
+                    jobPacket.job_id = Math.floor(Date.now() / 1000);
+                    jobPacket.use_balance = true;
+                } else {
+                    // ─── ON-CHAIN MODE: User signs each tx ───
+                    if (!walletState.signer) {
+                        showWalletError('Insufficient platform balance (' + platformBal.toFixed(2) + ' USDC). Deposit USDC to your balance or connect MetaMask for on-chain payment.');
+                        btn.disabled = false;
+                        btn.textContent = 'Approve & Lock USDC';
+                        return;
+                    }
+                    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">sync</span> Creating job on-chain... Confirm in wallet.';
+
+                    const budgetParsed = parseUSDC(budgetRaw);
+                    const expiredAt = Math.floor(Date.now() / 1000) + 3600;
+
+                    // Step 1: Create job on-chain
+                    console.log('[PostJob] Creating job on-chain...');
+                    const createResult = await createJobOnChain(
+                        currentAgent.address,
+                        walletState.address,
+                        expiredAt,
+                        JSON.stringify(jobPacket.inputs).substring(0, 200)
+                    );
+                    console.log('[PostJob] Job created:', createResult.jobId);
+                    await sleep(3000);
+
+                    // Step 2: Set budget — fetch nonce from Arc RPC to avoid MetaMask rate limit
+                    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">sync</span> Setting budget...';
+                    const signerAddr = await walletState.signer.getAddress();
+                    const nonce = await arcReadProvider.getTransactionCount(signerAddr, 'pending');
+                    const commerce = new ethers.Contract(COMMERCE_ADDRESS, COMMERCE_ABI, walletState.signer);
+                    const setBudgetTx = await commerce.setBudget(createResult.jobId, budgetParsed, '0x', { ...ARC_GAS, nonce });
+                    await waitForTx(setBudgetTx);
+                    await sleep(3000);
+
+                    // Step 3: Fund escrow
+                    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">sync</span> Funding escrow...';
+                    const fundResult = await fundJobOnChain(createResult.jobId, budgetParsed);
+                    txHash = fundResult.tx.hash;
+
+                    const onChainJobId = parseInt(createResult.jobId);
+                    jobPacket.job_id = onChainJobId;
+
+                    // Save job to DB
+                    btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">sync</span> Saving job...';
+                    await fetch('/api/jobs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            job_id: onChainJobId,
+                            employer: walletState.address,
+                            worker_agent: currentAgent.address,
+                            job_type: 'OFFCHAIN_AI',
+                            hourly_rate_usdc: budgetRaw,
+                            estimated_hours: 1
+                        })
+                    });
+
+                    await fetch(`/api/jobs/${onChainJobId}/fund`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tx_hash: txHash })
+                    });
+                }
+            }
+
+            // Now dispatch to agent
+            btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">sync</span> Dispatching to agent...';
+
+            const endpoint = isTrial ? `/api/agents/${currentAgent.address}/trial` : `/api/agents/${currentAgent.address}/run`;
+            const payload = {
+                ...jobPacket,
+                schema_version: "1.0",
+                wallet: walletState.address,
+                payment_tx_hash: txHash || "trial_no_tx"
+            };
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const initResult = await res.json();
+            if (res.ok) {
+                // Transition to Status Tracker
+                s3.classList.add('hidden');
+                s4.classList.remove('hidden');
+                updateStepVisuals(3);
+
+                // Show funded state with tx link
+                document.getElementById('state-funded').classList.remove('opacity-30');
+                if (txHash) {
+                    document.getElementById('state-funded').innerHTML =
+                        '<span class="material-symbols-outlined text-green-400">check_circle</span>' +
+                        '<span class="text-xs font-bold uppercase tracking-widest">Escrow Funded — <a href="https://testnet.arcscan.app/tx/' + txHash + '" target="_blank" class="text-cyan-400 underline">View Tx</a></span>';
+                }
+
+                // Trial jobs are already COMPLETED — show result immediately, no polling needed
+                if (isTrial && initResult.output) {
+                    showTrialComplete(initResult.output);
+                } else {
+                    // Use on-chain jobId (saved to DB earlier), not the /run response ID
+                    const pollId = jobPacket.job_id || initResult.job_id;
+                    if (pollId) {
+                        pollJobStatus(pollId);
+                    } else {
+                        showWalletError("No job ID returned from server.");
+                    }
+                }
+            } else {
+                const errText = await res.text();
+                showWalletError("Agent dispatch failed: " + errText);
+                btn.disabled = false;
+                btn.textContent = "Try Again";
+            }
+        } catch (e) {
+            console.error(e);
+            const msg = e.message || 'Transaction failed';
+            if (msg.includes('user rejected') || msg.includes('4001')) {
+                showWalletError('Transaction rejected by user.');
+            } else {
+                showWalletError('Error: ' + msg);
+            }
+            btn.disabled = false;
+            btn.textContent = "Try Again";
+        }
+    });
+
+    function showTrialComplete(output) {
+        // Mark all steps as done immediately
+        ['state-funded', 'state-sent', 'state-processing', 'state-completed'].forEach(id => {
+            document.getElementById(id).classList.remove('opacity-30');
+        });
+        ['icon-sent', 'icon-processing', 'icon-completed'].forEach(id => {
+            const el = document.getElementById(id);
+            el.textContent = 'check_circle';
+            el.classList.add('text-green-400');
+        });
+
+        document.getElementById('tracker-title').textContent = 'Trial Completed!';
+        document.getElementById('tracker-icon').classList.remove('animate-pulse');
+        document.getElementById('tracker-icon').innerHTML = '<span class="material-symbols-outlined text-3xl">celebration</span>';
+
+        const resDiv = document.getElementById('tracker-result');
+        resDiv.classList.remove('hidden');
+        resDiv.textContent = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+
+        document.getElementById('btn-dashboard').classList.remove('hidden');
+        document.getElementById('btn-dashboard').onclick = () => window.location.href = '/app/dashboard';
+    }
+
+    async function pollJobStatus(jobID) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/jobs/${jobID}`);
+                if (!res.ok) return;
+                const job = await res.json();
+
+                console.log("[Tracker] Job Status:", job.status);
+
+                if (job.status === "IN_PROGRESS" || job.status === "PENDING_REVIEW" || job.status === "ACTIVE" || job.status === "SUBMITTED") {
+                    document.getElementById('state-sent').classList.remove('opacity-30');
+                    document.getElementById('icon-sent').textContent = "check_circle";
+                    document.getElementById('icon-sent').classList.add('text-green-400');
+                    
+                    document.getElementById('state-processing').classList.remove('opacity-30');
+                } else if (job.status === "SETTLED" || job.status === "COMPLETED" || job.status === "TRIAL_COMPLETED") {
+                    document.getElementById('state-sent').classList.remove('opacity-30');
+                    document.getElementById('icon-sent').textContent = "check_circle";
+                    document.getElementById('icon-sent').classList.add('text-green-400');
+
+                    document.getElementById('state-processing').classList.remove('opacity-30');
+                    document.getElementById('icon-processing').textContent = "check_circle";
+                    document.getElementById('icon-processing').classList.add('text-green-400');
+
+                    document.getElementById('state-completed').classList.remove('opacity-30');
+                    document.getElementById('icon-completed').textContent = "check_circle";
+                    document.getElementById('icon-completed').classList.add('text-green-400');
+
+                    document.getElementById('tracker-title').textContent = "Task Completed!";
+                    document.getElementById('tracker-icon').classList.remove('animate-pulse');
+                    document.getElementById('tracker-icon').innerHTML = '<span class="material-symbols-outlined text-3xl">celebration</span>';
+                    
+                    if (job.output) {
+                         const resDiv = document.getElementById('tracker-result');
+                         resDiv.classList.remove('hidden');
+                         resDiv.textContent = typeof job.output === 'string' ? job.output : JSON.stringify(job.output, null, 2);
+                    }
+
+                    document.getElementById('btn-dashboard').classList.remove('hidden');
+                    document.getElementById('btn-dashboard').onclick = () => window.location.href = "/app/dashboard";
+
+                    clearInterval(interval);
+                } else if (job.status === "DISPUTED" || job.status === "FAILED" || job.status === "EXPIRED") {
+                    document.getElementById('tracker-title').textContent = "Execution Failed";
+                    document.getElementById('tracker-icon').innerHTML = '<span class="material-symbols-outlined text-3xl text-red-400">error</span>';
+                    document.getElementById('btn-dashboard').classList.remove('hidden');
+                    document.getElementById('btn-dashboard').textContent = "Back to Safety";
+                    clearInterval(interval);
+                }
+            } catch(e) {
+                console.error("[Tracker] Polling error", e);
+            }
+        }, 3000);
+    }
+</script>
+{{end}}

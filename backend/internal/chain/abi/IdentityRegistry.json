@@ -1,0 +1,32 @@
+[
+  {
+    "name": "register",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "metadataURI", "type": "string" }],
+    "outputs": []
+  },
+  {
+    "name": "ownerOf",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [{ "name": "tokenId", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "name": "tokenURI",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [{ "name": "tokenId", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "string" }]
+  },
+  {
+    "type": "event",
+    "name": "Transfer",
+    "inputs": [
+      { "indexed": true, "name": "from", "type": "address" },
+      { "indexed": true, "name": "to", "type": "address" },
+      { "indexed": true, "name": "tokenId", "type": "uint256" }
+    ]
+  }
+]

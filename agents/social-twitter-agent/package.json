@@ -1,0 +1,19 @@
+{
+  "name": "gigawork-social-twitter-agent",
+  "version": "1.0.0",
+  "description": "An AI agent that writes optimized social media posts and submits them via Arc Network",
+  "main": "run-job.ts",
+  "scripts": {
+    "start": "tsx run-job.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^4.28.0",
+    "viem": "^2.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}

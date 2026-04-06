@@ -1,0 +1,450 @@
+﻿
+== GigaWork Agent Workflow (Copywriter AI) ==
+Target Topic: "The future of Web3 AI Agents"
+
+[Client] Transferring Native Gas to Agent (Starter Fund)...
+
+[transfer starter gas] Waiting for confirmation... => Confirmed in Block 35148864
+
+[Client] Creating On-chain Job for Tweet writing task...
+
+[createJob] Waiting for confirmation... => Confirmed in Block 35148867
+[Client] Job ID 5 Created.
+
+[Agent] Acknowledging Job & Setting Budget (5000000000000000000 USDC) ...
+node.exe : ContractFunction
+ExecutionError: The total 
+cost (gas * gas fee + 
+value) of executing this 
+transaction exceeds the 
+balance of the account.
+At C:\Program 
+Files\nodejs\npx.ps1:29 
+char:3
++   & $NODE_EXE 
+$NPX_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~
+    + CategoryInfo         
+     : NotSpecified: (Con  
+  tractFunctio...of the    
+ account.:String) [], R    
+emoteException
+    + FullyQualifiedErrorI 
+   d : NativeCommandError
+ 
+
+This error could arise 
+when the account does not 
+have enough funds to:
+ - pay for the total gas 
+fee,
+ - pay for the value to 
+send.
+ 
+The cost of the 
+transaction is calculated 
+as `gas * gas fee + 
+value`, where:
+ - `gas` is the amount of 
+gas needed for transaction 
+to execute,
+ - `gas fee` is the gas 
+fee,
+ - `value` is the amount 
+of ether to send to the 
+recipient.
+ 
+Request Arguments:
+  from:  0xf39Fd6e51aad88F6
+F4ce6aB8827279cffFb92266
+  to:    0xefe28b2fb1146a5d
+95c7e5e134cef7a180d47e34
+  data:  0xdd4ae9d400000000
+000000000000000000000000000
+000000000000000000000000000
+050000000000000000000000000
+000000000000000000000004563
+918244f40000000000000000000
+000000000000000000000000000
+000000000000000000006000000
+000000000000000000000000000
+000000000000000000000000000
+00000
+ 
+Contract Call:
+  address:   0xefe28b2fb114
+6a5d95c7e5e134cef7a180d47e3
+4
+  function:  
+setBudget(uint256 jobId, 
+uint256 amount, bytes 
+optParams)
+  args:               (5, 
+5000000000000000000, 0x)
+  sender:    0xf39Fd6e51aad
+88F6F4ce6aB8827279cffFb9226
+6
+
+Docs: https://viem.sh/docs/
+contract/writeContract
+Details: insufficient 
+funds for gas * price + 
+value: have 0 want 
+1289608477200000
+Version: viem@2.47.6
+    at getContractError 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\utils\err
+ors\getContractError.ts:82:
+10)
+    at 
+AsyncFunction.internal 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\actions\w
+allet\writeContract.ts:241:
+29)
+    at process.processTicks
+AndRejections (node:interna
+l/process/task_queues:105:5
+)
+    at async main 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+run-job.ts:86:25) {
+  cause: 
+TransactionExecutionError: 
+The total cost (gas * gas 
+fee + value) of executing 
+this transaction exceeds 
+the balance of the account.
+  
+  This error could arise 
+when the account does not 
+have enough funds to:
+   - pay for the total gas 
+fee,
+   - pay for the value to 
+send.
+   
+  The cost of the 
+transaction is calculated 
+as `gas * gas fee + 
+value`, where:
+   - `gas` is the amount 
+of gas needed for 
+transaction to execute,
+   - `gas fee` is the gas 
+fee,
+   - `value` is the amount 
+of ether to send to the 
+recipient.
+   
+  Request Arguments:
+    from:  0xf39Fd6e51aad88
+F6F4ce6aB8827279cffFb92266
+    to:    0xefe28b2fb1146a
+5d95c7e5e134cef7a180d47e34
+    data:  0xdd4ae9d4000000
+000000000000000000000000000
+000000000000000000000000000
+000500000000000000000000000
+000000000000000000000000045
+63918244f400000000000000000
+000000000000000000000000000
+000000000000000000000060000
+000000000000000000000000000
+000000000000000000000000000
+0000000
+  
+  Details: insufficient 
+funds for gas * price + 
+value: have 0 want 
+1289608477200000
+  Version: viem@2.47.6
+      at 
+getTransactionError 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\utils\err
+ors\getTransactionError.ts:
+44:10)
+      at sendTransaction 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\actions\w
+allet\sendTransaction.ts:36
+6:30)
+      ... 2 lines matching 
+cause stack trace ...
+      at async main 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+run-job.ts:86:25) {
+    cause: 
+InsufficientFundsError: 
+The total cost (gas * gas 
+fee + value) of executing 
+this transaction exceeds 
+the balance of the account.
+    
+    This error could arise 
+when the account does not 
+have enough funds to:
+     - pay for the total 
+gas fee,
+     - pay for the value 
+to send.
+     
+    The cost of the 
+transaction is calculated 
+as `gas * gas fee + 
+value`, where:
+     - `gas` is the amount 
+of gas needed for 
+transaction to execute,
+     - `gas fee` is the 
+gas fee,
+     - `value` is the 
+amount of ether to send to 
+the recipient.
+    
+    Details: insufficient 
+funds for gas * price + 
+value: have 0 want 
+1289608477200000
+    Version: viem@2.47.6
+        at getNodeError 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\utils\err
+ors\getNodeError.ts:103:12)
+        at <anonymous> 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\utils\err
+ors\getTransactionError.ts:
+37:31)
+        at 
+getTransactionError 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\utils\err
+ors\getTransactionError.ts:
+43:5)
+        at sendTransaction 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\actions\w
+allet\sendTransaction.ts:36
+6:30)
+        at process.processT
+icksAndRejections (node:int
+ernal/process/task_queues:1
+05:5)
+        at async 
+AsyncFunction.internal 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+node_modules\viem\actions\w
+allet\writeContract.ts:230:
+14)
+        at async main 
+(F:\Work\Cryoto\agent arc\a
+gents\social-twitter-agent\
+run-job.ts:86:25) {
+      details: 
+'insufficient funds for 
+gas * price + value: have 
+0 want 1289608477200000',
+      docsPath: undefined,
+      metaMessages: 
+[Array],
+      shortMessage: 'The 
+total cost (gas * gas fee 
++ value) of executing this 
+transaction exceeds the 
+balance of the account.',
+      version: '2.47.6',
+      [cause]: [Transaction
+RejectedRpcError]
+    },
+    details: 'insufficient 
+funds for gas * price + 
+value: have 0 want 
+1289608477200000',
+    docsPath: undefined,
+    metaMessages: [
+      'This error could 
+arise when the account 
+does not have enough funds 
+to:',
+      ' - pay for the 
+total gas fee,',
+      ' - pay for the 
+value to send.',
+      ' ',
+      'The cost of the 
+transaction is calculated 
+as `gas * gas fee + 
+value`, where:',
+      ' - `gas` is the 
+amount of gas needed for 
+transaction to execute,',
+      ' - `gas fee` is the 
+gas fee,',
+      ' - `value` is the 
+amount of ether to send to 
+the recipient.',
+      ' ',
+      'Request Arguments:',
+      '  from:  0xf39Fd6e51
+aad88F6F4ce6aB8827279cffFb9
+2266\n' +
+        '  to:    0xefe28b2
+fb1146a5d95c7e5e134cef7a180
+d47e34\n' +
+        '  data:  0xdd4ae9d
+400000000000000000000000000
+000000000000000000000000000
+000000000050000000000000000
+000000000000000000000000000
+000004563918244f40000000000
+000000000000000000000000000
+000000000000000000000000000
+006000000000000000000000000
+000000000000000000000000000
+00000000000000'
+    ],
+    shortMessage: 'The 
+total cost (gas * gas fee 
++ value) of executing this 
+transaction exceeds the 
+balance of the account.',
+    version: '2.47.6'
+  },
+  details: 'insufficient 
+funds for gas * price + 
+value: have 0 want 
+1289608477200000',
+  docsPath: '/docs/contract
+/writeContract',
+  metaMessages: [
+    'This error could 
+arise when the account 
+does not have enough funds 
+to:',
+    ' - pay for the total 
+gas fee,',
+    ' - pay for the value 
+to send.',
+    ' ',
+    'The cost of the 
+transaction is calculated 
+as `gas * gas fee + 
+value`, where:',
+    ' - `gas` is the 
+amount of gas needed for 
+transaction to execute,',
+    ' - `gas fee` is the 
+gas fee,',
+    ' - `value` is the 
+amount of ether to send to 
+the recipient.',
+    ' ',
+    'Request Arguments:',
+    '  from:  0xf39Fd6e51aa
+d88F6F4ce6aB8827279cffFb922
+66\n' +
+      '  to:    0xefe28b2fb
+1146a5d95c7e5e134cef7a180d4
+7e34\n' +
+      '  data:  0xdd4ae9d40
+000000000000000000000000000
+000000000000000000000000000
+000000005000000000000000000
+000000000000000000000000000
+0004563918244f4000000000000
+000000000000000000000000000
+000000000000000000000000000
+600000000000000000000000000
+000000000000000000000000000
+000000000000',
+    ' ',
+    'Contract Call:',
+    '  address:   0xefe28b2
+fb1146a5d95c7e5e134cef7a180
+d47e34\n' +
+      '  function:  
+setBudget(uint256 jobId, 
+uint256 amount, bytes 
+optParams)\n' +
+      '  args:             
+  (5, 5000000000000000000, 
+0x)\n' +
+      '  sender:    0xf39Fd
+6e51aad88F6F4ce6aB8827279cf
+fFb92266'
+  ],
+  shortMessage: 'The total 
+cost (gas * gas fee + 
+value) of executing this 
+transaction exceeds the 
+balance of the account.',
+  version: '2.47.6',
+  abi: [
+    {
+      name: 'createJob',
+      type: 'function',
+      stateMutability: 
+'nonpayable',
+      inputs: [Array],
+      outputs: [Array]
+    },
+    {
+      name: 'setBudget',
+      type: 'function',
+      stateMutability: 
+'nonpayable',
+      inputs: [Array],
+      outputs: []
+    },
+    {
+      name: 'fund',
+      type: 'function',
+      stateMutability: 
+'nonpayable',
+      inputs: [Array],
+      outputs: []
+    },
+    {
+      name: 'submitResult',
+      type: 'function',
+      stateMutability: 
+'nonpayable',
+      inputs: [Array],
+      outputs: []
+    },
+    {
+      name: 'complete',
+      type: 'function',
+      stateMutability: 
+'nonpayable',
+      inputs: [Array],
+      outputs: []
+    }
+  ],
+  args: [ 5n, 
+5000000000000000000n, '0x' 
+],
+  contractAddress: '0xefe28
+b2fb1146a5d95c7e5e134cef7a1
+80d47e34',
+  formattedArgs: undefined,
+  functionName: 
+'setBudget',
+  sender: '0xf39Fd6e51aad88
+F6F4ce6aB8827279cffFb92266'
+}

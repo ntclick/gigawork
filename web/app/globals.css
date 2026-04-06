@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+/* GigaWork Design System — matches Go template theme */
+:root {
+  --background: #0f131c;
+  --foreground: #dfe2ee;
+  --surface: #0f131c;
+  --surface-variant: #1c2028;
+  --on-surface: #dfe2ee;
+  --on-surface-variant: #bac9cc;
+  --primary: #c3f5ff;
+  --primary-container: #00e5ff;
+  --on-primary: #00363d;
+  --outline: rgba(255, 255, 255, 0.1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', var(--font-body), sans-serif;
+}
+
+/* Glass panel effect */
+.glass-panel {
+  backdrop-filter: blur(16px);
+  background: rgba(28, 32, 40, 0.4);
+}
+
+/* Cyan glow text */
+.glow-text {
+  text-shadow: 0 0 32px rgba(0, 229, 255, 0.4);
+}
+
+/* Grid background */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+}
+
+/* Fade-in animation */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+/* Selection color */
+::selection {
+  background: #00e5ff;
+  color: #00363d;
+}
+
+/* Line clamp utilities */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
