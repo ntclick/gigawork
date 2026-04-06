@@ -362,3 +362,47 @@ func (s *Server) GetJobResult(w http.ResponseWriter, r *http.Request) {
 		"error":  "no result data found in store",
 	})
 }
+
+// POST /jobs/{jobID}/report
+func (s *Server) ReportJobIssue(w http.ResponseWriter, r *http.Request) {
+	jobIDStr := chi.URLParam(r, "jobID")
+	jobID, err := strconv.ParseInt(jobIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid job ID")
+		return
+	}
+
+	var req struct {
+		Reason      string `json:"reason"`
+		Description string `json:"description"`
+		Wallet      string `json:"wallet"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "reason is required")
+		return
+	}
+
+	report := &db.JobReport{
+		JobID:          jobID,
+		ReporterWallet: req.Wallet,
+		Reason:         req.Reason,
+		Description:    req.Description,
+		CreatedAt:      time.Now(),
+	}
+
+	if err := s.DB.InsertJobReport(r.Context(), report); err != nil {
+		log.Printf("[ReportIssue] Failed to insert report for job #%d: %v", jobID, err)
+		writeError(w, http.StatusInternalServerError, "failed to submit report")
+		return
+	}
+
+	log.Printf("[ReportIssue] Job #%d reported by %s: %s", jobID, req.Wallet, req.Reason)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "reported",
+		"job_id": jobID,
+	})
+}

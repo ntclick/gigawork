@@ -7,7 +7,6 @@ import { useBalance } from '@/hooks/useBalance'
 import { useState } from 'react'
 
 const NAV_ITEMS = [
-  { label: 'Marketplace', href: '/jobs' },
   { label: 'Agents', href: '/agents' },
   { label: 'Post a Task', href: '/post-job' },
   { label: 'My Jobs', href: '/dashboard' },

@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { useWallet } from '@/hooks/useWallet'
 import { useAuth } from '@/hooks/useAuth'
 import { StatusBadge } from '@/components/StatusBadge'
+import { ReportIssueModal } from '@/components/ReportIssueModal'
 import Link from 'next/link'
 
 type Job = {
@@ -78,6 +79,7 @@ export default function DashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [viewJob, setViewJob] = useState<any>(null)
+  const [reportJobId, setReportJobId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!address) return
@@ -239,10 +241,23 @@ export default function DashboardPage() {
                 )}
 
                 <ResultContent data={viewJob._result ?? viewJob.result_data} />
+
+                <button onClick={() => { setReportJobId(viewJob.job_id); setViewJob(null) }}
+                  className="mt-4 px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-400 font-bold rounded-lg hover:bg-red-500/20 text-xs">
+                  Report Issue
+                </button>
               </div>
             </div>
           </div>
         </>
+      )}
+
+      {reportJobId && (
+        <ReportIssueModal
+          jobId={reportJobId}
+          wallet={address || ''}
+          onClose={() => setReportJobId(null)}
+        />
       )}
     </div>
   )

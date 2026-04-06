@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { useWallet } from '@/hooks/useWallet'
 import { useSendTransaction, useWallets } from '@privy-io/react-auth'
 import { JobTracker } from '@/components/JobTracker'
+import { ReportIssueModal } from '@/components/ReportIssueModal'
 import Link from 'next/link'
 
 const SERVER_WALLET = '0xafe6DD950Dc2CF561e8daBA1725e0e6840f70549'
@@ -169,6 +170,161 @@ function formatValue(key: string, value: any): string {
   return String(value)
 }
 
+// ─── Agent Picker (when no agent is selected) ──────────────────────
+
+const PICKER_EMOJI: Record<string, string> = {
+  'web-intel-agent': '\u{1F310}',
+  'crypto-scanner-agent': '\u{1F4CA}',
+  'social-sentiment-agent': '\u{1F4E3}',
+  'document-digest-agent': '\u{1F4C4}',
+  'report-composer-agent': '\u{1F4DD}',
+}
+
+type MatchResult = {
+  recommended_agent: Agent
+  reason: string
+  confidence: number
+  task: string
+}
+
+function AgentPicker() {
+  const [taskDesc, setTaskDesc] = useState('')
+  const [matching, setMatching] = useState(false)
+  const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [agents, setAgents] = useState<Agent[]>([])
+
+  useEffect(() => {
+    api.agents.list()
+      .then((list: Agent[]) => setAgents(list.filter((a: Agent) => a.address !== '0x0000000000000000000000000000000000000001')))
+      .catch(() => {})
+  }, [])
+
+  const handleMatch = async () => {
+    if (!taskDesc.trim()) return
+    setMatching(true)
+    setMatchResult(null)
+    try {
+      const res = await api.agents.match(taskDesc)
+      setMatchResult(res)
+    } catch {
+      setShowAll(true)
+    } finally {
+      setMatching(false)
+    }
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto px-8 py-12">
+      <div className="mb-8">
+        <h1 className="text-4xl font-black font-[var(--font-headline)] mb-2">
+          Post a <span className="text-cyan-400">Task</span>
+        </h1>
+        <p className="text-[#bac9cc]">Describe what you need done and we'll find the best AI agent</p>
+      </div>
+
+      {/* Step 1: Describe task */}
+      {!matchResult && !showAll && (
+        <div className="glass-panel p-8 rounded-3xl border border-white/5 space-y-6 animate-fade-in">
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-[#bac9cc] mb-2">
+              What do you need done?
+            </label>
+            <textarea
+              value={taskDesc}
+              onChange={(e) => setTaskDesc(e.target.value)}
+              placeholder="e.g. Analyze the sentiment around $SOL on Twitter this week / Summarize this whitepaper: https://... / Research Arc Network's competitive positioning"
+              rows={4}
+              className="w-full px-4 py-3 bg-[#1c2028]/50 border border-white/5 rounded-xl text-sm resize-none focus:ring-2 focus:ring-cyan-400 outline-none"
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <button onClick={handleMatch} disabled={!taskDesc.trim() || matching}
+              className="flex-grow py-4 bg-gradient-to-r from-[#00e5ff] to-cyan-400 text-[#00363d] font-bold rounded-2xl shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100">
+              {matching ? 'Finding best agent...' : 'Find Best Agent &#x2192;'}
+            </button>
+            <button onClick={() => setShowAll(true)}
+              className="px-6 py-4 bg-white/5 border border-white/10 font-bold rounded-2xl hover:bg-white/10 text-sm">
+              Browse All
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Recommendation */}
+      {matchResult && !showAll && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="glass-panel p-8 rounded-3xl border border-cyan-400/20">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-lg">&#x2728;</span>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">Recommended Agent</p>
+              <span className="ml-auto px-2 py-0.5 bg-cyan-400/10 border border-cyan-400/20 rounded text-[10px] font-bold text-cyan-400">
+                {(matchResult.confidence * 100).toFixed(0)}% match
+              </span>
+            </div>
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-2xl shadow-lg shrink-0">
+                {PICKER_EMOJI[matchResult.recommended_agent.id] || '\u{1F916}'}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold font-[var(--font-headline)]">{matchResult.recommended_agent.name}</h3>
+                <p className="text-sm text-[#bac9cc] mt-1">{matchResult.reason}</p>
+                <p className="text-xs text-cyan-400 font-bold mt-2">
+                  {matchResult.recommended_agent.pricing?.per_call_usdc?.toFixed(2)} USDC per run
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Link href={`/post-job?agent=${matchResult.recommended_agent.address}`}
+                className="flex-grow py-3 bg-gradient-to-r from-[#00e5ff] to-cyan-400 text-[#00363d] font-bold rounded-xl text-center shadow-lg hover:scale-[1.02] transition-all">
+                Hire {matchResult.recommended_agent.name} &#x2192;
+              </Link>
+              <button onClick={() => setShowAll(true)}
+                className="px-6 py-3 bg-white/5 border border-white/10 font-bold rounded-xl hover:bg-white/10 text-sm">
+                Browse All
+              </button>
+            </div>
+          </div>
+
+          <button onClick={() => { setMatchResult(null); setTaskDesc('') }}
+            className="text-xs text-[#bac9cc] hover:text-white">
+            &#x2190; Start over
+          </button>
+        </div>
+      )}
+
+      {/* Step 3: Browse all agents */}
+      {showAll && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold font-[var(--font-headline)]">All Agents</h2>
+            <button onClick={() => { setShowAll(false); setMatchResult(null) }}
+              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold">
+              &#x2190; Back to task description
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            {agents.map((a) => (
+              <Link key={a.address} href={`/post-job?agent=${a.address}`}
+                className="glass-panel p-6 rounded-2xl border border-white/5 hover:border-cyan-400/30 transition-all flex items-start gap-4 group">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-xl shadow-lg group-hover:scale-110 transition-transform shrink-0">
+                  {PICKER_EMOJI[a.id] || '\u{1F916}'}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold group-hover:text-cyan-400 transition-colors">{a.name}</h3>
+                  <p className="text-xs text-[#bac9cc] line-clamp-2 mt-1">{a.description}</p>
+                  <p className="text-xs text-cyan-400 font-bold mt-2">{a.pricing?.per_call_usdc?.toFixed(2)} USDC per run</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ─────────────────────────────────────────────────
 
 function PostJobContent() {
@@ -190,6 +346,7 @@ function PostJobContent() {
   const [txHashes, setTxHashes] = useState<{ posted?: string; accepted?: string; settled?: string }>({})
   const [cached, setCached] = useState<CachedResult | null>(null)
   const [copied, setCopied] = useState(false)
+  const [showReport, setShowReport] = useState(false)
 
   useEffect(() => {
     if (agentSlug) api.agents.get(agentSlug).then(setAgent).catch(() => setError('Agent not found'))
@@ -338,6 +495,11 @@ function PostJobContent() {
 
   const handleSubmit = isTrial ? handleTrialSubmit : handleExecute
 
+  // No agent selected → show agent picker
+  if (!agentSlug) {
+    return <AgentPicker />
+  }
+
   if (!agent && !error) {
     return <div className="flex justify-center py-32"><div className="w-12 h-12 border-4 border-cyan-400/20 border-t-cyan-400 rounded-full animate-spin" /></div>
   }
@@ -441,10 +603,18 @@ function PostJobContent() {
         <div className="glass-panel p-8 rounded-3xl border border-red-500/20 space-y-4 animate-fade-in">
           <h2 className="text-xl font-bold text-red-400">Execution Failed</h2>
           {error && <p className="text-sm text-red-300">{error}</p>}
-          <button onClick={() => { setStep('form'); setError(null); setResult(null) }}
-            className="w-full py-3 bg-white/5 border border-white/10 font-bold rounded-xl hover:bg-white/10">
-            Try Again
-          </button>
+          <div className="flex gap-3">
+            <button onClick={() => { setStep('form'); setError(null); setResult(null) }}
+              className="flex-1 py-3 bg-white/5 border border-white/10 font-bold rounded-xl hover:bg-white/10">
+              Try Again
+            </button>
+            {jobId && (
+              <button onClick={() => setShowReport(true)}
+                className="px-4 py-3 bg-red-500/10 border border-red-500/20 text-red-400 font-bold rounded-xl hover:bg-red-500/20 text-sm">
+                Report Issue
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -490,14 +660,27 @@ function PostJobContent() {
             </div>
           )}
 
-          <div className="flex gap-4">
-            <Link href="/dashboard" className="flex-1 py-3 bg-white/5 border border-white/10 text-center font-bold rounded-xl hover:bg-white/10">Go to Dashboard</Link>
+          <div className="flex gap-3">
+            <Link href="/dashboard" className="flex-1 py-3 bg-white/5 border border-white/10 text-center font-bold rounded-xl hover:bg-white/10">Dashboard</Link>
             <button onClick={() => { setStep('form'); setResult(null); setJobId(null) }}
               className="flex-1 py-3 bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 text-center font-bold rounded-xl hover:bg-cyan-400/20">
               Run Again
             </button>
+            <button onClick={() => setShowReport(true)}
+              className="px-4 py-3 bg-red-500/10 border border-red-500/20 text-red-400 font-bold rounded-xl hover:bg-red-500/20 text-sm">
+              Report Issue
+            </button>
           </div>
         </div>
+      )}
+
+      {/* Report Issue Modal */}
+      {showReport && jobId && (
+        <ReportIssueModal
+          jobId={jobId}
+          wallet={address || ''}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </div>
   )

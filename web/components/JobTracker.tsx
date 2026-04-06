@@ -13,14 +13,30 @@ export function JobTracker({ jobId, onComplete }: { jobId: number; onComplete?: 
   ])
   const [status, setStatus] = useState<'running' | 'done' | 'failed'>('running')
   const [result, setResult] = useState<any>(null)
+  const [pollCount, setPollCount] = useState(0)
 
   useEffect(() => {
     if (!jobId || status !== 'running') return
-    const interval = setInterval(async () => {
+
+    const getInterval = () => {
+      if (pollCount < 10) return 3000    // first 30s: every 3s
+      if (pollCount < 18) return 8000    // 30s-2min: every 8s
+      if (pollCount < 58) return 15000   // 2-10min: every 15s
+      return 0                            // stop after 10min
+    }
+
+    const interval = getInterval()
+    if (interval === 0) {
+      setStatus('failed')
+      return
+    }
+
+    const timer = setTimeout(async () => {
       try {
         const job = await api.jobs.get(jobId).catch(() => null)
         if (!job) {
           console.log(`[JobTracker] Job #${jobId}: not found yet, keep polling`)
+          setPollCount(c => c + 1)
           return
         }
         console.log(`[JobTracker] Job #${jobId}: status=${job.status}`)
@@ -31,17 +47,17 @@ export function JobTracker({ jobId, onComplete }: { jobId: number; onComplete?: 
           setStatus('done')
           setResult(job)
           onComplete?.(job)
-          clearInterval(interval)
         } else if (job.status === 'DISPUTED' || job.status === 'EXPIRED') {
           setStatus('failed')
-          clearInterval(interval)
         }
       } catch (e) {
-        console.error(`[JobTracker] Poll error for job #${jobId}:`, e)
+        console.error(`[JobTracker] Poll error:`, e)
       }
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [jobId, status, onComplete])
+      setPollCount(c => c + 1)
+    }, interval)
+
+    return () => clearTimeout(timer)
+  }, [jobId, status, pollCount, onComplete])
 
   return (
     <div className="glass-panel p-8 rounded-3xl border border-white/5 text-center space-y-6">

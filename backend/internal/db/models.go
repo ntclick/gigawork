@@ -77,6 +77,15 @@ type Agent struct {
 	Version         string    `json:"version"`
 	OperatorWallet  string    `json:"operator_wallet"`
 
+	FullDescription *string   `json:"full_description,omitempty"`
+	HowToUse        *string   `json:"how_to_use,omitempty"`
+	ExternalLink    *string   `json:"external_link,omitempty"`
+	SampleOutput    *string   `json:"sample_output,omitempty"`
+	IsCommunity     bool      `json:"is_community"`
+	IsVerified      bool      `json:"is_verified"`
+	EndpointURL     *string   `json:"endpoint_url,omitempty"`
+	EndpointAuth    *string   `json:"endpoint_auth,omitempty"`
+
 	// Metrics fields needed for build compatibility
 	StakeAmount         *float64  `json:"stake_amount,omitempty"`
 	StakeTier           *string   `json:"stake_tier,omitempty"`
@@ -160,6 +169,15 @@ type Job struct {
 	TxHashPosted      *string    `json:"tx_hash_posted,omitempty"`
 	TxHashAccepted    *string    `json:"tx_hash_accepted,omitempty"`
 	TxHashSettled     *string    `json:"tx_hash_settled,omitempty"`
+}
+
+type JobReport struct {
+	ID             string    `json:"id,omitempty"`
+	JobID          int64     `json:"job_id"`
+	ReporterWallet string    `json:"reporter_wallet"`
+	Reason         string    `json:"reason"`
+	Description    string    `json:"description,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type Bid struct {

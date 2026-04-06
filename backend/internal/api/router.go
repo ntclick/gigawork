@@ -110,7 +110,7 @@ func NewServer(dbClient *db.Client, matchingEngine *matching.Engine, chainClient
 		r.Post("/", s.CreateJob)
 		r.Post("/draft", s.CreateJob)       // Draft job without funding
 		r.Post("/register", s.RegisterJob)   // ERC-8183: register on-chain job in DB
-		r.Post("/execute", s.ExecuteJob)     // Single-call: server does all on-chain ops + runs agent
+		r.Post("/execute", RateLimitExecuteJob(s.ExecuteJob))     // Single-call: server does all on-chain ops + runs agent
 		r.Get("/{jobID}", s.GetJob)
 		r.Get("/{jobID}/result", s.GetJobResult)
 		r.Post("/{jobID}/fund", s.FundJob)
@@ -119,6 +119,7 @@ func NewServer(dbClient *db.Client, matchingEngine *matching.Engine, chainClient
 		r.Post("/{jobID}/assign", s.ActionAssignAgent)  // Matcher assignment
 		r.Post("/{jobID}/submit", s.SubmitResult)
 		r.Post("/{jobID}/approve", s.ApproveResult)
+		r.Post("/{jobID}/report", s.ReportJobIssue)
 		r.Post("/{jobID}/reject", s.RejectResult)
 
 		// Marketplace extensions
@@ -152,7 +153,8 @@ func NewServer(dbClient *db.Client, matchingEngine *matching.Engine, chainClient
 	// ─── Agents (ERC-8004 compliant) ─────────────────────
 	s.Router.Route("/agents", func(r chi.Router) {
 		r.Get("/", s.ListAgents)
-		r.Post("/register", s.RegisterAgent)
+		r.Post("/register", RateLimitRegisterAgent(s.RegisterAgent))
+		r.Post("/match", s.MatchAgent)
 		r.Get("/{address}", s.GetAgent)
 		r.Get("/{address}/jobs", s.GetAgentJobs)
 		r.Get("/{address}/stats", s.GetAgentStats)

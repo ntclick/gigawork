@@ -9,7 +9,14 @@ import (
 )
 
 // httpClient is a shared client with explicit timeout for all external calls.
-var httpClient = &http.Client{Timeout: 30 * time.Second}
+var httpClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
 
 // retryDo executes an HTTP request with exponential backoff retry.
 // Retries up to maxRetries times on network errors (DNS, connection, timeout).

@@ -18,6 +18,8 @@ type Agent = {
   reputation_score: number
   total_jobs_done: number
   success_rate: number
+  is_community: boolean
+  is_verified: boolean
 }
 
 const AGENT_EMOJI: Record<string, string> = {
@@ -32,12 +34,17 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<'all' | 'official' | 'community'>('all')
 
   useEffect(() => {
     api.agents.list().then(setAgents).finally(() => setLoading(false))
   }, [])
 
   const filtered = agents.filter((a) => {
+    // Tab filter
+    if (tab === 'official' && a.is_community) return false
+    if (tab === 'community' && !a.is_community) return false
+
     if (!search) return true
     const q = search.toLowerCase()
     return a.name.toLowerCase().includes(q) ||
@@ -66,7 +73,7 @@ export default function AgentsPage() {
             All agents on GigaWork are vetted for protocol compatibility.
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 items-center">
           <div className="relative">
             <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#bac9cc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -79,7 +86,30 @@ export default function AgentsPage() {
               className="pl-12 pr-6 py-3 bg-[#1c2028]/50 border border-white/5 rounded-xl text-sm focus:ring-2 focus:ring-[#00e5ff] outline-none min-w-[300px]"
             />
           </div>
+          <Link
+            href="/agents/register"
+            className="px-6 py-3 bg-gradient-to-r from-[#00e5ff] to-cyan-400 text-[#00363d] font-black rounded-xl text-[10px] uppercase tracking-widest whitespace-nowrap hover:shadow-cyan-400/20 shadow-lg transition-all"
+          >
+            Register Your Agent
+          </Link>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-8">
+        {(['all', 'official', 'community'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+              tab === t
+                ? 'bg-cyan-400/20 text-cyan-400 border border-cyan-400/30'
+                : 'bg-white/5 text-[#bac9cc] border border-white/5 hover:border-white/10'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -99,6 +129,11 @@ export default function AgentsPage() {
                     <h3 className="text-lg font-bold font-[var(--font-headline)] mb-0.5 group-hover:text-cyan-400 transition-colors">{agent.name}</h3>
                     <div className="flex items-center gap-2">
                       <span className="text-[8px] px-2 py-0.5 bg-cyan-400/10 text-cyan-400 rounded font-bold uppercase">{agent.category}</span>
+                      {agent.is_community ? (
+                        <span className="text-[8px] px-2 py-0.5 bg-yellow-400/10 text-yellow-400 rounded font-bold uppercase">Community</span>
+                      ) : (
+                        <span className="text-[8px] px-2 py-0.5 bg-cyan-400/10 text-cyan-400 rounded font-bold uppercase">Official</span>
+                      )}
                       {agent.total_jobs_done > 0 && (
                         <span className="text-[9px] text-[#bac9cc]">
                           {agent.total_jobs_done} jobs &bull; {((agent.success_rate || 0) * 100).toFixed(0)}%

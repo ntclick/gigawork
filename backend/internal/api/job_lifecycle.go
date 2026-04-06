@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gigawork/internal/agents"
@@ -106,6 +107,16 @@ func (s *Server) ExecuteJob(w http.ResponseWriter, r *http.Request) {
 
 	if req.AgentAddress == "" {
 		writeError(w, http.StatusBadRequest, "agent_address required")
+		return
+	}
+
+	// Input validation
+	if !isValidEVMAddress(req.AgentAddress) {
+		writeError(w, http.StatusBadRequest, "invalid agent address format")
+		return
+	}
+	if req.Wallet != "" && !isValidEVMAddress(req.Wallet) {
+		writeError(w, http.StatusBadRequest, "invalid wallet address format")
 		return
 	}
 
@@ -663,27 +674,36 @@ func (s *Server) executeAndSettle(jobID int64, chainJobID int64, agent *db.Agent
 			if reqAgents, ok := metadata["requires_agents"].([]any); ok {
 				log.Printf("[RunJob] Job #%d: running %d sub-agents for report-composer", jobID, len(reqAgents))
 				subData := make(map[string]any)
+				var wg sync.WaitGroup
+				var mu sync.Mutex
 				for _, ra := range reqAgents {
 					subID, _ := ra.(string)
 					if subID == "" {
 						continue
 					}
-					log.Printf("[RunJob] Job #%d: sub-agent %s starting (internal, no charge)", jobID, subID)
-					var subResult map[string]any
-					var subErr error
-					switch subID {
-					case "crypto-scanner-agent":
-						subResult, subErr = s.runBuiltinCryptoScanner(ctx, inputs)
-					case "social-sentiment-agent":
-						subResult, subErr = s.runBuiltinSentiment(ctx, inputs)
-					}
-					if subErr != nil {
-						log.Printf("[RunJob] Job #%d: sub-agent %s failed: %v", jobID, subID, subErr)
-					} else {
-						subData[subID] = subResult
-						log.Printf("[RunJob] Job #%d: sub-agent %s completed", jobID, subID)
-					}
+					wg.Add(1)
+					go func(id string) {
+						defer wg.Done()
+						log.Printf("[RunJob] Job #%d: sub-agent %s starting (internal, no charge)", jobID, id)
+						var subResult map[string]any
+						var subErr error
+						switch id {
+						case "crypto-scanner-agent":
+							subResult, subErr = s.runBuiltinCryptoScanner(ctx, inputs)
+						case "social-sentiment-agent":
+							subResult, subErr = s.runBuiltinSentiment(ctx, inputs)
+						}
+						if subErr != nil {
+							log.Printf("[RunJob] Job #%d: sub-agent %s failed: %v", jobID, id, subErr)
+						} else {
+							mu.Lock()
+							subData[id] = subResult
+							mu.Unlock()
+							log.Printf("[RunJob] Job #%d: sub-agent %s completed", jobID, id)
+						}
+					}(subID)
 				}
+				wg.Wait()
 				if len(subData) > 0 {
 					subJSON, _ := json.Marshal(subData)
 					subInputs = make(map[string]any)
@@ -696,8 +716,13 @@ func (s *Server) executeAndSettle(jobID int64, chainJobID int64, agent *db.Agent
 		}
 		outputData, execErr = s.runBuiltinReportComposer(ctx, subInputs)
 	default:
-		// External webhook agent
-		outputData, execErr = s.runWebhookAgent(ctx, jobID, agent, inputs)
+		// Community agent via HTTP endpoint or legacy webhook
+		if agent.IsCommunity && agent.EndpointURL != nil && *agent.EndpointURL != "" {
+			log.Printf("[RunJob] Job #%d: routing to community agent %s at %s", jobID, agent.ID, *agent.EndpointURL)
+			outputData, execErr = agents.RunCommunityAgent(ctx, agent, jobID, inputs)
+		} else {
+			outputData, execErr = s.runWebhookAgent(ctx, jobID, agent, inputs)
+		}
 	}
 
 	// Check timeout

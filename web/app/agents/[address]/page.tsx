@@ -11,6 +11,8 @@ type Agent = {
   pricing: { per_call_usdc: number; trial_available: boolean }
   trust_score: number; reputation_score: number; operator_wallet: string
   input_schema: any; metadata: any
+  full_description?: string; how_to_use?: string; external_link?: string
+  sample_output?: string; is_community: boolean; is_verified: boolean
 }
 
 type Stats = {
@@ -68,6 +70,14 @@ export default function AgentDetailPage() {
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-3xl font-black font-[var(--font-headline)]">{agent.name}</h1>
               <span className="px-2 py-0.5 bg-cyan-400/10 text-cyan-400 rounded text-[9px] font-bold uppercase">{agent.category}</span>
+              {agent.is_community ? (
+                <span className="px-2 py-0.5 bg-yellow-400/10 text-yellow-400 rounded text-[9px] font-bold uppercase">Community</span>
+              ) : (
+                <span className="px-2 py-0.5 bg-cyan-400/10 text-cyan-400 rounded text-[9px] font-bold uppercase">Official</span>
+              )}
+              {agent.is_verified && (
+                <span className="px-2 py-0.5 bg-emerald-400/10 text-emerald-400 rounded text-[9px] font-bold uppercase">&#x2713; Verified</span>
+              )}
             </div>
             <p className="text-[#bac9cc] text-lg mb-4">{agent.description}</p>
             <div className="flex flex-wrap gap-2">
@@ -97,6 +107,43 @@ export default function AgentDetailPage() {
               <p className={`text-2xl font-black font-[var(--font-headline)] ${s.color}`}>{s.value}</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* About */}
+      {agent.full_description && (
+        <div className="glass-panel p-8 rounded-3xl border border-white/5 mb-8">
+          <h2 className="text-xl font-bold font-[var(--font-headline)] mb-4">About</h2>
+          <p className="text-[#bac9cc] leading-relaxed whitespace-pre-line">{agent.full_description}</p>
+        </div>
+      )}
+
+      {/* How to Use */}
+      {agent.how_to_use && (
+        <div className="glass-panel p-8 rounded-3xl border border-white/5 mb-8">
+          <h2 className="text-xl font-bold font-[var(--font-headline)] mb-4">How to Use</h2>
+          <p className="text-[#bac9cc] leading-relaxed whitespace-pre-line">{agent.how_to_use}</p>
+        </div>
+      )}
+
+      {/* Sample Output (from agent field) */}
+      {agent.sample_output && (
+        <div className="glass-panel p-8 rounded-3xl border border-white/5 mb-8">
+          <h2 className="text-xl font-bold font-[var(--font-headline)] mb-4">Sample Output</h2>
+          <pre className="p-4 bg-black/50 rounded-xl text-xs font-mono text-gray-300 whitespace-pre-wrap overflow-auto max-h-64">
+            {agent.sample_output}
+          </pre>
+        </div>
+      )}
+
+      {/* External Links */}
+      {agent.external_link && (
+        <div className="glass-panel p-8 rounded-3xl border border-white/5 mb-8">
+          <h2 className="text-xl font-bold font-[var(--font-headline)] mb-4">External Links</h2>
+          <a href={agent.external_link} target="_blank" rel="noopener noreferrer"
+            className="text-cyan-400 hover:text-cyan-300 font-bold text-sm break-all">
+            {agent.external_link} &#x2197;
+          </a>
         </div>
       )}
 

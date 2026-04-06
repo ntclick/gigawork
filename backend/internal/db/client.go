@@ -195,6 +195,10 @@ func (c *Client) InsertDispute(ctx context.Context, dispute *Dispute) error {
 	return c.insert(ctx, "disputes", dispute)
 }
 
+func (c *Client) InsertJobReport(ctx context.Context, report *JobReport) error {
+	return c.insert(ctx, "job_reports", report)
+}
+
 func (c *Client) GetDisputesByJob(ctx context.Context, jobID int64) ([]Dispute, error) {
 	var disputes []Dispute
 	err := c.query(ctx, "disputes", fmt.Sprintf("job_id=eq.%d", jobID), &disputes)

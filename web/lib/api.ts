@@ -24,6 +24,8 @@ export const api = {
     cached: (addr: string, inputs: Record<string, any>) =>
       fetchJSON(`/agents/${addr}/cached`, { method: 'POST', body: JSON.stringify({ inputs }) }),
     stats: (addr: string) => fetchJSON(`/agents/${addr}/stats`),
+    match: (task: string) =>
+      fetchJSON('/agents/match', { method: 'POST', body: JSON.stringify({ task }) }),
   },
   jobs: {
     list: (params?: string) => fetchJSON(`/jobs${params ? '?' + params : ''}`),
@@ -39,6 +41,8 @@ export const api = {
     register: (body: { job_id: string; employer: string; agent_address: string; amount: string; input: Record<string, any> }) =>
       fetchJSON('/jobs/register', { method: 'POST', body: JSON.stringify(body) }),
     result: (id: number) => fetchJSON(`/jobs/${id}/result`),
+    report: (id: number, body: { reason: string; description: string; wallet: string }) =>
+      fetchJSON(`/jobs/${id}/report`, { method: 'POST', body: JSON.stringify(body) }),
     execute: (body: { agent_address: string; wallet: string; approve_tx?: string; reuse?: boolean; inputs: Record<string, any> }) =>
       fetchJSON('/jobs/execute', { method: 'POST', body: JSON.stringify(body) }),
   },

@@ -87,6 +87,8 @@ var globalLimiter = newRateLimiter(60, time.Minute)
 // Strict per-wallet limiters for expensive endpoints
 var agentRunLimiter = newRateLimiter(10, time.Minute)
 var intentParseLimiter = newRateLimiter(20, time.Minute)
+var executeJobLimiter = newRateLimiter(3, time.Minute)
+var registerAgentLimiter = newRateLimiter(5, time.Minute)
 
 // RateLimitByIP is chi middleware for global per-IP limiting.
 func RateLimitByIP(next http.Handler) http.Handler {
@@ -109,6 +111,30 @@ func RateLimitAgentRun(next http.HandlerFunc) http.HandlerFunc {
 			key = addr.(string)
 		}
 		if !agentRunLimiter.allow("run:" + key) {
+			write429(w)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// RateLimitExecuteJob wraps a handler with strict per-IP limiting (3/min).
+func RateLimitExecuteJob(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := extractIP(r)
+		if !executeJobLimiter.allow("exec:" + key) {
+			write429(w)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// RateLimitRegisterAgent wraps a handler with per-IP limiting (5/min).
+func RateLimitRegisterAgent(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := extractIP(r)
+		if !registerAgentLimiter.allow("register:" + key) {
 			write429(w)
 			return
 		}
