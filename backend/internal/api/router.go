@@ -34,6 +34,7 @@ var allowedOrigins = func() []string {
 		"http://localhost:3000",
 		"http://localhost:3001",
 		"https://gigawork.vercel.app",
+		"https://gigawork.netlify.app",
 	}
 }()
 
