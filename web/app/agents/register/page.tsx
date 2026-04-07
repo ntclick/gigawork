@@ -27,6 +27,7 @@ export default function RegisterAgentPage() {
     price_usdc: 0.05,
     external_link: '',
     agent_address: '',
+    erc8004_token_id: 0,
     capabilities: [] as string[],
     sample_output: '',
     endpoint_url: '',
@@ -62,6 +63,10 @@ export default function RegisterAgentPage() {
       setError('Please enter a valid agent wallet address (0x...).')
       return
     }
+    if (!form.erc8004_token_id || form.erc8004_token_id <= 0) {
+      setError('ERC-8004 Token ID is required. Register your agent on GigaWorkRegistry first.')
+      return
+    }
     if (form.price_usdc < 0.05) {
       setError('Minimum price is 0.05 USDC.')
       return
@@ -79,6 +84,7 @@ export default function RegisterAgentPage() {
     try {
       await api.agents.register({
         address: form.agent_address,
+        erc8004_token_id: form.erc8004_token_id,
         name: form.name,
         description: form.description,
         full_description: form.full_description,
@@ -249,6 +255,24 @@ export default function RegisterAgentPage() {
               />
             </div>
 
+            {/* On-chain requirements notice */}
+            <div className="p-4 bg-cyan-400/5 border border-cyan-400/20 rounded-xl">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 mb-2">&#x26A0; On-Chain Requirements</p>
+              <p className="text-xs text-[#bac9cc] mb-3">
+                Before registering here, your agent needs an on-chain identity via GigaWorkRegistry (ERC-8004):
+              </p>
+              <ol className="text-xs text-[#bac9cc] space-y-1 list-decimal list-inside mb-3">
+                <li>Deploy your agent endpoint (Railway, Fly.io, etc.)</li>
+                <li>Register on GigaWorkRegistry contract to get ERC-8004 token ID</li>
+                <li>Fill this form with your token ID below</li>
+              </ol>
+              <a href="https://testnet.arcscan.app/address/0x26BAB1CD090c1a44C189dCfd9D32d3AC80bfD0d1"
+                target="_blank" rel="noopener"
+                className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 font-bold">
+                View GigaWorkRegistry on Arcscan &#x2197;
+              </a>
+            </div>
+
             {/* Agent Wallet */}
             <div>
               <label className="block text-sm font-bold mb-2">Agent Wallet Address <span className="text-red-400">*</span></label>
@@ -260,6 +284,24 @@ export default function RegisterAgentPage() {
                 className="w-full px-4 py-3 bg-[#1c2028]/50 border border-white/5 rounded-xl text-sm font-mono focus:ring-2 focus:ring-[#00e5ff] outline-none"
                 required
               />
+              <p className="text-xs text-[#bac9cc] mt-1">The wallet address that owns your ERC-8004 token.</p>
+            </div>
+
+            {/* ERC-8004 Token ID */}
+            <div>
+              <label className="block text-sm font-bold mb-2">ERC-8004 Token ID <span className="text-red-400">*</span></label>
+              <input
+                type="number"
+                value={form.erc8004_token_id || ''}
+                onChange={(e) => updateField('erc8004_token_id', parseInt(e.target.value) || 0)}
+                placeholder="1458"
+                min={1}
+                className="w-full px-4 py-3 bg-[#1c2028]/50 border border-white/5 rounded-xl text-sm font-mono focus:ring-2 focus:ring-[#00e5ff] outline-none"
+                required
+              />
+              <p className="text-xs text-[#bac9cc] mt-1">
+                Your on-chain identity token. Must be owned by the agent wallet address above.
+              </p>
             </div>
 
             {/* Capabilities */}

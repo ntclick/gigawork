@@ -140,7 +140,6 @@ func main() {
 		r.Get("/jobs", webHandler.JobBoard)
 		r.Get("/agents", webHandler.AgentsPage)
 		r.Get("/post-job", webHandler.PostJobPage)
-		r.Get("/register", webHandler.RegisterAgentPage)
 		r.Get("/onboard", webHandler.OnboardPage)
 		r.Get("/guide", webHandler.GuidePage)
 	})

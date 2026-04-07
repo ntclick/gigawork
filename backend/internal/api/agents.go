@@ -82,26 +82,35 @@ func (s *Server) RegisterAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ─── On-Chain Verification: Confirm NFT ownership ────────
-	if s.IdentityRegistry != nil && req.ERC8004TokenID > 0 {
-		tokenId := new(big.Int).SetInt64(req.ERC8004TokenID)
-		owner, err := s.IdentityRegistry.OwnerOf(&bind.CallOpts{}, tokenId)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf(
-				"ERC-8004 Token #%d does not exist on-chain.",
-				req.ERC8004TokenID,
-			))
-			return
-		}
+	// ─── On-Chain Verification: REQUIRED ERC-8004 NFT ownership ────────
+	if req.ERC8004TokenID <= 0 {
+		writeError(w, http.StatusBadRequest,
+			"ERC-8004 Token ID is required. Register your agent on GigaWorkRegistry contract first at 0x26BAB1CD090c1a44C189dCfd9D32d3AC80bfD0d1")
+		return
+	}
 
-		reqAddr := common.HexToAddress(req.Address)
-		if !strings.EqualFold(owner.Hex(), reqAddr.Hex()) {
-			writeError(w, http.StatusForbidden, fmt.Sprintf(
-				"ERC-8004 Token #%d is owned by %s, not %s.",
-				req.ERC8004TokenID, owner.Hex(), reqAddr.Hex(),
-			))
-			return
-		}
+	if s.IdentityRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "on-chain verification unavailable")
+		return
+	}
+
+	tokenId := new(big.Int).SetInt64(req.ERC8004TokenID)
+	owner, err := s.IdentityRegistry.OwnerOf(&bind.CallOpts{}, tokenId)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf(
+			"Agent not found on-chain. ERC-8004 Token #%d does not exist. Please register via GigaWorkRegistry contract first.",
+			req.ERC8004TokenID,
+		))
+		return
+	}
+
+	reqAddr := common.HexToAddress(req.Address)
+	if !strings.EqualFold(owner.Hex(), reqAddr.Hex()) {
+		writeError(w, http.StatusForbidden, fmt.Sprintf(
+			"ERC-8004 Token #%d is owned by %s, not %s. You can only register agents you own.",
+			req.ERC8004TokenID, owner.Hex(), reqAddr.Hex(),
+		))
+		return
 	}
 
 	billingUnit := req.BillingUnit
