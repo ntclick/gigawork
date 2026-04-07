@@ -375,39 +375,47 @@ Also analyze these specific focus areas and include a "focus_analysis" object wi
 Focus areas: %s`, strings.Join(focusAreas, ", "))
 	}
 
-	prompt := fmt.Sprintf(`You are a senior analyst who has synthesized thousands of technical documents and whitepapers.
+	prompt := fmt.Sprintf(`You are a senior analyst specializing in crypto, DeFi, and blockchain technical documents.
 
-Read this document and return ONLY valid JSON:
+Analyze the document below and return a JSON object matching EXACTLY this schema. ALL fields are REQUIRED — never leave arrays empty if the document contains relevant information.
+
 {
-  "title": "string",
-  "document_type": "string",
-  "summary": "3-5 sentence executive synthesis leading with the 'so what'",
-  "key_points": ["precise findings with section references"],
-  "sections": [{"title": "string", "summary": "string"}],
-  "entities": {"people": [], "organizations": [], "technologies": []},
-  "focus_analysis": "string",
+  "title": "extract the document's actual title from the first few lines",
+  "summary": "3-5 sentence executive synthesis. Lead with the single most important insight. What problem does it solve? What is the key innovation? What are the implications?",
+  "key_points": ["5-10 specific findings with numbers, dates, and technical details"],
+  "sections": [
+    {"heading": "Section name from document", "summary": "1-2 sentence summary of this section"}
+  ],
+  "entities": {
+    "people": ["named individuals mentioned"],
+    "organizations": ["companies, protocols, DAOs mentioned"],
+    "technologies": ["specific tech, protocols, standards (e.g. ERC-20, zk-SNARK, BFT consensus)"],
+    "dates": ["important dates mentioned (e.g. launch dates, milestones)"]
+  },
   "sentiment": "positive|negative|neutral",
-  "credibility_signals": ["indicators of document credibility"],
-  "red_flags": ["inconsistencies or unsupported claims found"]
+  "credibility_signals": ["indicators this document is credible: cited papers, named authors, clear methodology, verifiable claims, team backgrounds"],
+  "red_flags": ["vague claims, missing team info, no audit, unrealistic promises, plagiarism, grammatical issues"]
 }
 
-Standards:
-- Lead with the single most important insight
-- Use precise language with actual numbers
-- Flag unsupported claims or missing data
-- Match technical depth to source material
+CRITICAL RULES:
+- Extract REAL content from the document. Never invent entities.
+- If the document mentions specific numbers ("$47B market cap", "3000 TPS", "Layer 1"), include them in key_points.
+- sections must have "heading" key (not "title"). Extract actual section headings from the document.
+- Include at least 3-5 sections if the document has them.
+- Include at least 2-3 entities per category if they exist in the document.
+- Return ONLY the JSON object, no markdown code fences, no explanation.
 %s
-Output format preference: %s
-
 Document text:
-%s`, focusPrompt, outputFormat, llmText)
+%s`, focusPrompt, llmText)
+	_ = outputFormat
 
 	payload := map[string]any{
 		"model": "deepseek-chat",
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"temperature": 0.2,
+		"temperature":      0.3,
+		"response_format":  map[string]string{"type": "json_object"},
 	}
 	body, _ := json.Marshal(payload)
 
