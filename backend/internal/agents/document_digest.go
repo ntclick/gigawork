@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/ledongthuc/pdf"
 )
 
 // ─── Types ───────────────────────────────────────────────────
@@ -187,46 +189,40 @@ func extractPDFText(r io.Reader) (string, error) {
 		return "", err
 	}
 
-	// Basic PDF text extraction: find text between BT/ET markers
-	// and parenthesized strings. This handles simple PDFs.
-	// For production, use a real PDF library.
-	var result strings.Builder
-	content := string(data)
+	// Use github.com/ledongthuc/pdf — pure Go PDF parser
+	reader, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("PDF parse failed: %w", err)
+	}
 
-	// Method 1: Extract parenthesized text from stream content
-	re := regexp.MustCompile(`\(([^)]{1,500})\)`)
-	matches := re.FindAllStringSubmatch(content, -1)
-	for _, m := range matches {
-		text := m[1]
-		// Skip binary-looking strings
-		if len(text) > 2 && utf8.ValidString(text) && !strings.ContainsAny(text, "\x00\x01\x02\x03\x04\x05") {
-			result.WriteString(text)
-			result.WriteString(" ")
+	var result strings.Builder
+	totalPages := reader.NumPage()
+
+	for pageNum := 1; pageNum <= totalPages; pageNum++ {
+		page := reader.Page(pageNum)
+		if page.V.IsNull() {
+			continue
+		}
+		text, err := page.GetPlainText(nil)
+		if err != nil {
+			log.Printf("[Digest] PDF page %d extract error: %v", pageNum, err)
+			continue
+		}
+		result.WriteString(text)
+		result.WriteString("\n\n")
+
+		// Stop if we've extracted enough
+		if result.Len() > maxDocChars {
+			break
 		}
 	}
 
 	extracted := result.String()
-	if len(strings.Fields(extracted)) < 20 {
-		// Method 2: Look for readable ASCII runs
-		var run strings.Builder
-		for _, b := range data {
-			if b >= 32 && b < 127 || b == '\n' || b == '\r' || b == '\t' {
-				run.WriteByte(b)
-			} else {
-				if run.Len() > 20 {
-					result.WriteString(run.String())
-					result.WriteString(" ")
-				}
-				run.Reset()
-			}
-		}
-		if run.Len() > 20 {
-			result.WriteString(run.String())
-		}
-		extracted = result.String()
-	}
 
-	// Clean up whitespace
+	// Clean up whitespace and ensure valid UTF-8
+	if !utf8.ValidString(extracted) {
+		extracted = strings.ToValidUTF8(extracted, "")
+	}
 	extracted = regexp.MustCompile(`\s+`).ReplaceAllString(extracted, " ")
 	extracted = strings.TrimSpace(extracted)
 
@@ -235,9 +231,10 @@ func extractPDFText(r io.Reader) (string, error) {
 	}
 
 	if len(strings.Fields(extracted)) < 10 {
-		return "", fmt.Errorf("PDF text extraction yielded too little text (%d words)", len(strings.Fields(extracted)))
+		return "", fmt.Errorf("PDF text extraction yielded too little text (%d words from %d pages)", len(strings.Fields(extracted)), totalPages)
 	}
 
+	log.Printf("[Digest] Extracted %d words from %d PDF pages", len(strings.Fields(extracted)), totalPages)
 	return extracted, nil
 }
 
