@@ -203,12 +203,25 @@ func extractPDFText(r io.Reader) (string, error) {
 		if page.V.IsNull() {
 			continue
 		}
-		text, err := page.GetPlainText(nil)
-		if err != nil {
-			log.Printf("[Digest] PDF page %d extract error: %v", pageNum, err)
-			continue
+
+		// Use Content() to get positioned text runs — add spaces between runs
+		// because PDFs often use positioning instead of space chars.
+		content := page.Content()
+		var lastX, lastY float64
+		firstRun := true
+		for _, t := range content.Text {
+			// New line if Y position changed significantly
+			if !firstRun && (lastY-t.Y > 5 || t.Y-lastY > 5) {
+				result.WriteString("\n")
+			} else if !firstRun && t.X-lastX > 2 {
+				// Same line but X moved forward → space
+				result.WriteString(" ")
+			}
+			result.WriteString(t.S)
+			lastX = t.X + t.W
+			lastY = t.Y
+			firstRun = false
 		}
-		result.WriteString(text)
 		result.WriteString("\n\n")
 
 		// Stop if we've extracted enough
@@ -223,7 +236,9 @@ func extractPDFText(r io.Reader) (string, error) {
 	if !utf8.ValidString(extracted) {
 		extracted = strings.ToValidUTF8(extracted, "")
 	}
-	extracted = regexp.MustCompile(`\s+`).ReplaceAllString(extracted, " ")
+	// Collapse multiple spaces but preserve newlines
+	extracted = regexp.MustCompile(`[ \t]+`).ReplaceAllString(extracted, " ")
+	extracted = regexp.MustCompile(`\n{3,}`).ReplaceAllString(extracted, "\n\n")
 	extracted = strings.TrimSpace(extracted)
 
 	if len(extracted) > maxDocChars {
