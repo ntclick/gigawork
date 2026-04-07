@@ -14,20 +14,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
         config={{
           defaultChain: arcTestnet,
           supportedChains: [arcTestnet],
-          loginMethods: ['email', 'wallet'],
+          loginMethods: ['email'],
           embeddedWallets: {
             ethereum: {
-              createOnLogin: 'users-without-wallets',
+              createOnLogin: 'all-users',
             },
           },
           appearance: {
             theme: 'dark',
             accentColor: '#00e5ff',
             showWalletLoginFirst: false,
-            walletList: ['metamask', 'detected_ethereum_wallets', 'okx_wallet', 'phantom'],
-          },
-          fundingMethodConfig: {
-            moonpay: { useSandbox: true },
+            walletList: [],
           },
         }}
       >
