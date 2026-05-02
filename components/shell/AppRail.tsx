@@ -47,9 +47,12 @@ export function AppRail() {
       </button>
 
       <Link
-        href="/library"
-        className="group flex flex-col items-center text-center opacity-70 transition-opacity hover:opacity-100"
-        title="Component Library"
+        href="/agents"
+        className={[
+          'group flex flex-col items-center text-center transition-opacity',
+          pathname.startsWith('/agents') ? 'opacity-100' : 'opacity-70 hover:opacity-100',
+        ].join(' ')}
+        title="Agents (Component Library)"
       >
         <div className="mb-2 flex h-8 w-8 items-center justify-center">
           <Library className="h-5 w-5" />

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
 import { Bell, Coins, LogOut, Menu, Wallet, X } from 'lucide-react'
 
@@ -48,6 +48,34 @@ export function MainHeader() {
 
   const wallet = user?.wallet?.address ?? null
   const usdc = useUSDCBalance(wallet)
+
+  // Sync Privy wallet → server-side session cookie. Without this, every
+  // /api/me, /api/workflows, /api/me/topup call returns 401 because the
+  // cookie was never set after Privy login. This logic used to live in
+  // WalletPill (inside TopBar), but TopBar is not rendered in the current
+  // layout — MainHeader replaced it. Idempotent: only fires when the
+  // address actually changes.
+  const syncedAddrRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!ready) return
+    const addr = user?.wallet?.address?.toLowerCase() ?? null
+    if (addr && addr !== syncedAddrRef.current) {
+      syncedAddrRef.current = addr
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: addr }),
+      })
+        .then(() => {
+          window.dispatchEvent(new CustomEvent('gw:credits-changed'))
+        })
+        .catch(() => {})
+    }
+    if (!authenticated && syncedAddrRef.current) {
+      syncedAddrRef.current = null
+      fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    }
+  }, [ready, authenticated, user?.wallet?.address])
 
   const [credits, setCredits] = useState<number | null>(null)
   useEffect(() => {
