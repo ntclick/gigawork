@@ -4,8 +4,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { IdentityGate } from '@/components/auth/IdentityGate'
-import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { TemplateCard } from '@/components/home/TemplateCard'
+import { AppRail } from '@/components/shell/AppRail'
+import { HistorySidebar } from '@/components/shell/HistorySidebar'
+import { MainHeader } from '@/components/shell/MainHeader'
 import { WORKFLOW_TEMPLATES } from '@/lib/workflowTemplates'
 
 type Me = { id: string; wallet: string; credits: number }
@@ -59,10 +61,13 @@ export function HomeClient() {
   }
 
   return (
-    <div className="giga-theme flex flex-1 overflow-hidden">
-      <HistorySidebar />
+    <>
+      <MainHeader />
+      <div className="giga-theme flex flex-1 overflow-hidden bg-[var(--giga-dark)]">
+        <AppRail />
+        <HistorySidebar />
 
-      <main className="giga-grid-bg flex-1 overflow-y-auto">
+        <main className="giga-grid-bg flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-5 py-10 sm:px-8 sm:py-14 lg:py-16">
           <header className="mb-8 text-center sm:mb-10">
             <h2 className="font-pixel-header mb-2 text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
@@ -156,6 +161,7 @@ export function HomeClient() {
           </IdentityGate>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   )
 }
