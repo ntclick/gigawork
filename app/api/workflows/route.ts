@@ -28,7 +28,11 @@ export async function GET() {
     }
     console.error('[/api/workflows] failed after retries', e)
     return NextResponse.json(
-      { workflows: [], error: 'db_unavailable' },
+      {
+        workflows: [],
+        error: 'db_unavailable',
+        message: (e instanceof Error ? e.message : String(e)).slice(0, 800),
+      },
       { status: 503 },
     )
   }

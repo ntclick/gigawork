@@ -47,7 +47,12 @@ async function handlePost(req: Request) {
     }
     console.error('[/api/workflow] auth failed', e instanceof Error ? e.message : e)
     return NextResponse.json(
-      { error: 'db_unavailable', message: 'Database is warming up. Please retry in a few seconds.' },
+      {
+        error: 'db_unavailable',
+        message:
+          (e instanceof Error ? e.message : String(e)).slice(0, 800) ||
+          'Database is warming up. Please retry in a few seconds.',
+      },
       { status: 503 },
     )
   }
@@ -86,7 +91,12 @@ async function handlePost(req: Request) {
   } catch (e) {
     console.error('[/api/workflow] db insert failed', e instanceof Error ? e.message : e)
     return NextResponse.json(
-      { error: 'db_unavailable', message: 'Database is warming up. Please retry in a few seconds.' },
+      {
+        error: 'db_unavailable',
+        message:
+          (e instanceof Error ? e.message : String(e)).slice(0, 800) ||
+          'Database is warming up. Please retry in a few seconds.',
+      },
       { status: 503 },
     )
   }
