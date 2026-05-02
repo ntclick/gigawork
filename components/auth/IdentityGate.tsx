@@ -30,22 +30,22 @@ export function IdentityGate({ children }: { children: React.ReactNode }) {
   const [step, setStep] = useState<'idle' | 'signing' | 'confirming'>('idle')
   const [err, setErr] = useState<string | null>(null)
 
-  const refresh = async () => {
+  const refresh = async (): Promise<'ok' | 'unauth' | 'error'> => {
     try {
       const r = await fetch('/api/me', { cache: 'no-store' })
       if (r.ok) {
         const j = await r.json()
         setIdentity(j.identity)
+        return 'ok'
       }
+      if (r.status === 401) return 'unauth'
+      return 'error'
     } catch {
-      /* ignore */
+      return 'error'
     }
   }
 
-  useEffect(() => {
-    refresh()
-  }, [])
-
+  // Re-run /api/me on credit/identity changes after we have an identity row.
   useEffect(() => {
     const onBust = () => refresh()
     window.addEventListener('gw:credits-changed', onBust)
@@ -56,12 +56,39 @@ export function IdentityGate({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Initial load — if Privy says authenticated, /api/me may 401 briefly while
+  // WalletPill is still POSTing to /api/auth/login (cookie race). Retry up to
+  // ~3.5s, then surface the mint CTA so the user is never stuck on the
+  // "Reading identity…" spinner. If the user is genuinely not authenticated,
+  // the !authenticated branch below handles it (Connect wallet CTA).
   useEffect(() => {
-    if (authenticated) {
-      const t = setTimeout(refresh, 600)
-      return () => clearTimeout(t)
+    if (!ready) return
+    if (!authenticated) {
+      setIdentity(null)
+      return
     }
-  }, [authenticated])
+    let cancelled = false
+    let attempts = 0
+    const tick = async () => {
+      if (cancelled) return
+      const res = await refresh()
+      if (cancelled) return
+      if (res === 'ok') return
+      attempts++
+      if (attempts < 5) {
+        setTimeout(tick, 700)
+        return
+      }
+      // Gave up after ~3.5s — assume no identity yet so the mint button shows.
+      // The mint button itself will hit /api/identity/mint which is auth-gated,
+      // so a misclassification can't let an unauthenticated user mint.
+      setIdentity({ hasIdentity: false, tokenId: null, txHash: null, mintedAt: null })
+    }
+    tick()
+    return () => {
+      cancelled = true
+    }
+  }, [ready, authenticated])
 
   const mint = async () => {
     setErr(null)
