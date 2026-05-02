@@ -5,7 +5,9 @@ import { defineChain } from 'viem'
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID
 const CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID
-const RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/demo'
+// Default to the public dRPC endpoint (no key needed). The Alchemy demo
+// URL we previously fell back to was 400-rejecting requests.
+const RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
 const arcTestnet = defineChain({

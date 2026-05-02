@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
+import { useLogin, useLogout, usePrivy, useWallets } from '@privy-io/react-auth'
 import { Bell, Coins, LogOut, Menu, Wallet, X } from 'lucide-react'
 
 import { useUSDCBalance } from '@/lib/hooks/useUSDCBalance'
@@ -40,42 +40,58 @@ function shortAddr(a: string) {
 export function MainHeader() {
   const pathname = usePathname() ?? '/'
   const { ready, authenticated, user } = usePrivy()
+  const { wallets } = useWallets()
   const { login } = useLogin()
   const { logout } = useLogout()
   const { toggleHistory } = useUI()
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-  const wallet = user?.wallet?.address ?? null
+  // Pick the most reliable wallet address. Privy's user.wallet can be null
+  // for fresh email logins until the embedded wallet finishes provisioning,
+  // so fall back to wallets[0] from useWallets() — that's already populated
+  // when the embedded wallet exists. IdentityGate uses the same fallback.
+  const walletAddr =
+    user?.wallet?.address?.toLowerCase() ??
+    wallets[0]?.address?.toLowerCase() ??
+    null
+  const wallet = walletAddr ?? null
   const usdc = useUSDCBalance(wallet)
 
   // Sync Privy wallet → server-side session cookie. Without this, every
   // /api/me, /api/workflows, /api/me/topup call returns 401 because the
-  // cookie was never set after Privy login. This logic used to live in
-  // WalletPill (inside TopBar), but TopBar is not rendered in the current
-  // layout — MainHeader replaced it. Idempotent: only fires when the
-  // address actually changes.
+  // cookie was never set after Privy login. Resets the synced ref on
+  // failure so the next render retries — important when /api/auth/login
+  // races with DB warm-up on a cold start and the first POST 5xxs.
   const syncedAddrRef = useRef<string | null>(null)
   useEffect(() => {
     if (!ready) return
-    const addr = user?.wallet?.address?.toLowerCase() ?? null
-    if (addr && addr !== syncedAddrRef.current) {
-      syncedAddrRef.current = addr
+    if (walletAddr && walletAddr !== syncedAddrRef.current) {
+      const target = walletAddr
+      syncedAddrRef.current = target
       fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet: addr }),
+        body: JSON.stringify({ wallet: target }),
+        credentials: 'same-origin',
       })
-        .then(() => {
+        .then((r) => {
+          if (!r.ok) {
+            // Roll back so the next effect tick retries.
+            if (syncedAddrRef.current === target) syncedAddrRef.current = null
+            return
+          }
           window.dispatchEvent(new CustomEvent('gw:credits-changed'))
         })
-        .catch(() => {})
+        .catch(() => {
+          if (syncedAddrRef.current === target) syncedAddrRef.current = null
+        })
     }
     if (!authenticated && syncedAddrRef.current) {
       syncedAddrRef.current = null
       fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
     }
-  }, [ready, authenticated, user?.wallet?.address])
+  }, [ready, authenticated, walletAddr])
 
   const [credits, setCredits] = useState<number | null>(null)
   useEffect(() => {
