@@ -20,8 +20,9 @@ import { useUI } from './UIShell'
  */
 
 const NAV = [
+  { label: 'Home', href: '/', glyph: '⌂', match: (p: string) => p === '/' },
   { label: 'Dashboard', href: '/dashboard', glyph: '■' },
-  { label: 'Workflows', href: '/', glyph: '⚡', match: (p: string) => p === '/' || p.startsWith('/workflow') },
+  { label: 'Workflows', href: '/', glyph: '⚡', match: (p: string) => p.startsWith('/workflow') },
   { label: 'Agents', href: '/agents', glyph: '◆' },
   { label: 'Finance', href: '/finance', glyph: '$' },
   { label: 'Settings', href: '/settings', glyph: '⚙' },
