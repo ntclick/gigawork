@@ -22,7 +22,16 @@ const identityAbi = parseAbi([
   'function register(string agentURI) external returns (uint256 agentId)',
 ])
 
-export function IdentityGate({ children }: { children: React.ReactNode }) {
+export function IdentityGate({
+  children,
+  mode = 'block',
+}: {
+  children: React.ReactNode
+  /** 'block' (default) hides children until minted. 'banner' renders the
+   *  identity prompt above and always shows children below — useful on the
+   *  home page where templates should stay browsable while the user mints. */
+  mode?: 'block' | 'banner'
+}) {
   const { ready, authenticated, user } = usePrivy()
   const { login } = useLogin()
   const { wallets } = useWallets()
@@ -153,34 +162,64 @@ export function IdentityGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!authenticated) {
-    return (
+    const lock = (
       <Lock
         icon={<Wallet className="h-6 w-6 text-cyan-300" />}
-        title="Kết nối ví để bắt đầu"
-        body="Kết nối Privy để nhận 300 credit miễn phí và mint NFT identity (ERC-8004) — bắt buộc trước khi tạo workflow đầu tiên."
+        title="Connect a wallet to get started"
+        body="Connect with Privy to claim 300 free credits and mint your ERC-8004 identity NFT — required before creating your first workflow."
         cta={{ label: 'Connect wallet', onClick: () => login() }}
       />
+    )
+    return mode === 'banner' ? (
+      <>
+        <div className="mb-6">{lock}</div>
+        {children}
+      </>
+    ) : (
+      lock
     )
   }
 
   if (!identity) {
-    return <Lock icon={<Loader2 className="h-5 w-5 animate-spin text-cyan-300" />} title="Đang đọc identity…" body="" />
+    const lock = (
+      <Lock
+        icon={<Loader2 className="h-5 w-5 animate-spin text-cyan-300" />}
+        title="Loading identity…"
+        body=""
+      />
+    )
+    return mode === 'banner' ? (
+      <>
+        <div className="mb-6">{lock}</div>
+        {children}
+      </>
+    ) : (
+      lock
+    )
   }
 
   if (!identity.hasIdentity) {
     const label =
-      step === 'signing' ? 'Đang ký giao dịch…' :
-      step === 'confirming' ? 'Đang xác thực on-chain…' :
-      'Mint NFT identity (ERC-8004)'
-    return (
+      step === 'signing' ? 'Signing transaction…' :
+      step === 'confirming' ? 'Verifying on-chain…' :
+      'Mint identity NFT (ERC-8004)'
+    const lock = (
       <Lock
         icon={<ShieldCheck className="h-6 w-6 text-cyan-300" />}
-        title="🎁 Bạn có 300 credit — mint NFT để mở khoá"
-        body="Bạn đã được tặng 300 credit. Mint NFT identity (ERC-8004) bằng ví Privy của bạn để bắt đầu chạy workflow — admin không bao giờ ký thay. Mỗi workflow sau này sẽ gắn với token ID này để provider agent biết bạn là client hợp lệ."
+        title="🎁 You have 300 credits — mint your NFT to unlock"
+        body="You've been granted 300 credits. Mint your ERC-8004 identity NFT with your own Privy wallet — admin never signs for you. Every workflow you run is bound to this token id so provider agents know you're a verified client."
         cta={{ label, onClick: mint, disabled: step !== 'idle' }}
         error={err}
         footer={`Contract ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
       />
+    )
+    return mode === 'banner' ? (
+      <>
+        <div className="mb-6">{lock}</div>
+        {children}
+      </>
+    ) : (
+      lock
     )
   }
 

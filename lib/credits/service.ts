@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
@@ -33,6 +33,11 @@ function normalizeWallet(wallet: string): string {
 /**
  * Returns the user row for a wallet, creating it with the signup grant if
  * absent. Idempotent — repeat calls just return the existing row.
+ *
+ * Retroactive grant: legacy users created before SIGNUP_GRANT existed (or
+ * via the now-removed DEV_WALLET back-door) end up with 0 credits and no
+ * signup_grant ledger row. We detect that and grant the bonus once, so
+ * everyone hits the same starting line.
  */
 export async function getOrCreateUser(wallet: string): Promise<User> {
   const w = normalizeWallet(wallet)
@@ -42,7 +47,9 @@ export async function getOrCreateUser(wallet: string): Promise<User> {
     () => db.select().from(users).where(eq(users.wallet, w)).limit(1),
     { label: 'getOrCreateUser:select' },
   )
-  if (existing) return existing
+  if (existing) {
+    return await maybeRetroactiveGrant(existing)
+  }
 
   const [created] = await withDbRetry(
     () => db
@@ -71,7 +78,40 @@ export async function getOrCreateUser(wallet: string): Promise<User> {
     { label: 'getOrCreateUser:reread' },
   )
   if (!row) throw new Error('user creation race lost without row')
-  return row
+  return await maybeRetroactiveGrant(row)
+}
+
+async function maybeRetroactiveGrant(u: User): Promise<User> {
+  // Skip the cheap path: if the user already has any credits or any
+  // signup_grant ledger row, they've been initialized properly.
+  if (u.credits > 0) return u
+  const [grantRow] = await withDbRetry(
+    () => db
+      .select({ id: creditLedger.id })
+      .from(creditLedger)
+      .where(and(eq(creditLedger.userId, u.id), eq(creditLedger.reason, 'signup_grant')))
+      .limit(1),
+    { label: 'maybeRetroactiveGrant:check' },
+  )
+  if (grantRow) return u
+
+  const [updated] = await withDbRetry(
+    () => db
+      .update(users)
+      .set({ credits: sql`${users.credits} + ${SIGNUP_GRANT}` })
+      .where(eq(users.id, u.id))
+      .returning(),
+    { label: 'maybeRetroactiveGrant:bump' },
+  )
+  await withDbRetry(
+    () => db.insert(creditLedger).values({
+      userId: u.id,
+      delta: SIGNUP_GRANT,
+      reason: 'signup_grant',
+    }),
+    { label: 'maybeRetroactiveGrant:ledger' },
+  )
+  return updated ?? u
 }
 
 /**

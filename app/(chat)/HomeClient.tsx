@@ -78,7 +78,7 @@ export function HomeClient() {
             </p>
           </header>
 
-          <IdentityGate>
+          <IdentityGate mode="banner">
             <section className="mb-10 sm:mb-14">
               <div className="border-2 border-[var(--giga-accent)] p-2">
                 <div className="relative bg-[var(--giga-panel)] p-4 sm:p-6">
