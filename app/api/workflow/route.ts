@@ -15,6 +15,24 @@ const Body = z.object({
 })
 
 export async function POST(req: Request) {
+  try {
+    return await handlePost(req)
+  } catch (e) {
+    // Belt-and-suspenders: if anything escapes the inner try/catches,
+    // log it and surface as 503 so the home Send button gets a usable
+    // error shape instead of a bare 500 with stack trace.
+    console.error('[/api/workflow] uncaught', e instanceof Error ? e.stack ?? e.message : e)
+    return NextResponse.json(
+      {
+        error: 'internal',
+        message: e instanceof Error ? e.message : 'unknown server error',
+      },
+      { status: 503 },
+    )
+  }
+}
+
+async function handlePost(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 })
