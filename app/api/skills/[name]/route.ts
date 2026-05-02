@@ -11,17 +11,20 @@ type RouteCtx = { params: Promise<{ name: string }> }
  * fails (network, rate-limit), the handler should fall back to the mock so
  * the brain always has SOMETHING concrete to compose.
  *
- * Wiring status (April 2026):
+ * Wiring status (May 2026):
  *  ✅ defi-yields       → DefiLlama /pools (FREE, no key)
- *  ☐ polymarket-pulse   → Polymarket Gamma API (FREE)
- *  ☐ trading-signals    → Binance ticker (FREE) + TAAPI (paid)
- *  ☐ nft-floor-watch    → Reservoir (free tier key)
- *  ☐ whale-tracker      → Alchemy (free tier key)
- *  ☐ crypto-scanner     → CoinGecko + DexScreener (free)
- *  ☐ social-sentiment   → Reddit OAuth (free) + Apify (paid)
- *  ☐ web-intel          → Serper / Tavily (free tier keys)
- *  ☐ document-digest    → DEEPSEEK_API_KEY
- *  ☐ report-composer    → DEEPSEEK_API_KEY
+ *  ✅ polymarket-pulse  → Polymarket Gamma API (FREE, curl+DoH for CF bypass)
+ *  ✅ trading-signals   → Binance public ticker (FREE)
+ *  ✅ nft-floor-watch   → OpenSea v2 (free without key, higher quota with OPENSEA_API_KEY)
+ *  ✅ whale-tracker     → Alchemy JSON-RPC (requires ALCHEMY_API_KEY)
+ *  ✅ crypto-scanner    → Birdeye + DexScreener + CoinGecko (multi-source)
+ *  ✅ social-sentiment  → Reddit public + Apify Twitter (APIFY_API_TOKEN optional)
+ *  ✅ web-intel         → Apify Google Search Scraper (requires APIFY_API_TOKEN)
+ *  ✅ document-digest   → fetch URL + Kimi K2 JSON digest (requires KIMI_API_KEY)
+ *  ✅ report-composer   → Kimi K2 markdown synthesis (requires KIMI_API_KEY)
+ *  ✅ dca-executor      → Binance ticker → tier table around live spot (planner, no trades)
+ *  ✅ email-sender      → Resend API (per-user api_key; dev-mock if absent)
+ *  ✅ telegram-sender   → Telegram Bot API (per-user bot_token; dev-mock if absent)
  */
 
 function hash(s: string): number {
@@ -713,24 +716,165 @@ const SKILLS: Record<string, SkillHandler> = {
     }
   },
 
-  'document-digest': (input) => {
-    const url = (input.document_url as string | undefined) ?? ''
-    const seed = `doc:${url}`
+  'document-digest': async (input) => {
+    const url = ((input.document_url as string | undefined) ?? '').trim()
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return {
+        url,
+        digested: false,
+        error: 'document_url must be a valid http(s) URL',
+        generated_at: new Date().toISOString(),
+      }
+    }
+
+    const kimiKey = process.env.KIMI_API_KEY ?? ''
+    const kimiBase = process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1'
+    const kimiModel = process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview'
+    if (!kimiKey) {
+      return {
+        url,
+        digested: false,
+        error: 'KIMI_API_KEY not set — document-digest needs an LLM to synthesize.',
+        generated_at: new Date().toISOString(),
+      }
+    }
+
+    // Step 1 — fetch the page. Plain HTML, no special TLS handling needed for
+    // most sites. Cap body to 1 MB to keep prompts small.
+    const MAX_BYTES = 1_000_000
+    let raw: string
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 15_000)
+      const r = await fetch(url, {
+        signal: ctrl.signal,
+        headers: {
+          'user-agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 GigaWork/1.0',
+          accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
+        },
+      }).finally(() => clearTimeout(timer))
+      if (!r.ok) {
+        return {
+          url,
+          digested: false,
+          error: `fetch failed: HTTP ${r.status}`,
+          generated_at: new Date().toISOString(),
+        }
+      }
+      const buf = await r.arrayBuffer()
+      raw = new TextDecoder('utf-8', { fatal: false }).decode(
+        buf.byteLength > MAX_BYTES ? buf.slice(0, MAX_BYTES) : buf,
+      )
+    } catch (e) {
+      return {
+        url,
+        digested: false,
+        error: `fetch error: ${e instanceof Error ? e.message : 'unknown'}`,
+        generated_at: new Date().toISOString(),
+      }
+    }
+
+    // Step 2 — coarse HTML → text. Drop scripts/styles, strip tags, decode
+    // a few common entities, collapse whitespace. Good enough for an LLM
+    // brief; not a full DOM parser.
+    const stripped = raw
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim()
+    const text = stripped.length > 30_000 ? stripped.slice(0, 30_000) : stripped
+    const sourceWordCount = text.split(/\s+/).filter(Boolean).length
+
+    if (text.length < 80) {
+      return {
+        url,
+        digested: false,
+        error: 'page body too short to digest (likely a JS-rendered page or blocked)',
+        word_count: sourceWordCount,
+        generated_at: new Date().toISOString(),
+      }
+    }
+
+    // Step 3 — ask Kimi for a structured JSON digest. We instruct strict JSON
+    // so we can parse it; on parse failure we fall back to wrapping the
+    // markdown reply.
+    const sys =
+      'You are a precise document summarizer. Read the supplied page text and ' +
+      'return STRICT JSON with keys: title (string, short), tldr (1-2 sentences, ' +
+      'plain English), key_claims (array of 3-6 short strings, each a single ' +
+      'concrete claim from the text — do NOT invent), source_type (one of ' +
+      '"article","docs","spec","blog","listing","other"). No extra prose, no ' +
+      'code fences, JSON only.'
+    const userPrompt = `URL: ${url}\n\nPage text:\n\n${text}`
+
+    let parsedDigest: {
+      title?: string
+      tldr?: string
+      key_claims?: string[]
+      source_type?: string
+    } = {}
+    let composedRaw = ''
+    try {
+      const r = await curlFetchJSON<{
+        choices: { message: { content: string } }[]
+      }>(`${kimiBase}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${kimiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: kimiModel,
+          messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 900,
+          response_format: { type: 'json_object' },
+        }),
+        timeoutMs: 25_000,
+      })
+      composedRaw = r.choices?.[0]?.message?.content?.trim() ?? ''
+      try {
+        parsedDigest = JSON.parse(composedRaw) as typeof parsedDigest
+      } catch {
+        // Some models still wrap JSON in code fences despite response_format.
+        const stripped = composedRaw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim()
+        parsedDigest = JSON.parse(stripped) as typeof parsedDigest
+      }
+    } catch (e) {
+      return {
+        url,
+        digested: false,
+        error: `Kimi digest failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        word_count: sourceWordCount,
+        generated_at: new Date().toISOString(),
+      }
+    }
+
     return {
-      title: pick(seed + 't', [
-        'ERC-8004 — Trust + payment primitives for autonomous agents',
-        'Whitepaper: decentralized AI agent marketplace',
-        'Technical spec — agent identity & negotiation',
-      ] as const),
-      tldr: 'Document defines a registry-based identity system for autonomous agents with built-in payment escrow, allowing trustless coordination between agents without intermediaries.',
-      key_claims: [
-        'Agents register via on-chain registry; identity = wallet + capability manifest.',
-        'Tasks are posted as JobPackets; matched via skills metadata + reputation.',
-        'Settlement uses milestone-based escrow with evaluator attestations.',
-        'Disputes resolved via stake-weighted arbitration across known agents.',
-      ],
+      url,
+      digested: true,
+      title: parsedDigest.title ?? null,
+      tldr: parsedDigest.tldr ?? null,
+      key_claims: Array.isArray(parsedDigest.key_claims)
+        ? parsedDigest.key_claims.slice(0, 6)
+        : [],
+      source_type: parsedDigest.source_type ?? 'other',
       citations: [{ url, label: 'source' }],
-      word_count: Math.round(jitter(seed + 'w', 1180)),
+      word_count: sourceWordCount,
+      model: kimiModel,
       generated_at: new Date().toISOString(),
     }
   },
@@ -815,34 +959,79 @@ const SKILLS: Record<string, SkillHandler> = {
   },
 
   // ════════════════════════════════════════════════════════════════
-  // NEW STUBS — same deterministic-jitter pattern, real-API ready.
-  // To wire real data: replace each function body with a fetch() to
-  // the listed provider; keep the return JSON shape unchanged.
+  // Live providers. Each handler returns the same JSON shape whether
+  // or not the upstream API is reachable; on failure we annotate the
+  // response with `data_sources` / error fields so the brain composer
+  // can degrade gracefully.
   // ════════════════════════════════════════════════════════════════
 
-  // Provider: CoinGecko (free pro) + Binance public ticker.
-  // No external call yet — synth a tier table + schedule.
-  'dca-executor': (input) => {
+  // Provider: Binance public ticker (FREE, no key). Returns the spot price
+  // and a buy-tier table built around it — DCA "buy more when price is below
+  // mean, less when above". Does NOT execute trades; this is a planner.
+  'dca-executor': async (input) => {
     const asset = ((input.asset as string | undefined) ?? 'BTC').toUpperCase()
-    const budget = Number(input.budget_per_buy_usd ?? 50)
-    const freq = (input.frequency as string | undefined) ?? 'daily'
-    const seed = `dca:${asset}:${budget}:${freq}`
-    const spotPrice = Number(jitter(seed, 67200, 0.1).toFixed(2))
+    const budget = Math.max(1, Number(input.budget_per_buy_usd ?? 50))
+    const freq = ((input.frequency as string | undefined) ?? 'daily').toLowerCase()
+    const slippageBps = Math.max(0, Math.min(500, Number(input.slippage_bps ?? 50)))
+
+    type BinanceTicker = { symbol: string; lastPrice: string; priceChangePercent: string }
+    const symbol = `${asset}USDT`
+
+    let spotPrice = 0
+    let pct24h = 0
+    let dataSource = 'binance'
+    try {
+      const t = await fetchJSON<BinanceTicker>(
+        `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`,
+        { timeoutMs: 6000 },
+      )
+      spotPrice = Number(t.lastPrice)
+      pct24h = Number(t.priceChangePercent)
+    } catch (e) {
+      // Binance unreachable (rate-limit, region block, dead symbol) — fall
+      // back to a synthetic but flagged spot so the brain can still render.
+      const seed = `dca:${asset}:${budget}:${freq}`
+      spotPrice = Number(jitter(seed, asset === 'BTC' ? 67000 : asset === 'ETH' ? 3500 : 100, 0.1).toFixed(2))
+      pct24h = 0
+      dataSource = `mock_fallback (${e instanceof Error ? e.message : 'binance unreachable'})`
+    }
+
+    // Build 4 tier bands centered on the live spot, ±5% / ±15%. Buy more
+    // when spot is in lower bands, less when higher.
+    const lo15 = round2(spotPrice * 0.85)
+    const lo5 = round2(spotPrice * 0.95)
+    const hi5 = round2(spotPrice * 1.05)
+    const tier_table = [
+      { price_band_usd: `< ${lo15}`, buy_amount_usd: round2(budget * 1.5), weight: 1.5 },
+      { price_band_usd: `${lo15} – ${lo5}`, buy_amount_usd: round2(budget * 1.2), weight: 1.2 },
+      { price_band_usd: `${lo5} – ${hi5}`, buy_amount_usd: budget, weight: 1.0 },
+      { price_band_usd: `> ${hi5}`, buy_amount_usd: round2(budget * 0.6), weight: 0.6 },
+    ]
+    // Pick the row that matches current spot.
+    const currentTier =
+      spotPrice < lo15 ? tier_table[0]
+      : spotPrice < lo5 ? tier_table[1]
+      : spotPrice < hi5 ? tier_table[2]
+      : tier_table[3]
+
+    const buysPer30d = freq === 'hourly' ? 24 * 30 : freq === 'weekly' ? 4 : freq === 'monthly' ? 1 : 30
+    const intervalMs = freq === 'hourly' ? 3_600_000 : freq === 'weekly' ? 604_800_000 : freq === 'monthly' ? 2_592_000_000 : 86_400_000
+
     return {
       asset,
       base_currency: 'USD',
       frequency: freq,
       base_budget_usd: budget,
-      slippage_bps: input.slippage_bps ?? 50,
-      spot_price_usd: spotPrice,
-      tier_table: [
-        { price_band_usd: '< 60,000', buy_amount_usd: budget * 1.5, weight: 1.5 },
-        { price_band_usd: '60,000 – 70,000', buy_amount_usd: budget, weight: 1.0 },
-        { price_band_usd: '70,000 – 85,000', buy_amount_usd: budget * 0.7, weight: 0.7 },
-        { price_band_usd: '> 85,000', buy_amount_usd: budget * 0.4, weight: 0.4 },
-      ],
-      next_buy_eta: new Date(Date.now() + (freq === 'hourly' ? 3600_000 : freq === 'weekly' ? 604_800_000 : 86_400_000)).toISOString(),
-      estimated_30d_spend_usd: budget * (freq === 'hourly' ? 24 * 30 : freq === 'weekly' ? 4 : 30),
+      slippage_bps: slippageBps,
+      spot_price_usd: round2(spotPrice),
+      price_change_24h_pct: round2(pct24h),
+      tier_table,
+      current_tier: currentTier,
+      next_buy_amount_usd: currentTier?.buy_amount_usd ?? budget,
+      next_buy_eta: new Date(Date.now() + intervalMs).toISOString(),
+      estimated_30d_spend_usd: round2(budget * buysPer30d),
+      data_sources: [dataSource],
+      note: 'This is a planner only — it does not execute trades. Wire to your exchange/DEX bot using the tier_table and current_tier output.',
       generated_at: new Date().toISOString(),
     }
   },
