@@ -1,0 +1,43 @@
+'use client'
+
+import { PrivyProvider } from '@privy-io/react-auth'
+import { defineChain } from 'viem'
+
+const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID
+const CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID
+const RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/demo'
+const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+
+const arcTestnet = defineChain({
+  id: 5042002,
+  name: 'Arc Testnet',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [RPC] } },
+  blockExplorers: { default: { name: 'ArcScan', url: EXPLORER } },
+  testnet: true,
+})
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  if (!APP_ID) return <>{children}</>
+  return (
+    <PrivyProvider
+      appId={APP_ID}
+      clientId={CLIENT_ID}
+      config={{
+        loginMethods: ['wallet', 'email'],
+        appearance: {
+          theme: 'dark',
+          accentColor: '#22d3ee',
+          showWalletLoginFirst: true,
+        },
+        embeddedWallets: {
+          ethereum: { createOnLogin: 'users-without-wallets' },
+        },
+        defaultChain: arcTestnet,
+        supportedChains: [arcTestnet],
+      }}
+    >
+      {children}
+    </PrivyProvider>
+  )
+}

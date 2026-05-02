@@ -1,0 +1,625 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Single palette: GigaWork pixel theme (warm purple panel + yellow accent).
+   No shadcn / no OKLCH grayscale palette — every screen wraps content in
+   `.giga-theme` which sets background + body font + color. */
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+}
+
+html {
+  background-color: #0f131c;
+  color: #d1d1e0;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+body {
+  background-color: #0f131c;
+  color: #d1d1e0;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GigaWork pixel theme — used on home + workflow editor pages.
+   Two palettes: home uses the dark-navy pixel theme, workflow editor
+   uses the warmer "giga" palette (#1a182b / #ffcc4d accent).
+   ════════════════════════════════════════════════════════════════ */
+
+/* Workflow editor palette — matches the "GigaWork - Workflow Editor" mockup */
+:root {
+  --giga-dark: #1a182b;
+  --giga-panel: #24213d;
+  --giga-sidebar: #2d2a4a;
+  --giga-accent: #ffcc4d;
+  --giga-accent-dim: #c79e2c;
+  --giga-text: #d1d1e0;
+  --giga-border-shadow: #000;
+
+  /* Node colors per step type */
+  --giga-node-blue: #4c648a;
+  --giga-node-yellow: #a68c3c;
+  --giga-node-yellow-glow: #ffcc4d;
+  --giga-node-green: #3e6a62;
+  --giga-node-red: #7a4248;
+  --giga-node-decision: #3e4f6e;
+  /* Pink — for notification agents (email, telegram, push) */
+  --giga-node-pink: #8e3a6a;
+  --giga-node-pink-glow: #f472b6;
+  /* Violet — reserved for future LLM/synthesis agents */
+  --giga-node-violet: #5e3a8e;
+}
+
+/* 4-side black pixel border (no border-radius) — matches `pixel-border` in HTML */
+.pixel-border {
+  box-shadow:
+    0 -4px 0 0 var(--giga-border-shadow),
+    0 4px 0 0 var(--giga-border-shadow),
+    -4px 0 0 0 var(--giga-border-shadow),
+    4px 0 0 0 var(--giga-border-shadow);
+}
+
+/* Smaller 2px pixel border — for compact UI like avatar frames */
+.pixel-border-sm {
+  box-shadow:
+    0 -2px 0 0 var(--giga-border-shadow),
+    0 2px 0 0 var(--giga-border-shadow),
+    -2px 0 0 0 var(--giga-border-shadow),
+    2px 0 0 0 var(--giga-border-shadow);
+}
+
+/* Canvas grid (smaller dots, lighter) — for workflow editor */
+.giga-grid-bg {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Header — readable sans with bold + wide tracking for "pixel game" feel
+   without the unreadable Press Start 2P. */
+.font-pixel-header {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Mono accent — used for tx hashes, addresses, code (NOT body) */
+.font-pixel-body {
+  font-family: var(--font-pixel), 'VT323', monospace;
+  letter-spacing: 0.5px;
+}
+
+/* Wrap a region in the workflow-editor color theme.
+   Default body font = Geist Sans (readable at small sizes). VT323 is now
+   opt-in via `.font-pixel-body` for hashes/addresses only. */
+.giga-theme {
+  background-color: var(--giga-dark);
+  color: var(--giga-text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.giga-theme h1,
+.giga-theme h2,
+.giga-theme h3 {
+  letter-spacing: 0.02em;
+}
+
+/* Node multi-shadow helpers — emulates the inner colored ring + outer black border */
+.giga-node-blue {
+  background: var(--giga-node-blue);
+  box-shadow:
+    0 0 0 2px var(--giga-node-blue),
+    0 0 0 4px var(--giga-dark);
+}
+.giga-node-yellow {
+  background: var(--giga-node-yellow);
+  color: #000;
+  box-shadow:
+    0 0 0 2px var(--giga-node-yellow-glow),
+    0 0 0 4px var(--giga-dark),
+    0 0 16px rgba(255, 204, 77, 0.5);
+}
+.giga-node-green {
+  background: var(--giga-node-green);
+  box-shadow:
+    0 0 0 2px var(--giga-node-green),
+    0 0 0 4px var(--giga-dark);
+}
+.giga-node-red {
+  background: var(--giga-node-red);
+  box-shadow:
+    0 0 0 2px var(--giga-node-red),
+    0 0 0 4px var(--giga-dark);
+}
+.giga-node-pink {
+  background: var(--giga-node-pink);
+  box-shadow:
+    0 0 0 2px var(--giga-node-pink-glow),
+    0 0 0 4px var(--giga-dark),
+    0 0 14px rgba(244, 114, 182, 0.35);
+}
+.giga-node-violet {
+  background: var(--giga-node-violet);
+  box-shadow:
+    0 0 0 2px var(--giga-node-violet),
+    0 0 0 4px var(--giga-dark);
+}
+.giga-node-decision {
+  background: var(--giga-node-decision);
+  box-shadow:
+    0 0 0 2px var(--giga-node-decision),
+    0 0 0 4px var(--giga-dark);
+}
+
+/* "✓ Verified" pill base style — color override per node type */
+.giga-verified-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-width: 1px;
+  border-style: solid;
+  font-size: 11px;
+  letter-spacing: 1px;
+  font-family: var(--font-pixel), 'VT323', monospace;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Shared utilities — used by giga theme regions
+   ════════════════════════════════════════════════════════════════ */
+
+/* Blinking cursor for empty terminal input + typewriter */
+@keyframes gw-cursor-blink {
+  0%, 49% { opacity: 1 }
+  50%, 100% { opacity: 0 }
+}
+.gw-cursor-blink {
+  animation: gw-cursor-blink 0.85s steps(2) infinite;
+  box-shadow: 0 0 6px rgba(34,211,238,0.55);
+}
+
+/* Pixel scrollbar for the giga-themed regions */
+.giga-theme ::-webkit-scrollbar { width: 8px }
+.giga-theme ::-webkit-scrollbar-track { background: var(--giga-dark) }
+.giga-theme ::-webkit-scrollbar-thumb { background: var(--giga-panel) }
+.giga-theme img,
+.giga-theme [data-pixel] {
+  image-rendering: pixelated;
+}
+
+/* GigaWork v2 — animations + glow utilities */
+
+@keyframes gw-fade-in-up {
+  from { opacity: 0; transform: translateY(4px); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@keyframes gw-slide-in-right {
+  from { opacity: 0; transform: translateX(6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes gw-slide-in-left {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes gw-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+@keyframes gw-aurora {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(30px, -20px) scale(1.05); }
+  66%      { transform: translate(-20px, 15px) scale(0.97); }
+}
+
+@keyframes gw-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes gw-typing-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30%           { opacity: 0.95; transform: translateY(-1.5px); }
+}
+
+@keyframes gw-ring-rotate {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes gw-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.0); }
+  50%      { box-shadow: 0 0 24px 0 rgba(34, 211, 238, 0.18); }
+}
+
+/* Smoother easing curves: ease-out-expo for entries */
+.gw-fade-in        { animation: gw-fade-in-up 360ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.gw-slide-in-right { animation: gw-slide-in-right 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.gw-slide-in-left  { animation: gw-slide-in-left 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.gw-pulse-soft     { animation: gw-pulse-soft 2.4s ease-in-out infinite; }
+.gw-breathe        { animation: gw-breathe 3s ease-in-out infinite; }
+
+/* Soft transition base for interactive elements */
+button, a, .gw-transition {
+  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
+  transition-duration: 220ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gw-glow-text {
+  text-shadow: 0 0 24px rgba(34, 211, 238, 0.45), 0 0 48px rgba(56, 189, 248, 0.18);
+}
+
+.gw-gradient-border {
+  position: relative;
+  background: linear-gradient(180deg, rgba(34,211,238,0.06), rgba(168,85,247,0.04));
+}
+.gw-gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(34,211,238,0.5), rgba(168,85,247,0.3), rgba(34,211,238,0.05));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
+.gw-aurora {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(80px);
+  opacity: 0.55;
+}
+.gw-aurora::before,
+.gw-aurora::after {
+  content: '';
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  animation: gw-aurora 18s ease-in-out infinite;
+}
+.gw-aurora::before {
+  top: 10%; left: 15%;
+  background: radial-gradient(circle, rgba(34,211,238,0.45), transparent 60%);
+}
+.gw-aurora::after {
+  bottom: 10%; right: 15%;
+  background: radial-gradient(circle, rgba(168,85,247,0.35), transparent 60%);
+  animation-delay: -9s;
+}
+
+.gw-grid-bg {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+.gw-shimmer {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 0%,
+    rgba(34,211,238,0.18) 50%,
+    rgba(255,255,255,0.04) 100%);
+  background-size: 200% 100%;
+  animation: gw-shimmer 1.4s ease-in-out infinite;
+}
+
+.gw-typing > span {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin: 0 1px;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.8);
+  animation: gw-typing-dot 1.2s ease-in-out infinite;
+}
+.gw-typing > span:nth-child(2) { animation-delay: 0.15s; }
+.gw-typing > span:nth-child(3) { animation-delay: 0.3s; }
+
+.gw-spinner {
+  border: 2px solid rgba(255,255,255,0.08);
+  border-top-color: rgba(34,211,238,0.9);
+  border-radius: 50%;
+  animation: gw-ring-rotate 0.9s linear infinite;
+}
+
+/* ─── Mobile drawer (chat + history) ────────────────────── */
+.gw-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 60;
+  animation: gw-fade-bg 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.gw-drawer-panel {
+  position: fixed;
+  z-index: 61;
+  background: #0b0e15;
+  display: flex;
+  flex-direction: column;
+}
+.gw-drawer-right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(96vw, 420px);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  animation: gw-drawer-in-right 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.gw-drawer-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(86vw, 280px);
+  border-right: 1px solid rgba(255,255,255,0.08);
+  animation: gw-drawer-in-left 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.gw-drawer-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 90vh;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px 14px 0 0;
+  animation: gw-drawer-in-bottom 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes gw-fade-bg { from { opacity: 0 } to { opacity: 1 } }
+@keyframes gw-drawer-in-right  { from { transform: translateX(100%); opacity: 0.4 } to { transform: translateX(0); opacity: 1 } }
+@keyframes gw-drawer-in-left   { from { transform: translateX(-100%); opacity: 0.4 } to { transform: translateX(0); opacity: 1 } }
+@keyframes gw-drawer-in-bottom { from { transform: translateY(100%); opacity: 0.4 } to { transform: translateY(0); opacity: 1 } }
+
+/* Floating action button for mobile chat trigger */
+.gw-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0));
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(34,211,238,0.95), rgba(56,189,248,0.85));
+  color: #00363d;
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: 0 12px 32px -8px rgba(34,211,238,0.55), 0 0 0 1px rgba(255,255,255,0.1);
+  animation: gw-fab-bob 3.4s ease-in-out infinite, gw-fade-in-up 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.gw-fab:active { transform: translateY(1px) }
+@keyframes gw-fab-bob {
+  0%, 100% { box-shadow: 0 12px 32px -8px rgba(34,211,238,0.55), 0 0 0 1px rgba(255,255,255,0.1) }
+  50%      { box-shadow: 0 18px 44px -6px rgba(34,211,238,0.7), 0 0 0 1px rgba(255,255,255,0.15) }
+}
+
+/* ─── Stronger hover micro-interactions (visible on desktop) ── */
+.gw-card-hover {
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 220ms,
+              background-color 220ms,
+              box-shadow 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.gw-card-hover:hover {
+  transform: translateY(-3px) scale(1.012);
+  box-shadow: 0 18px 44px -16px rgba(34,211,238,0.35),
+              0 0 0 1px rgba(34,211,238,0.25);
+}
+.gw-card-hover:active { transform: translateY(-1px) scale(1.003) }
+
+/* Press-button shine sweep — used on primary CTAs */
+.gw-shine {
+  position: relative;
+  overflow: hidden;
+}
+.gw-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.45) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.gw-shine:hover::after { transform: translateX(120%) }
+
+/* Status streaming aura — wraps the workflow canvas while running */
+.gw-streaming-aura {
+  position: relative;
+}
+.gw-streaming-aura::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, rgba(34,211,238,0.35), transparent 45%) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: gw-pulse-soft 2.4s ease-in-out infinite;
+}
+
+/* Skeleton placeholder shimmer — used on canvas empty state */
+.gw-skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  background-size: 220% 100%;
+  animation: gw-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Stagger helper — apply with --gw-stagger-delay var */
+.gw-stagger > * {
+  animation: gw-fade-in-up 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* React Flow tweaks */
+.react-flow__attribution { display: none !important; }
+
+.react-flow__edge-path {
+  stroke-dasharray: 5 4;
+  animation: gw-dash-flow 2.4s linear infinite;
+}
+@keyframes gw-dash-flow {
+  to { stroke-dashoffset: -18; }
+}
+
+/* Custom scrollbar (dark) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.3);
+}
+
+/* Markdown body — refined typography for chat reports */
+.gw-md {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.85);
+}
+.gw-md > *:first-child { margin-top: 0; }
+.gw-md > *:last-child { margin-bottom: 0; }
+
+.gw-md p { margin: 0 0 0.7rem 0; }
+.gw-md h1, .gw-md h2, .gw-md h3, .gw-md h4 {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.96);
+  margin: 1.1rem 0 0.45rem;
+  letter-spacing: -0.012em;
+  line-height: 1.35;
+}
+.gw-md h1 { font-size: 1.15rem; }
+.gw-md h2 {
+  font-size: 1.02rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.gw-md h2::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.9), rgba(168, 85, 247, 0.6));
+}
+.gw-md h3 {
+  font-size: 0.92rem;
+  color: rgba(34, 211, 238, 0.92);
+  letter-spacing: 0.01em;
+}
+.gw-md h4 {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.gw-md ul, .gw-md ol { margin: 0.4rem 0 0.85rem 0; padding-left: 1.2rem; }
+.gw-md ul { list-style: none; }
+.gw-md ul > li { position: relative; padding-left: 0.4rem; }
+.gw-md ul > li::before {
+  content: '';
+  position: absolute;
+  left: -0.6rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.65);
+}
+.gw-md ol > li { padding-left: 0.2rem; }
+.gw-md ol > li::marker { color: rgba(34, 211, 238, 0.7); font-weight: 600; }
+.gw-md li { margin: 0.25rem 0; }
+.gw-md li > p { margin: 0; }
+
+.gw-md code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.82em;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  color: rgba(94, 234, 212, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.gw-md pre {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0.8rem 1rem;
+  border-radius: 0.6rem;
+  overflow-x: auto;
+  margin: 0.7rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.78rem;
+}
+.gw-md pre code { background: transparent; padding: 0; border: 0; color: rgba(255, 255, 255, 0.85); }
+
+.gw-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.7rem 0;
+  font-size: 0.82rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.gw-md thead { background: rgba(34, 211, 238, 0.05); }
+.gw-md th, .gw-md td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 7px 12px;
+  text-align: left;
+}
+.gw-md tr:last-child td { border-bottom: 0; }
+.gw-md th {
+  font-weight: 600;
+  color: rgba(34, 211, 238, 0.9);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gw-md tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+.gw-md td { color: rgba(255, 255, 255, 0.82); }
+
+.gw-md blockquote {
+  border-left: 2px solid rgba(34, 211, 238, 0.5);
+  background: rgba(34, 211, 238, 0.04);
+  padding: 0.45rem 0.85rem;
+  margin: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.7);
+  border-radius: 0 6px 6px 0;
+}
+.gw-md blockquote p { margin: 0; }
+
+.gw-md a {
+  color: rgba(34, 211, 238, 0.92);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(34, 211, 238, 0.4);
+  padding-bottom: 1px;
+}
+.gw-md a:hover {
+  color: rgba(94, 234, 212, 1);
+  border-bottom-color: rgba(94, 234, 212, 0.7);
+}
+
+.gw-md hr {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  margin: 1.1rem 0;
+}
+
+.gw-md strong { color: rgba(255, 255, 255, 0.97); font-weight: 600; }
+.gw-md em { color: rgba(255, 255, 255, 0.78); }
+.gw-md del { color: rgba(255, 255, 255, 0.4); }
