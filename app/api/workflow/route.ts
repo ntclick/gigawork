@@ -19,16 +19,17 @@ const Body = z.object({
  *  response body, not just drizzle's "Failed query" wrapper. */
 function errorPayload(e: unknown): Record<string, unknown> {
   if (!(e instanceof Error)) return { message: String(e).slice(0, 800) }
-  const cause = (e as { cause?: Record<string, unknown> }).cause
-  const pg = (e as Record<string, unknown>)
+  const pg = e as unknown as Record<string, unknown>
+  const cause = (pg.cause as Record<string, unknown> | undefined) ?? {}
+  const causeMessage = typeof cause.message === 'string' ? cause.message.slice(0, 400) : undefined
   return {
     message: e.message.slice(0, 800),
-    pg_code: cause?.code ?? pg.code,
-    pg_detail: cause?.detail ?? pg.detail,
-    pg_hint: cause?.hint ?? pg.hint,
-    pg_table: cause?.table_name ?? pg.table_name,
-    pg_column: cause?.column_name ?? pg.column_name,
-    cause_message: typeof cause?.message === 'string' ? (cause.message as string).slice(0, 400) : undefined,
+    pg_code: cause.code ?? pg.code,
+    pg_detail: cause.detail ?? pg.detail,
+    pg_hint: cause.hint ?? pg.hint,
+    pg_table: cause.table_name ?? pg.table_name,
+    pg_column: cause.column_name ?? pg.column_name,
+    cause_message: causeMessage,
   }
 }
 
