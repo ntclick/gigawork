@@ -14,6 +14,24 @@ const Body = z.object({
   prompt: z.string().min(4).max(4000),
 })
 
+/** Extract a maximal-info payload from a thrown error so we can see the
+ *  actual Postgres reason (column missing, RLS, type mismatch) in the
+ *  response body, not just drizzle's "Failed query" wrapper. */
+function errorPayload(e: unknown): Record<string, unknown> {
+  if (!(e instanceof Error)) return { message: String(e).slice(0, 800) }
+  const cause = (e as { cause?: Record<string, unknown> }).cause
+  const pg = (e as Record<string, unknown>)
+  return {
+    message: e.message.slice(0, 800),
+    pg_code: cause?.code ?? pg.code,
+    pg_detail: cause?.detail ?? pg.detail,
+    pg_hint: cause?.hint ?? pg.hint,
+    pg_table: cause?.table_name ?? pg.table_name,
+    pg_column: cause?.column_name ?? pg.column_name,
+    cause_message: typeof cause?.message === 'string' ? (cause.message as string).slice(0, 400) : undefined,
+  }
+}
+
 export async function POST(req: Request) {
   try {
     return await handlePost(req)
@@ -45,14 +63,9 @@ async function handlePost(req: Request) {
     if (e instanceof AuthRequiredError) {
       return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
     }
-    console.error('[/api/workflow] auth failed', e instanceof Error ? e.message : e)
+    console.error('[/api/workflow] auth failed', e)
     return NextResponse.json(
-      {
-        error: 'db_unavailable',
-        message:
-          (e instanceof Error ? e.message : String(e)).slice(0, 800) ||
-          'Database is warming up. Please retry in a few seconds.',
-      },
+      { error: 'db_unavailable', stage: 'auth', ...errorPayload(e) },
       { status: 503 },
     )
   }
@@ -89,14 +102,9 @@ async function handlePost(req: Request) {
       { label: 'workflow:seed-message' },
     )
   } catch (e) {
-    console.error('[/api/workflow] db insert failed', e instanceof Error ? e.message : e)
+    console.error('[/api/workflow] db insert failed', e)
     return NextResponse.json(
-      {
-        error: 'db_unavailable',
-        message:
-          (e instanceof Error ? e.message : String(e)).slice(0, 800) ||
-          'Database is warming up. Please retry in a few seconds.',
-      },
+      { error: 'db_unavailable', ...errorPayload(e) },
       { status: 503 },
     )
   }
