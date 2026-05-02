@@ -47,14 +47,61 @@ export async function GET() {
     }
   }
 
+  // ── Schema introspection — does the live DB actually have what we need? ──
+  let schemaInfo: Record<string, unknown> = {}
+  try {
+    // Identify which DB instance we're connected to (host fingerprint)
+    const meta = (await db.execute(sql`
+      select current_database() as db, current_user as usr,
+             inet_server_addr()::text as ip, inet_server_port() as port
+    `)) as unknown as { rows?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>
+    const metaRow = Array.isArray(meta) ? meta[0] : meta?.rows?.[0]
+    schemaInfo.connection = metaRow ?? null
+
+    // Tables in public
+    const tablesRes = (await db.execute(sql`
+      select tablename from pg_tables where schemaname = 'public' order by tablename
+    `)) as unknown as { rows?: Array<{ tablename: string }> } | Array<{ tablename: string }>
+    const tables = Array.isArray(tablesRes) ? tablesRes : tablesRes?.rows ?? []
+    schemaInfo.tables = tables.map((t) => t.tablename)
+
+    // Workflow columns
+    const colsRes = (await db.execute(sql`
+      select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'workflows'
+      order by ordinal_position
+    `)) as unknown as { rows?: Array<{ column_name: string }> } | Array<{ column_name: string }>
+    const cols = Array.isArray(colsRes) ? colsRes : colsRes?.rows ?? []
+    schemaInfo.workflows_columns = cols.map((c) => c.column_name)
+    schemaInfo.has_erc8183_job_id = (cols as Array<{ column_name: string }>).some(
+      (c) => c.column_name === 'erc8183_job_id',
+    )
+
+    // Skills count
+    const skillsRes = (await db.execute(sql`select count(*)::int as count from skills`)) as unknown as
+      | { rows?: Array<{ count: number }> }
+      | Array<{ count: number }>
+    const sk = Array.isArray(skillsRes) ? skillsRes : skillsRes?.rows ?? []
+    schemaInfo.skills_count = sk[0]?.count ?? 0
+  } catch (e) {
+    schemaInfo.error = e instanceof Error ? e.message : 'introspection failed'
+  }
+  checks.schema = {
+    ok: !!schemaInfo && (schemaInfo.has_erc8183_job_id as boolean) === true,
+    detail: schemaInfo.has_erc8183_job_id
+      ? 'workflows has erc8183_job_id'
+      : 'workflows missing erc8183_job_id — Vercel is connecting to a DIFFERENT Supabase project than where you ran the migration SQL',
+  }
+
   const allOk = Object.values(checks).every((c) => c.ok)
   return NextResponse.json(
     {
       ok: allOk,
       checks,
+      schema: schemaInfo,
       hint: allOk
-        ? 'Everything green. If /api/workflow still 500s, deploy may be stale — wait for Vercel to finish.'
-        : 'One or more checks failed. Fix the red ones above and the 503 storm should clear.',
+        ? 'Everything green.'
+        : 'Compare schema.connection.db (what Vercel sees) with the project name in your Supabase Dashboard URL. If they differ, DATABASE_URL on Vercel points to the wrong project.',
     },
     { status: allOk ? 200 : 503 },
   )
