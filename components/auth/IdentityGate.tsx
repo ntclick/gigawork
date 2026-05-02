@@ -156,27 +156,27 @@ export function IdentityGate({ children }: { children: React.ReactNode }) {
     return (
       <Lock
         icon={<Wallet className="h-6 w-6 text-cyan-300" />}
-        title="Connect a wallet to get started"
-        body="You need a wallet to mint your identity NFT (ERC-8004) — required for any ERC-8183 job."
+        title="Kết nối ví để bắt đầu"
+        body="Kết nối Privy để nhận 300 credit miễn phí và mint NFT identity (ERC-8004) — bắt buộc trước khi tạo workflow đầu tiên."
         cta={{ label: 'Connect wallet', onClick: () => login() }}
       />
     )
   }
 
   if (!identity) {
-    return <Lock icon={<Loader2 className="h-5 w-5 animate-spin text-cyan-300" />} title="Reading identity…" body="" />
+    return <Lock icon={<Loader2 className="h-5 w-5 animate-spin text-cyan-300" />} title="Đang đọc identity…" body="" />
   }
 
   if (!identity.hasIdentity) {
     const label =
-      step === 'signing' ? 'Signing transaction…' :
-      step === 'confirming' ? 'Verifying on-chain…' :
-      'Mint identity NFT (ERC-8004)'
+      step === 'signing' ? 'Đang ký giao dịch…' :
+      step === 'confirming' ? 'Đang xác thực on-chain…' :
+      'Mint NFT identity (ERC-8004)'
     return (
       <Lock
         icon={<ShieldCheck className="h-6 w-6 text-cyan-300" />}
-        title="Mint your identity NFT"
-        body="This NFT carries role=client metadata. You sign with your own Privy wallet — admin never touches it. Every future job is bound to your token ID so provider agents know to trust you."
+        title="🎁 Bạn có 300 credit — mint NFT để mở khoá"
+        body="Bạn đã được tặng 300 credit. Mint NFT identity (ERC-8004) bằng ví Privy của bạn để bắt đầu chạy workflow — admin không bao giờ ký thay. Mỗi workflow sau này sẽ gắn với token ID này để provider agent biết bạn là client hợp lệ."
         cta={{ label, onClick: mint, disabled: step !== 'idle' }}
         error={err}
         footer={`Contract ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
