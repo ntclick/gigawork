@@ -27,7 +27,11 @@ export async function POST(req: Request) {
     if (e instanceof AuthRequiredError) {
       return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
     }
-    throw e
+    console.error('[/api/workflow] auth failed', e instanceof Error ? e.message : e)
+    return NextResponse.json(
+      { error: 'db_unavailable', message: 'Database is warming up. Please retry in a few seconds.' },
+      { status: 503 },
+    )
   }
 
   if (!user.identityTokenId) {
@@ -41,22 +45,31 @@ export async function POST(req: Request) {
     )
   }
 
-  const [wf] = await withDbRetry(
-    () => db
-      .insert(workflows)
-      .values({ prompt: parsed.data.prompt, userId: user.id })
-      .returning(),
-    { label: 'workflow:create' },
-  )
+  let wf
+  try {
+    [wf] = await withDbRetry(
+      () => db
+        .insert(workflows)
+        .values({ prompt: parsed.data.prompt, userId: user.id })
+        .returning(),
+      { label: 'workflow:create' },
+    )
 
-  await withDbRetry(
-    () => db.insert(messages).values({
-      workflowId: wf.id,
-      role: 'user',
-      content: parsed.data.prompt,
-    }),
-    { label: 'workflow:seed-message' },
-  )
+    await withDbRetry(
+      () => db.insert(messages).values({
+        workflowId: wf.id,
+        role: 'user',
+        content: parsed.data.prompt,
+      }),
+      { label: 'workflow:seed-message' },
+    )
+  } catch (e) {
+    console.error('[/api/workflow] db insert failed', e instanceof Error ? e.message : e)
+    return NextResponse.json(
+      { error: 'db_unavailable', message: 'Database is warming up. Please retry in a few seconds.' },
+      { status: 503 },
+    )
+  }
 
   // Open + fund a real ERC-8183 job for this workflow when enabled.
   // Failure here MUST NOT block the workflow — the off-chain pipeline can
