@@ -99,25 +99,12 @@ export function buildEnvelope(opts: {
 // ════════════════════════════════════════════════════════════════
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
-  // ─── NOTIFICATION ─────────────────────────────────────────────
-  {
-    id: 'send-alert',
-    emoji: '📨',
-    title: 'Send Alert',
-    desc: 'Run any analysis and push the result to your email or Telegram.',
-    category: 'execution',
-    freeTextOnly: true,
-    uses: ['report-composer', 'email-sender', 'telegram-sender'],
-    prompt:
-      'Scan BTC + ETH 4h technical signals, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
-  },
-
   // ─── POLYMARKET ───────────────────────────────────────────────
   {
-    id: 'polymarket-pulse',
+    id: 'polymarket-odds',
     emoji: '🎯',
-    title: 'Polymarket Pulse',
-    desc: 'Probabilities and 24h volume on prediction markets.',
+    title: 'Polymarket Odds Monitor',
+    desc: 'YES/NO probabilities and 24h volume on prediction markets.',
     category: 'research',
     skillName: 'polymarket-pulse',
     defaults: {
@@ -129,13 +116,24 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     prompt:
       'Scan Polymarket for top 5 markets matching "US election 2026". Show YES/NO probabilities, 24h volume, price drift.',
   },
+  {
+    id: 'polymarket-address',
+    emoji: '🪪',
+    title: 'Polymarket Address Monitor',
+    desc: 'Track positions + recent trades of a specific Polymarket trader.',
+    category: 'on-chain',
+    freeTextOnly: true,
+    uses: ['whale-tracker', 'polymarket-pulse', 'report-composer'],
+    prompt:
+      'Track Polymarket trader at wallet 0x... — pull their last 25 transfers via whale-tracker, cross-reference open Polymarket markets they touched, then compose a brief on their thesis.',
+  },
 
-  // ─── SCHEDULE / DCA ───────────────────────────────────────────
+  // ─── DCA / LADDER (scheduled buys) ────────────────────────────
   {
     id: 'daily-dca',
     emoji: '📅',
-    title: 'Daily DCA',
-    desc: 'Plan a scheduled DCA strategy with tiered buys around live price.',
+    title: 'DCA (Dollar Cost Averaging)',
+    desc: 'Scheduled tiered buys around live spot price — daily / weekly / hourly.',
     category: 'execution',
     skillName: 'dca-executor',
     defaults: {
@@ -147,5 +145,65 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     uses: ['dca-executor', 'report-composer'],
     prompt:
       'Plan a daily DCA strategy for BTC: $50 base buy at 8AM UTC, scale up when price drops, scale down when it rips. Compose a one-page summary.',
+  },
+  {
+    id: 'ladder-buy-sell',
+    emoji: '🪜',
+    title: 'Ladder Buy & Sell',
+    desc: 'Layered limit orders across price tiers. Returns a ready-to-place ladder.',
+    category: 'execution',
+    skillName: 'dca-executor',
+    defaults: {
+      asset: 'ETH',
+      budget_per_buy_usd: 200,
+      frequency: 'weekly',
+    },
+    followupSkills: ['report-composer'],
+    uses: ['dca-executor', 'trading-signals', 'report-composer'],
+    prompt:
+      'Build a buy/sell ladder for ETH around live spot. Pair with 4h trading signals so each tier has a confidence note. Output a clean table.',
+  },
+
+  // ─── ON-CHAIN MONITOR ─────────────────────────────────────────
+  {
+    id: 'wallet-monitor',
+    emoji: '👁️',
+    title: 'Wallet Monitor',
+    desc: 'Watch a wallet — balances, top tokens, recent transfers, big-move alerts.',
+    category: 'on-chain',
+    skillName: 'whale-tracker',
+    defaults: {
+      wallet: '0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503',
+      network: 'eth-mainnet',
+      limit: 25,
+    },
+    followupSkills: ['report-composer'],
+    uses: ['whale-tracker', 'report-composer'],
+    prompt:
+      'Monitor wallet 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on Ethereum: native + top ERC-20 balances, last 25 transfers, flag anything > $100k. Compose a plain-English digest.',
+  },
+  {
+    id: 'copy-trade',
+    emoji: '🔁',
+    title: 'Copy Trade',
+    desc: 'Detect a smart wallet\'s last buys; surface ones you could replicate.',
+    category: 'on-chain',
+    freeTextOnly: true,
+    uses: ['whale-tracker', 'crypto-scanner', 'report-composer'],
+    prompt:
+      'Track wallet 0xab5801a7d398351b8be11c439e05c5b3259aec9b — pull last 25 transfers, run crypto-scanner on each unique token they bought, then compose a verdict on which 2-3 are worth copying based on liquidity + holder concentration.',
+  },
+
+  // ─── NOTIFICATION ─────────────────────────────────────────────
+  {
+    id: 'send-alert',
+    emoji: '📨',
+    title: 'Send Alert',
+    desc: 'Run any analysis and push the result to your email or Telegram.',
+    category: 'execution',
+    freeTextOnly: true,
+    uses: ['report-composer', 'email-sender', 'telegram-sender'],
+    prompt:
+      'Scan BTC + ETH 4h technical signals, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
   },
 ]
