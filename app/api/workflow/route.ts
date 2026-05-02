@@ -22,14 +22,35 @@ function errorPayload(e: unknown): Record<string, unknown> {
   const pg = e as unknown as Record<string, unknown>
   const cause = (pg.cause as Record<string, unknown> | undefined) ?? {}
   const causeMessage = typeof cause.message === 'string' ? cause.message.slice(0, 400) : undefined
+  // Walk every own enumerable key on the Error/cause and surface anything
+  // serializable. postgres-js attaches its diagnostic fields here.
+  const grab = (src: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(src)) {
+      const v = src[k]
+      if (v == null) continue
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        out[k] = typeof v === 'string' ? v.slice(0, 400) : v
+      }
+    }
+    return out
+  }
   return {
     message: e.message.slice(0, 800),
+    name: e.name,
     pg_code: cause.code ?? pg.code,
     pg_detail: cause.detail ?? pg.detail,
     pg_hint: cause.hint ?? pg.hint,
     pg_table: cause.table_name ?? pg.table_name,
     pg_column: cause.column_name ?? pg.column_name,
+    pg_constraint: cause.constraint_name ?? pg.constraint_name,
+    pg_severity: cause.severity ?? pg.severity,
+    pg_routine: cause.routine ?? pg.routine,
     cause_message: causeMessage,
+    err_keys: Object.keys(pg),
+    cause_keys: Object.keys(cause),
+    pg_dump: grab(pg),
+    cause_dump: grab(cause),
   }
 }
 
