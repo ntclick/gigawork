@@ -21,6 +21,7 @@ import {
   type WorkflowTemplate,
 } from '@/lib/workflowTemplates'
 import { useSkill } from '@/lib/hooks/useSkills'
+import { TokenPicker, isTokenAddressField } from './TokenPicker'
 
 interface Props {
   template: WorkflowTemplate
@@ -138,7 +139,14 @@ export function TemplateForm({ template, onSubmit, onCancel, userCredits }: Prop
             prop={prop}
             value={values[key]}
             required={required.has(key)}
-            onChange={(v) => setField(key, v)}
+            chain={typeof values.chain === 'string' ? (values.chain as string) : undefined}
+            onChange={(v, picked) => {
+              setField(key, v)
+              // When the user picks a known token, also auto-set the chain
+              // field if the form has one — saves a click and keeps inputs
+              // consistent (e.g., picking PEPE on ethereum sets chain=ethereum).
+              if (picked && 'chain' in props) setField('chain', picked.chain)
+            }}
           />
         ))}
 
@@ -215,13 +223,15 @@ function FormField({
   prop,
   value,
   required,
+  chain,
   onChange,
 }: {
   name: string
   prop: import('@/lib/hooks/useSkills').SkillInputProperty
   value: unknown
   required: boolean
-  onChange: (v: unknown) => void
+  chain?: string
+  onChange: (v: unknown, picked?: import('./TokenPicker').TokenEntry) => void
 }) {
   const label = name.replaceAll('_', ' ')
   const labelEl = (
@@ -232,6 +242,21 @@ function FormField({
       )}
     </label>
   )
+
+  // String token field → autocomplete TokenPicker
+  if (prop.type === 'string' && isTokenAddressField(name)) {
+    return (
+      <div>
+        {labelEl}
+        <TokenPicker
+          value={String(value ?? '')}
+          chain={chain}
+          onChange={(addr, picked) => onChange(addr, picked)}
+          placeholder={prop.description ?? 'Search token (PEPE, USDC…) or paste 0x contract'}
+        />
+      </div>
+    )
+  }
 
   // String + enum → select
   if (prop.type === 'string' && Array.isArray(prop.enum)) {

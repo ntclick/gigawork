@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { isToolUIPart, type UIMessage } from 'ai'
+import { BookOpen, FileText, ListChecks, Sparkles } from 'lucide-react'
 
 import { MarkdownTypewriter } from './Typewriter'
 
@@ -51,37 +52,41 @@ export function WorkflowDocPanel({
       )}
 
       <div className="space-y-6">
-        {/* Description (first paragraph from brain or fallback) */}
-        <section>
-          <h3 className="mb-2 border-b border-gray-700 pb-2 text-base font-semibold uppercase tracking-wider md:text-lg">
-            Documentation
-          </h3>
-          <p className="text-sm leading-relaxed text-white/75 md:text-[15px]">
-            {finalReport
-              ? extractFirstParagraph(finalReport)
-              : busy
-                ? 'Hermes brain is analyzing the request and planning the execution…'
-                : 'Workflow not started yet. Send a prompt and the brain will pick agents + run them.'}
-          </p>
-        </section>
+        {/* Description — only when there's no report yet (otherwise the
+            report's own intro paragraph carries the description). */}
+        {!finalReport && (
+          <section>
+            <SectionHeading icon={<BookOpen className="h-3.5 w-3.5" />}>
+              Mô tả
+            </SectionHeading>
+            <p className="text-sm leading-relaxed text-white/75 md:text-[15px]">
+              {busy
+                ? 'Hermes brain đang phân tích request và lên plan…'
+                : 'Workflow chưa chạy. Gửi prompt từ bottom bar để brain tự chọn agent.'}
+            </p>
+          </section>
+        )}
 
-        {/* How it works — derived from plan nodes (compact, scannable) */}
+        {/* How it works — compact action list derived from plan nodes */}
         {plan.length > 0 && (
           <section>
-            <h3 className="mb-2 border-b border-gray-700 pb-2 text-base font-semibold uppercase tracking-wider md:text-lg">
-              How it works
-            </h3>
-            <ol className="space-y-2.5 text-[13px] leading-snug text-white/80 md:text-sm">
+            <SectionHeading icon={<ListChecks className="h-3.5 w-3.5" />}>
+              Cách hoạt động
+            </SectionHeading>
+            <ol className="space-y-2 text-[13px] leading-snug text-white/85 md:text-sm">
               {plan.map((n, i) => (
-                <li key={n.plan_id} className="flex gap-2">
+                <li
+                  key={n.plan_id}
+                  className="flex gap-2.5 border-l-2 border-[var(--giga-accent)]/30 pl-2.5"
+                >
                   <span className="shrink-0 font-mono text-[11px] text-[var(--giga-accent)]">
-                    {String(i + 1).padStart(2, '0')}.
+                    {String(i + 1).padStart(2, '0')}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="break-words text-white/90" style={{ wordBreak: 'break-word' }}>
+                    <p className="break-words text-white/95" style={{ wordBreak: 'break-word' }}>
                       {n.label}
                     </p>
-                    <p className="mt-0.5 break-all font-mono text-[10px] text-purple-300/65">
+                    <p className="mt-0.5 break-all font-mono text-[10px] text-purple-300/60">
                       → {n.skill_name}
                     </p>
                   </div>
@@ -91,22 +96,64 @@ export function WorkflowDocPanel({
           </section>
         )}
 
-        {/* Full markdown report (typewriter reveal when finalized) */}
+        {/* Full markdown report — supports tables / bullets / headers via
+            remark-gfm. Typewriter reveal only happens once; afterwards it
+            stays static. */}
         {finalReport && (
-          <section className="border-t border-gray-700 pt-5">
-            <h3 className="mb-3 text-xl text-[var(--giga-accent)]">Report</h3>
-            <MarkdownTypewriter text={finalReport} />
+          <section className="border-t border-white/10 pt-5">
+            <SectionHeading
+              icon={<FileText className="h-3.5 w-3.5" />}
+              accent
+            >
+              Báo cáo
+            </SectionHeading>
+            <MarkdownTypewriter
+              text={finalReport}
+              className="gw-md text-sm leading-relaxed text-white/90 md:text-[15px]"
+            />
           </section>
         )}
 
         {/* Empty state */}
         {plan.length === 0 && !finalReport && !busy && (
-          <section className="rounded-md border border-white/10 bg-white/[0.02] p-4 text-center text-sm text-white/45">
+          <section className="border-2 border-dashed border-white/10 bg-white/[0.02] p-4 text-center text-sm text-white/50">
+            <Sparkles className="mx-auto mb-2 h-4 w-4 text-[var(--giga-accent)]" />
             Brain chưa tạo plan. Gửi message từ bottom bar để bắt đầu.
           </section>
         )}
       </div>
     </aside>
+  )
+}
+
+function SectionHeading({
+  icon,
+  accent,
+  children,
+}: {
+  icon?: React.ReactNode
+  accent?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <h3
+      className={`mb-3 flex items-center gap-2 border-b border-white/10 pb-2 text-[11px] font-bold uppercase tracking-[0.18em] ${
+        accent ? 'text-[var(--giga-accent)]' : 'text-white/70'
+      }`}
+    >
+      {icon && (
+        <span
+          className={`inline-flex h-5 w-5 items-center justify-center border ${
+            accent
+              ? 'border-[var(--giga-accent)]/40 bg-[var(--giga-accent)]/10 text-[var(--giga-accent)]'
+              : 'border-white/15 bg-white/[0.03] text-white/65'
+          }`}
+        >
+          {icon}
+        </span>
+      )}
+      {children}
+    </h3>
   )
 }
 
@@ -190,16 +237,6 @@ function extract(messages: UIMessage[]) {
     finalReport,
     dispatchStats: { running, completed, failed, total },
   }
-}
-
-function extractFirstParagraph(md: string): string {
-  // Strip markdown header/list syntax for the summary line
-  const lines = md.split(/\r?\n/)
-  for (const ln of lines) {
-    const t = ln.trim().replace(/^#+\s*/, '').replace(/^[-*]\s*/, '')
-    if (t.length > 20) return t.length > 220 ? t.slice(0, 220) + '…' : t
-  }
-  return md.slice(0, 220)
 }
 
 function truncate(s: string, n: number) {

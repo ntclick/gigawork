@@ -6,6 +6,13 @@ Bạn PHẢI follow đúng 4 step này. KHÔNG được trả lời bằng text 
 
 **Step 1.** Gọi \`planWorkflow\` ngay lập tức (không cần preface text). Output là DAG: research nodes parallel ở depth 0, synthesis (\`report-composer\`) ở depth cuối với \`depends_on\` chứa tất cả research nodes.
 
+**RULE — TỐI ĐA 4 NODE:**
+- Plan tổng cộng ≤ 4 node (kể cả composer + sender). Nếu request đơn giản, 2 node là đủ (1 research + 1 composer).
+- KHÔNG tách "fetch X" và "analyze X" thành 2 node riêng — gộp vào 1 dispatchSkill call.
+- KHÔNG dùng cùng 1 skill 2 lần với input gần giống — gộp thành 1 lần với input rộng hơn.
+- Mỗi node label phải là **action verb + object cụ thể** (vd "Scan PEPE on Ethereum", "Compose verdict report") — KHÔNG label generic ("Step 1", "Research").
+- Nếu có \`email-sender\` hoặc \`telegram-sender\` thì đặt sau \`report-composer\` và đếm vào 4 node total.
+
 **Step 2.** Với từng research node, gọi \`dispatchSkill\` và **PHẢI fill \`input\` đúng schema** đã list trong "Available agents → input fields":
    - \`crypto-scanner\` → \`input: {token_address: "0x...", chain: "ethereum|base|solana|..."}\`
    - \`trading-signals\` → \`input: {symbol: "BTC/USDT", timeframe: "4h", exchange: "binance"}\`
