@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 
+import { getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, workflows } from '@/lib/db/schema'
@@ -26,8 +27,13 @@ type UIMessageOut = {
 export async function GET(_req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params
 
+  const u = await getCurrentUser()
   const [wf] = await withDbRetry(
-    () => db.select().from(workflows).where(eq(workflows.id, id)).limit(1),
+    () => db
+      .select()
+      .from(workflows)
+      .where(and(eq(workflows.id, id), eq(workflows.userId, u.id)))
+      .limit(1),
     { label: 'workflow-messages:wf' },
   )
   if (!wf) return NextResponse.json({ error: 'not found' }, { status: 404 })
