@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { and, asc, eq } from 'drizzle-orm'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, workflows } from '@/lib/db/schema'
@@ -27,7 +27,15 @@ type UIMessageOut = {
 export async function GET(_req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params
 
-  const u = await getCurrentUser()
+  let u
+  try {
+    u = await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    throw e
+  }
   const [wf] = await withDbRetry(
     () => db
       .select()

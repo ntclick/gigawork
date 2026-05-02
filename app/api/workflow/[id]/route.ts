@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { and, eq } from 'drizzle-orm'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { workflows } from '@/lib/db/schema'
@@ -23,6 +23,9 @@ export async function GET(_req: Request, ctx: RouteCtx) {
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 })
     return NextResponse.json(row)
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
     console.error('[/api/workflow/:id] failed', e)
     return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   }

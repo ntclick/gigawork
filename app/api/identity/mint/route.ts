@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { mintIdentity } from '@/lib/chain/identity'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 
 export async function POST() {
-  const user = await getCurrentUser()
+  let user
+  try {
+    user = await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    throw e
+  }
 
   if (user.identityTokenId) {
     return NextResponse.json({

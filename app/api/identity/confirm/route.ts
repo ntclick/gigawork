@@ -3,7 +3,7 @@ import { decodeEventLog, parseAbi } from 'viem'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { publicClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
@@ -25,7 +25,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 })
   }
 
-  const user = await getCurrentUser()
+  let user
+  try {
+    user = await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    throw e
+  }
 
   if (user.identityTokenId) {
     return NextResponse.json({

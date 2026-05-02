@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { users } from '@/lib/db/schema'
@@ -101,6 +101,9 @@ export async function GET() {
     const u = await getCurrentUser()
     return NextResponse.json({ profile: profileFrom(u) })
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
     console.error('[/api/me/profile GET] failed', e)
     return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   }
@@ -158,6 +161,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, profile: profileFrom(merged) })
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
     console.error('[/api/me/profile POST] failed', e)
     return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   }

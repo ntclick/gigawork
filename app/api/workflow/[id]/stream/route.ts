@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { type UIMessage } from 'ai'
 
 import { streamBrain } from '@/lib/ai/brain'
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { workflows } from '@/lib/db/schema'
@@ -13,7 +13,18 @@ type RouteCtx = { params: Promise<{ id: string }> }
 
 export async function POST(req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params
-  const user = await getCurrentUser()
+  let user
+  try {
+    user = await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return new Response(JSON.stringify({ error: 'unauthenticated' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    throw e
+  }
   const [wf] = await withDbRetry(
     () => db
       .select()

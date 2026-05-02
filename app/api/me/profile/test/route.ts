@@ -16,7 +16,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 
 const Body = z.object({
   kind: z.enum(['email', 'telegram']),
@@ -43,6 +43,9 @@ export async function POST(req: Request) {
   try {
     u = await getCurrentUser()
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
     console.error('[/api/me/profile/test] auth failed', e)
     return NextResponse.json({ error: 'auth_failed' }, { status: 503 })
   }

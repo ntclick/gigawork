@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 
 export async function GET() {
   try {
@@ -32,6 +32,9 @@ export async function GET() {
       },
     })
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
     // Even with retry, sustained Supabase outage / DNS block can fail.
     // Return 503 with a stable shape so the UI doesn't blow up — pages
     // gracefully fall back to "loading…" until the next poll succeeds.

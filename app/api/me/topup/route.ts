@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { decodeEventLog, getAddress, parseAbi, type Hex } from 'viem'
 
-import { getCurrentUser } from '@/lib/auth/session'
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { publicClient, explorerTxUrl } from '@/lib/chain/client'
 import { DuplicateTopupError, grantCredits } from '@/lib/credits/service'
 
@@ -64,7 +64,15 @@ export async function POST(req: Request) {
   }
   const txHash = parsed.data.tx_hash as Hex
 
-  const u = await getCurrentUser()
+  let u
+  try {
+    u = await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    throw e
+  }
 
   // Fetch receipt — wait up to 30s for the tx to be mined
   let receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>
@@ -210,6 +218,19 @@ export async function GET() {
       usdcDecimals: USDC_DECIMALS,
     })
   } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json(
+        {
+          rate: TOPUP_RATE,
+          balance: 0,
+          treasury: TREASURY,
+          usdcAddress: USDC,
+          usdcDecimals: USDC_DECIMALS,
+          error: 'unauthenticated',
+        },
+        { status: 401 },
+      )
+    }
     // Falls back to a usable response so the UI form stays renderable
     // even during DB blips. The user just sees `balance: 0` until the
     // next poll lands.
