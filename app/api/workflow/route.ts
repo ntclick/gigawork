@@ -63,15 +63,17 @@ async function handlePost(req: Request) {
     )
   }
 
-  let wf
+  let wf: typeof workflows.$inferSelect
   try {
-    [wf] = await withDbRetry(
+    const [created] = await withDbRetry(
       () => db
         .insert(workflows)
         .values({ prompt: parsed.data.prompt, userId: user.id })
         .returning(),
       { label: 'workflow:create' },
     )
+    if (!created) throw new Error('workflow insert returned no row')
+    wf = created
 
     await withDbRetry(
       () => db.insert(messages).values({
