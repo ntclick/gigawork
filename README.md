@@ -1,8 +1,8 @@
 # GigaWork v2
 
-Chat-driven AI workflow runner. Brain (DeepSeek) plans steps → worker skills (HTTP) execute in parallel → brain composes a final report.
+Chat-driven AI workflow runner. Brain (Kimi K2 / Moonshot) plans steps → worker skills (HTTP) execute in parallel → brain composes a final report.
 
-**v2 is chat-only.** No on-chain, no marketplace, no minting, no wallet, no negotiation pricing.
+**v2 is chat-driven.** Privy wallet login, ERC-8004 identity mint, USDC → credit top-up, and an ERC-8183-shaped dispatch envelope are wired. ERC-8183 escrow/settle (`createJob → fund → submit → complete`) is **not yet on-chain** — see `lib/skills/STANDARDS.md` for the v3 roadmap.
 
 ## Architectural rules
 
@@ -17,15 +17,18 @@ Chat-driven AI workflow runner. Brain (DeepSeek) plans steps → worker skills (
 - Next.js 16.2 (App Router, Turbopack, TypeScript strict)
 - Tailwind CSS v4 + shadcn/ui
 - Supabase Postgres + Drizzle ORM
-- Vercel AI SDK 6 + `@ai-sdk/deepseek`
+- Vercel AI SDK 6 + `@ai-sdk/openai-compatible` (Kimi K2 via Moonshot)
+- Privy auth + viem (Arc Testnet)
 - `@xyflow/react` (lazy, canvas only)
 
 ## Setup
 
 1. Copy env: `cp .env.example .env.local` and fill in:
    - `DATABASE_URL` — Supabase Postgres connection string (Settings → Database → URI, requires DB password)
-   - `DEEPSEEK_API_KEY` — from https://platform.deepseek.com/
+   - `KIMI_API_KEY` (or `MOONSHOT_API_KEY`) — from https://platform.moonshot.ai/
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — from project settings
+   - `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_PRIVY_CLIENT_ID` — Privy dashboard
+   - `IDENTITY_REGISTRY_ADDRESS`, `ADMIN_PRIVATE_KEY` — only if minting ERC-8004 identity from server
 
 2. Schema is already applied to the Supabase project. To regenerate from schema:
    ```
