@@ -115,7 +115,23 @@ export async function GET(_req: Request, ctx: RouteCtx) {
   }
 
   return NextResponse.json({
-    workflow: { id: wf.id, prompt: wf.prompt, status: wf.status, createdAt: wf.createdAt },
+    workflow: {
+      id: wf.id,
+      prompt: wf.prompt,
+      status: wf.status,
+      createdAt: wf.createdAt,
+      erc8183: wf.erc8183JobId
+        ? {
+            jobId: wf.erc8183JobId,
+            createTx: wf.erc8183CreateTx,
+            fundTx: wf.erc8183FundTx,
+            submitTx: wf.erc8183SubmitTx,
+            completeTx: wf.erc8183CompleteTx,
+            deliverableHash: wf.erc8183DeliverableHash,
+            budgetUsdc: wf.erc8183BudgetUsdc,
+          }
+        : null,
+    },
     messages: out,
     isFinished: wf.status === 'completed' || wf.status === 'failed' || wf.status === 'refused',
   })

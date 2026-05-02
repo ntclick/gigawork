@@ -14,8 +14,18 @@ import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { toast } from '@/components/ui/toast'
 
+type Erc8183Trail = {
+  jobId: string
+  createTx: string | null
+  fundTx: string | null
+  submitTx: string | null
+  completeTx: string | null
+  deliverableHash: string | null
+  budgetUsdc: string | null
+}
+
 type Snapshot = {
-  workflow: { id: string; prompt: string; status: string }
+  workflow: { id: string; prompt: string; status: string; erc8183?: Erc8183Trail | null }
   messages: UIMessage[]
   isFinished: boolean
 }
@@ -176,6 +186,7 @@ export default function WorkflowPage() {
           prompt={snapshot?.workflow.prompt}
           messages={messages}
           status={status}
+          erc8183={snapshot?.workflow.erc8183 ?? null}
         />
       </div>
     </>

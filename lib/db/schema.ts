@@ -26,6 +26,18 @@ export const workflows = pgTable('workflows', {
   prompt: text('prompt').notNull(),
   status: text('status').default('planning').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  // ─── ERC-8183 lifecycle (one job per workflow). All optional — when
+  //     ERC8183_ENABLED is off these stay null and the workflow still runs
+  //     through the off-chain skill dispatch path. When enabled, the
+  //     create+fund tx hashes are written on workflow create and the
+  //     submit+complete tx hashes are written from finalizeReport. ────
+  erc8183JobId: text('erc8183_job_id'),
+  erc8183CreateTx: text('erc8183_create_tx'),
+  erc8183FundTx: text('erc8183_fund_tx'),
+  erc8183SubmitTx: text('erc8183_submit_tx'),
+  erc8183CompleteTx: text('erc8183_complete_tx'),
+  erc8183DeliverableHash: text('erc8183_deliverable_hash'),
+  erc8183BudgetUsdc: text('erc8183_budget_usdc'),
 })
 
 export const creditLedger = pgTable('credit_ledger', {

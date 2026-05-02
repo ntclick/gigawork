@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
+import { ERC8183_ENABLED, openAndFundJob } from '@/lib/chain/agenticCommerce'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, workflows } from '@/lib/db/schema'
+
+const ERC8183_BUDGET = process.env.ERC8183_BUDGET_USDC ?? '0.05'
 
 const Body = z.object({
   prompt: z.string().min(4).max(4000),
@@ -53,6 +57,31 @@ export async function POST(req: Request) {
     }),
     { label: 'workflow:seed-message' },
   )
+
+  // Open + fund a real ERC-8183 job for this workflow when enabled.
+  // Failure here MUST NOT block the workflow — the off-chain pipeline can
+  // still produce a useful report, we just lose the on-chain trail.
+  if (ERC8183_ENABLED) {
+    openAndFundJob({
+      description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
+      budgetUsdc: ERC8183_BUDGET,
+    })
+      .then(async (res) => {
+        if (!res) return
+        await db
+          .update(workflows)
+          .set({
+            erc8183JobId: res.jobId,
+            erc8183CreateTx: res.createTx,
+            erc8183FundTx: res.fundTx,
+            erc8183BudgetUsdc: res.budgetUsdc,
+          })
+          .where(eq(workflows.id, wf.id))
+      })
+      .catch((e) => {
+        console.warn('[workflow] ERC-8183 open+fund failed', e instanceof Error ? e.message : e)
+      })
+  }
 
   return NextResponse.json({ id: wf.id, userId: user.id })
 }

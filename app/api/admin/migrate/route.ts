@@ -83,5 +83,15 @@ export async function POST(req: Request) {
   await db.execute(sql`alter table skills add column if not exists agent_minted_at timestamptz`)
   steps.push('skills_agent_columns')
 
+  // ERC-8183 job lifecycle columns on workflows
+  await db.execute(sql`alter table workflows add column if not exists erc8183_job_id text`)
+  await db.execute(sql`alter table workflows add column if not exists erc8183_create_tx text`)
+  await db.execute(sql`alter table workflows add column if not exists erc8183_fund_tx text`)
+  await db.execute(sql`alter table workflows add column if not exists erc8183_submit_tx text`)
+  await db.execute(sql`alter table workflows add column if not exists erc8183_complete_tx text`)
+  await db.execute(sql`alter table workflows add column if not exists erc8183_deliverable_hash text`)
+  await db.execute(sql`alter table workflows add column if not exists erc8183_budget_usdc text`)
+  steps.push('workflows_erc8183_columns')
+
   return NextResponse.json({ ok: true, applied: steps })
 }

@@ -2,6 +2,7 @@ import { tool } from 'ai'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
+import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
 import { signDispatchTx } from '@/lib/chain/dispatch'
 import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
@@ -270,6 +271,42 @@ export function buildBrainTools(ctx: BrainContext) {
         .update(workflows)
         .set({ status: 'completed' })
         .where(eq(workflows.id, workflowId))
+
+      // Settle the ERC-8183 job if it was opened on workflow create.
+      // Background fire-and-forget — the report is already saved, the
+      // settle txs only add the on-chain trail.
+      if (ERC8183_ENABLED) {
+        const [wf] = await db
+          .select()
+          .from(workflows)
+          .where(eq(workflows.id, workflowId))
+          .limit(1)
+        if (wf?.erc8183JobId && !wf.erc8183CompleteTx) {
+          settleJob({
+            jobId: wf.erc8183JobId,
+            deliverableSeed: `${workflowId}:${summary_markdown.slice(0, 256)}`,
+            reasonSeed: 'workflow-completed',
+          })
+            .then(async (res) => {
+              if (!res) return
+              await db
+                .update(workflows)
+                .set({
+                  erc8183SubmitTx: res.submitTx,
+                  erc8183CompleteTx: res.completeTx,
+                  erc8183DeliverableHash: res.deliverableHash,
+                })
+                .where(eq(workflows.id, workflowId))
+            })
+            .catch((e) =>
+              console.warn(
+                '[finalizeReport] ERC-8183 settle failed',
+                e instanceof Error ? e.message : e,
+              ),
+            )
+        }
+      }
+
       return { ok: true }
     },
   })
