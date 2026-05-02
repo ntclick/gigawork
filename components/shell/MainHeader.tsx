@@ -2,12 +2,17 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
-import { Bell, LogOut, Menu, Wallet, X } from 'lucide-react'
+import { Bell, Coins, LogOut, Menu, Wallet, X } from 'lucide-react'
 
 import { useUSDCBalance } from '@/lib/hooks/useUSDCBalance'
 import { useUI } from './UIShell'
+
+const ARC_NETWORK_LABEL =
+  process.env.NEXT_PUBLIC_ARC_NETWORK_LABEL ?? 'Arc Testnet'
+const ARC_EXPLORER =
+  process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
 /**
  * MainHeader — top bar matching the "GigaWork - Workflow Editor" mockup.
@@ -43,6 +48,23 @@ export function MainHeader() {
 
   const wallet = user?.wallet?.address ?? null
   const usdc = useUSDCBalance(wallet)
+
+  const [credits, setCredits] = useState<number | null>(null)
+  useEffect(() => {
+    const refresh = () =>
+      fetch('/api/me', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j && setCredits(j.credits ?? 0))
+        .catch(() => {})
+    refresh()
+    const t = setInterval(refresh, 15000)
+    const onBust = () => refresh()
+    window.addEventListener('gw:credits-changed', onBust)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('gw:credits-changed', onBust)
+    }
+  }, [authenticated])
 
   return (
     <header className="giga-theme z-20 flex h-16 shrink-0 items-center justify-between border-b border-black bg-[var(--giga-dark)] px-3 sm:px-6">
@@ -89,8 +111,22 @@ export function MainHeader() {
         </nav>
       </div>
 
-      {/* Right: USDC pill + notifications + profile */}
+      {/* Right: ARC + USDC + Credits + notifications + profile */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* ARC Testnet network badge — always visible so users know which chain they're on */}
+        <a
+          href={ARC_EXPLORER}
+          target="_blank"
+          rel="noreferrer"
+          title={`Network: ${ARC_NETWORK_LABEL} · click để mở explorer`}
+          className="hidden items-center gap-1.5 border-2 border-purple-500/50 bg-purple-500/10 px-2 py-1 text-purple-200 transition hover:border-purple-400 hover:bg-purple-500/20 sm:flex"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(168,85,247,0.8)]" />
+          <span className="font-pixel-body text-xs uppercase tracking-wider">
+            {ARC_NETWORK_LABEL}
+          </span>
+        </a>
+
         {ready && authenticated && wallet && (
           <Link
             href="/finance"
@@ -102,6 +138,20 @@ export function MainHeader() {
               {usdc.loading ? '…' : usdc.formatted}
             </span>
             <span className="hidden text-xs text-white/45 sm:inline">USDC</span>
+          </Link>
+        )}
+
+        {ready && authenticated && credits !== null && (
+          <Link
+            href="/finance"
+            className="flex items-center gap-1.5 border-2 border-cyan-400/40 bg-cyan-400/10 px-2 py-1 transition hover:border-cyan-300 hover:bg-cyan-400/20 sm:px-3"
+            title={`${credits} credits · ≈ $${(credits / 100).toFixed(2)} · click để top-up`}
+          >
+            <Coins className="h-3.5 w-3.5 text-cyan-300" />
+            <span className="font-pixel-body text-base text-white">
+              {credits.toLocaleString()}
+            </span>
+            <span className="hidden text-xs text-cyan-200/60 sm:inline">cr</span>
           </Link>
         )}
 
