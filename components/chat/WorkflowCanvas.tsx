@@ -20,7 +20,7 @@ import { Maximize2 } from 'lucide-react'
 import type { UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 
-import { NodeDetailSheet, type NodeDetail } from './NodeDetailSheet'
+import { NodeDetailSheet, type NodeDetail, type NodeEditRequest } from './NodeDetailSheet'
 
 type PlanNode = {
   node_id: string
@@ -165,7 +165,13 @@ const PLACEHOLDER_EDGES: Edge[] = [
 // ════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════
-export function WorkflowCanvas({ messages }: { messages: UIMessage[] }) {
+export function WorkflowCanvas({
+  messages,
+  onEditNode,
+}: {
+  messages: UIMessage[]
+  onEditNode?: (req: NodeEditRequest) => void
+}) {
   // Re-derive plan from messages — pure function, runs every render but cheap.
   const { nodes: planNodes, edges: planEdges, hasPlan, details } = useMemo(
     () => buildFromMessages(messages),
@@ -282,7 +288,11 @@ export function WorkflowCanvas({ messages }: { messages: UIMessage[] }) {
           </div>
         </div>
       )}
-      <NodeDetailSheet detail={selectedNode} onClose={() => setSelectedNode(null)} />
+      <NodeDetailSheet
+        detail={selectedNode}
+        onClose={() => setSelectedNode(null)}
+        onEdit={onEditNode}
+      />
     </div>
   )
 }

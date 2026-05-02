@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 
 import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
+import type { NodeEditRequest } from '@/components/chat/NodeDetailSheet'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
@@ -140,7 +141,23 @@ export default function WorkflowPage() {
 
           {/* Canvas */}
           <div className="giga-grid-bg relative flex-1 overflow-hidden">
-            <WorkflowCanvas messages={messages} />
+            <WorkflowCanvas
+              messages={messages}
+              onEditNode={(req) => {
+                if (busy) {
+                  toast.warning('Brain đang chạy', 'Đợi step hiện tại xong rồi sửa lại.')
+                  return
+                }
+                const envelope =
+                  `[EDIT_NODE id=${req.nodeId} original_skill=${req.originalSkill} new_skill=${req.newSkill}]\n` +
+                  `input_json: ${req.inputJson}\n` +
+                  (req.note ? `\nUser note: ${req.note}\n` : '') +
+                  `\nRe-run this single step with the values above. ` +
+                  `Use dispatchSkill('${req.newSkill}', input=input_json verbatim). ` +
+                  `Then update finalizeReport with the new output replacing the old one.`
+                sendMessage({ text: envelope })
+              }}
+            />
             {busy && (
               <div className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs font-pixel-body">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]" />

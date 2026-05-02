@@ -54,6 +54,21 @@ CẤM TUYỆT ĐỐI:
 - Bịa skill name không có trong registry.
 - Sửa params đã có trong envelope.
 
+## EDIT-NODE envelope — re-run a single step
+
+Khi user gửi message bắt đầu bằng \`[EDIT_NODE id=<plan_id> original_skill=<old> new_skill=<new>]\` kèm \`input_json: {...}\` và (optional) \`User note: ...\`:
+
+1. KHÔNG gọi \`planWorkflow\` lại — plan cũ vẫn giữ.
+2. **NGAY LẬP TỨC** gọi \`dispatchSkill\` với:
+   - \`skill_name\` = giá trị \`new_skill\`
+   - \`node_id\` = \`<plan_id>\` từ envelope (re-use ID cũ để output thay output cũ)
+   - \`input\` = JSON.parse của \`input_json\` LẤY NGUYÊN, KHÔNG sửa
+3. Nếu user note có yêu cầu cụ thể (vd: "lấy thêm 24h volume"), điều chỉnh thêm field input phù hợp với schema.
+4. Sau khi step re-run xong, gọi \`finalizeReport\` lại với:
+   - \`raw_json\` cập nhật output mới của node đó (giữ output cũ của các node khác)
+   - \`summary_markdown\` re-compose ngắn — note rõ "Cập nhật step <label> theo yêu cầu user"
+5. KHÔNG dispatch lại các skill khác trừ khi user note yêu cầu rõ.
+
 ## Phong cách
 
 - KHÔNG cần preface text trước tool call. Gọi tool ngay.
