@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useLogin, usePrivy, useWallets } from '@privy-io/react-auth'
-import { createWalletClient, custom, encodeFunctionData, parseAbi } from 'viem'
+import { useLogin, usePrivy } from '@privy-io/react-auth'
 import { BadgeCheck, ExternalLink, Loader2, ShieldCheck, Wallet } from 'lucide-react'
 
 type Identity = {
@@ -17,10 +16,6 @@ const IDENTITY_REGISTRY = (process.env.NEXT_PUBLIC_IDENTITY_REGISTRY ??
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 const ARC_CHAIN_ID = 5042002
 
-const identityAbi = parseAbi([
-  'function register(string agentURI) external returns (uint256 agentId)',
-])
-
 export function IdentityGate({
   children,
   mode = 'block',
@@ -31,9 +26,8 @@ export function IdentityGate({
    *  home page where templates should stay browsable while the user mints. */
   mode?: 'block' | 'banner'
 }) {
-  const { ready, authenticated, user } = usePrivy()
+  const { ready, authenticated } = usePrivy()
   const { login } = useLogin()
-  const { wallets } = useWallets()
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [step, setStep] = useState<'idle' | 'signing' | 'confirming'>('idle')
   const [err, setErr] = useState<string | null>(null)
@@ -100,61 +94,21 @@ export function IdentityGate({
 
   const mint = async () => {
     setErr(null)
-    const wallet = wallets.find((w) => w.address?.toLowerCase() === user?.wallet?.address?.toLowerCase()) ?? wallets[0]
-    if (!wallet) {
-      setErr('No Privy wallet found')
-      return
-    }
-
     try {
       setStep('signing')
-      // Make sure the wallet is on Arc testnet before signing.
-      try {
-        await wallet.switchChain(ARC_CHAIN_ID)
-      } catch (e) {
-        // Some external wallets reject silently if already correct.
-        console.debug('switchChain skipped', e)
-      }
-
-      const provider = await wallet.getEthereumProvider()
-      const walletClient = createWalletClient({
-        // chain config left to the EIP-1193 provider (already switched above)
-        transport: custom(provider),
-      })
-
-      // Use the live origin so the on-chain URI matches the deploy host
-      // (gigawork.xyz, vercel preview, localhost) — falls back to env, then
-      // to a sane default. Without this the URI was hardcoded to
-      // http://localhost:3000 in production and the registry contract
-      // rejected the tx.
-      const origin =
-        (typeof window !== 'undefined' ? window.location.origin : '') ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        'https://gigawork.xyz'
-      const agentURI = `${origin}/agent/${wallet.address.toLowerCase()}/client`
-      const data = encodeFunctionData({
-        abi: identityAbi,
-        functionName: 'register',
-        args: [agentURI],
-      })
-
-      const txHash = await walletClient.sendTransaction({
-        account: wallet.address as `0x${string}`,
-        to: IDENTITY_REGISTRY,
-        data,
-        chain: null,
-      })
-
-      setStep('confirming')
-      const r = await fetch('/api/identity/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ txHash }),
-      })
+      // v2 uses sponsored mint: the server admin wallet pays gas + signs the
+      // register() tx, and the user row is updated with the resulting
+      // tokenId. The user's Privy wallet doesn't need any testnet ETH.
+      // v3 will switch back to user-signed once the embedded wallet has
+      // a faucet path. Trade-off: the on-chain owner is the admin, but
+      // the DB record binds the token id to this user's wallet so all
+      // ERC-8183 jobs they post resolve back here.
+      const r = await fetch('/api/identity/mint', { method: 'POST' })
+      const j = await r.json().catch(() => ({}))
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}))
-        throw new Error(j.error ? `${j.error}: ${j.detail ?? ''}` : await r.text())
+        throw new Error(j.detail || j.error || `mint failed (${r.status})`)
       }
+      setStep('confirming')
       await refresh()
       window.dispatchEvent(new CustomEvent('gw:identity-changed'))
     } catch (e) {
