@@ -31,6 +31,32 @@ export function buildBrainTools(ctx: BrainContext) {
         .min(1),
     }),
     execute: async ({ nodes: planned }) => {
+      // Block re-planning. If a plan exists, return its nodes so Kimi reads
+      // the existing node_ids and proceeds to dispatch instead of looping.
+      const priorPlan = await db
+        .select({ id: messages.id, toolPayload: messages.toolPayload })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.workflowId, workflowId),
+            eq(messages.toolName, 'planWorkflow'),
+          ),
+        )
+        .limit(1)
+      if (priorPlan.length > 0) {
+        const existingNodes = await db
+          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn })
+          .from(nodes)
+          .where(eq(nodes.workflowId, workflowId))
+        return {
+          ok: false,
+          error: 'already_planned',
+          message:
+            'A plan already exists for this workflow. Do NOT re-plan. Call dispatchSkill on each existing node below, then finalizeReport.',
+          existing_nodes: existingNodes,
+        }
+      }
+
       const skillRows = await db.query.skills.findMany()
       const byName = new Map(skillRows.map((s) => [s.name, s]))
 
@@ -87,22 +113,27 @@ export function buildBrainTools(ctx: BrainContext) {
     inputSchema: z.object({
       node_id: z.string().uuid(),
       skill_name: z.string().min(1),
-      input_json: z
-        .string()
-        .min(2)
+      input: z
+        .record(z.string(), z.unknown())
         .describe(
-          'JSON-encoded object of skill-specific arguments. Example: {"token_address":"0xabc","chain":"ethereum"}. NEVER pass "{}" — extract args from user prompt.',
-        ),
+          'Skill-specific arguments as a plain object. Example: {"token_address":"0xabc","chain":"ethereum"}. Extract from user prompt — NEVER pass {}.',
+        )
+        .optional(),
+      // Legacy alternative — older prompts told Kimi to JSON.stringify the args.
+      input_json: z.string().optional(),
     }),
-    execute: async ({ node_id, skill_name, input_json }) => {
-      // Tolerate either object-shaped string or actual object (some Kimi calls
-      // bypass schema and pass the object directly).
-      let input: Record<string, unknown>
-      try {
-        input = typeof input_json === 'string' ? JSON.parse(input_json) : (input_json as Record<string, unknown>)
-        if (!input || typeof input !== 'object') input = {}
-      } catch {
-        input = {}
+    execute: async ({ node_id, skill_name, input: rawInput, input_json }) => {
+      // Accept either {input: {...}} or {input_json: '{"...":"..."}'} or both.
+      let input: Record<string, unknown> = {}
+      if (rawInput && typeof rawInput === 'object') {
+        input = rawInput as Record<string, unknown>
+      } else if (input_json) {
+        try {
+          const parsed = typeof input_json === 'string' ? JSON.parse(input_json) : input_json
+          if (parsed && typeof parsed === 'object') input = parsed as Record<string, unknown>
+        } catch {
+          /* leave as {} */
+        }
       }
       const skill = await getSkillByName(skill_name)
       if (!skill) {
@@ -276,10 +307,20 @@ export function buildBrainTools(ctx: BrainContext) {
         .limit(1)
 
       if (dispatched.length === 0) {
+        // Surface the actual planned nodes so Kimi knows exactly what to dispatch.
+        const planned = await db
+          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn })
+          .from(nodes)
+          .where(eq(nodes.workflowId, workflowId))
+          .limit(20)
         return {
           ok: false,
-          error:
-            'finalize_blocked: no dispatchSkill has run yet. Call dispatchSkill on each planned node first (research nodes, then report-composer), THEN call finalizeReport with the composed markdown. Do not finalize with placeholder "data unavailable" text — actually run the skills.',
+          error: 'must_dispatch_first',
+          message:
+            'You called planWorkflow but never called dispatchSkill. STOP planning and start dispatching. For EACH planned node below, call dispatchSkill(node_id, skill_name, input). Run depth-0 nodes first, then their dependents. After all skills run, THEN call finalizeReport.',
+          planned_nodes: planned,
+          example_call:
+            'dispatchSkill({ node_id: "<uuid from planned_nodes>", skill_name: "polymarket-pulse", input: { query: "Iran warship", limit: 5 } })',
         }
       }
 
