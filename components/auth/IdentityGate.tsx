@@ -99,18 +99,33 @@ export function IdentityGate({
       // v2 uses sponsored mint: the server admin wallet pays gas + signs the
       // register() tx, and the user row is updated with the resulting
       // tokenId. The user's Privy wallet doesn't need any testnet ETH.
-      // v3 will switch back to user-signed once the embedded wallet has
-      // a faucet path. Trade-off: the on-chain owner is the admin, but
-      // the DB record binds the token id to this user's wallet so all
-      // ERC-8183 jobs they post resolve back here.
       const r = await fetch('/api/identity/mint', { method: 'POST' })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as {
+        ok?: boolean
+        already?: boolean
+        tokenId?: string
+        txHash?: string
+        error?: string
+        detail?: string
+      }
+      if (!r.ok || !j.tokenId) {
         throw new Error(j.detail || j.error || `mint failed (${r.status})`)
       }
       setStep('confirming')
-      await refresh()
+
+      // Optimistic UI: trust the mint response and unlock the gate
+      // immediately. /api/me re-fetch below confirms it server-side and
+      // catches any race where the DB update hadn't replicated yet.
+      setIdentity({
+        hasIdentity: true,
+        tokenId: j.tokenId,
+        txHash: j.txHash ?? null,
+        mintedAt: new Date().toISOString(),
+      })
       window.dispatchEvent(new CustomEvent('gw:identity-changed'))
+      // Background re-fetch — if /api/me 5xxs we still keep the optimistic
+      // value so the user isn't pushed back to the gate.
+      refresh().catch(() => {})
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setErr(msg)
