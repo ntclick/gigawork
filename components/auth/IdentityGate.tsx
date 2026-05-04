@@ -14,7 +14,6 @@ type Identity = {
 
 const IDENTITY_REGISTRY = (process.env.NEXT_PUBLIC_IDENTITY_REGISTRY ??
   '0x8004A818BFB912233c491871b3d84c89A494BD9e') as `0x${string}`
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 const ARC_CHAIN_ID = 5042002
 
@@ -123,7 +122,16 @@ export function IdentityGate({
         transport: custom(provider),
       })
 
-      const agentURI = `${APP_URL}/agent/${wallet.address.toLowerCase()}/client`
+      // Use the live origin so the on-chain URI matches the deploy host
+      // (gigawork.xyz, vercel preview, localhost) — falls back to env, then
+      // to a sane default. Without this the URI was hardcoded to
+      // http://localhost:3000 in production and the registry contract
+      // rejected the tx.
+      const origin =
+        (typeof window !== 'undefined' ? window.location.origin : '') ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        'https://gigawork.xyz'
+      const agentURI = `${origin}/agent/${wallet.address.toLowerCase()}/client`
       const data = encodeFunctionData({
         abi: identityAbi,
         functionName: 'register',
