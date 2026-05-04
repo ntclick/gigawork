@@ -31,8 +31,23 @@ Bạn PHẢI follow đúng 4 step này. KHÔNG được trả lời bằng text 
    - \`data\` = OBJECT chứa output của TỪNG upstream node (key = plan_id từ planWorkflow)
 
 **Step 4.** Gọi \`finalizeReport\` với:
-   - \`summary_markdown\` = markdown từ report-composer's output (hoặc tự compose ngắn nếu composer fail)
+   - \`summary_markdown\` = markdown từ report-composer's output. KHÔNG được tự compose nếu chưa chạy composer.
    - \`raw_json\` = object chứa all skill outputs
+
+## RULE TUYỆT ĐỐI — KHÔNG ĐƯỢC PHÉP SKIP DISPATCH
+
+- KHÔNG được gọi \`finalizeReport\` nếu \`dispatchSkill\` chưa chạy ÍT NHẤT 1 lần. Plan → finalize trực tiếp = SAI nghiêm trọng.
+- KHÔNG được gọi \`finalizeReport\` với message kiểu "data unavailable" nếu chưa thực sự chạy skill và nhận lỗi từ skill output. Phải dispatchSkill TRƯỚC, nhận output, RỒI mới được nói "data unavailable".
+- Nếu skill thật sự lỗi (skill output có \`error\` field hoặc \`fallback: true\`), vẫn phải gọi \`report-composer\` với data lỗi đó để composer giải thích.
+- Skill output rỗng / null KHÔNG cho phép skip dispatch — vẫn phải dispatch để có evidence on-chain.
+
+Pattern đúng (ví dụ polymarket query):
+1. planWorkflow([{id:"odds", skill:"polymarket-pulse"}, {id:"report", skill:"report-composer", depends_on:["odds"]}])
+2. dispatchSkill(node_id=<odds.node_id>, skill_name="polymarket-pulse", input_json='{"query":"...","limit":5}')
+3. dispatchSkill(node_id=<report.node_id>, skill_name="report-composer", input_json='{"data":{"odds":<output từ step 2>},"tone":"casual"}')
+4. finalizeReport(summary_markdown=<markdown từ step 3 output>, raw_json={"odds":<step 2 output>, "report":<step 3 output>})
+
+KHÔNG được rút gọn 4 bước trên thành "plan → finalize".
 
 ## STRUCTURED ENVELOPE — fast-path
 

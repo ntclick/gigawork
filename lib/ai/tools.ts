@@ -1,5 +1,5 @@
 import { tool } from 'ai'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
@@ -260,6 +260,29 @@ export function buildBrainTools(ctx: BrainContext) {
       raw_json: z.record(z.string(), z.unknown()).default({}),
     }),
     execute: async ({ summary_markdown, raw_json }) => {
+      // Guardrail: refuse to finalize if no dispatchSkill ran yet. Kimi
+      // sometimes plans → finalizes directly with a "data unavailable"
+      // excuse, skipping the actual research step. We force at least one
+      // dispatch to have happened by checking the messages table.
+      const dispatched = await db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.workflowId, workflowId),
+            eq(messages.toolName, 'dispatchSkill'),
+          ),
+        )
+        .limit(1)
+
+      if (dispatched.length === 0) {
+        return {
+          ok: false,
+          error:
+            'finalize_blocked: no dispatchSkill has run yet. Call dispatchSkill on each planned node first (research nodes, then report-composer), THEN call finalizeReport with the composed markdown. Do not finalize with placeholder "data unavailable" text — actually run the skills.',
+        }
+      }
+
       await db.insert(messages).values({
         workflowId,
         role: 'brain',
