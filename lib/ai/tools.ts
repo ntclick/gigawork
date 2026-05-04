@@ -111,7 +111,12 @@ export function buildBrainTools(ctx: BrainContext) {
       'web-intel: \'{"query":"Ethereum upgrades 2026","max_results":5}\'. ' +
       'report-composer: \'{"data":{<plan_id>:<output>,...},"tone":"casual","format":"markdown"}\'.',
     inputSchema: z.object({
-      node_id: z.string().uuid(),
+      // Accept UUID or plan_id slug (e.g. "polymarket-odds"). We resolve
+      // slug→UUID server-side so Kimi can confidently use either form.
+      node_id: z
+        .string()
+        .min(1)
+        .describe('node_id from planWorkflow output (UUID) OR plan_id slug (e.g. "polymarket-odds")'),
       skill_name: z.string().min(1),
       input: z
         .record(z.string(), z.unknown())
@@ -122,7 +127,28 @@ export function buildBrainTools(ctx: BrainContext) {
       // Legacy alternative — older prompts told Kimi to JSON.stringify the args.
       input_json: z.string().optional(),
     }),
-    execute: async ({ node_id, skill_name, input: rawInput, input_json }) => {
+    execute: async ({ node_id: rawNodeId, skill_name, input: rawInput, input_json }) => {
+      // Resolve rawNodeId — Kimi may pass either the UUID or the plan_id slug.
+      // If not a UUID, look up the most recent node with matching label or
+      // skill_name in this workflow.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawNodeId)
+      let node_id = rawNodeId
+      if (!isUuid) {
+        // Slug path: find a pending/running node in this workflow whose
+        // skill matches `skill_name`. If multiple, pick the depth-0 one.
+        const skillRow = await getSkillByName(skill_name)
+        const candidates = skillRow
+          ? await db
+              .select({ id: nodes.id, dependsOn: nodes.dependsOn, status: nodes.status })
+              .from(nodes)
+              .where(and(eq(nodes.workflowId, workflowId), eq(nodes.skillId, skillRow.id)))
+              .limit(20)
+          : []
+        const depth0 = candidates.filter((c) => !c.dependsOn || c.dependsOn.length === 0)
+        const pending = depth0.filter((c) => c.status === 'pending')
+        const pick = pending[0] ?? depth0[0] ?? candidates[0]
+        if (pick) node_id = pick.id
+      }
       // Accept either {input: {...}} or {input_json: '{"...":"..."}'} or both.
       let input: Record<string, unknown> = {}
       if (rawInput && typeof rawInput === 'object') {
@@ -278,6 +304,16 @@ export function buildBrainTools(ctx: BrainContext) {
           .update(nodes)
           .set({ status: 'failed', output: { error } })
           .where(eq(nodes.id, node_id))
+        // Persist failed dispatch as a message so debug-workflow shows it
+        // and the brain sees clear evidence the skill was attempted.
+        await db.insert(messages).values({
+          workflowId,
+          role: 'system',
+          nodeId: node_id,
+          toolName: 'dispatchSkill',
+          toolPayload: { skill_name, input, error, ok: false },
+          content: null,
+        })
         return { ok: false, node_id, skill_name, error }
       }
     },
