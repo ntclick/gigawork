@@ -96,14 +96,16 @@ function ToastItem({ item, onClose }: { item: ToastEvent; onClose: () => void })
   const s = styles[item.kind]
   return (
     <div
-      className={`pointer-events-auto flex max-w-sm items-start gap-2 border-2 border-black ${s.border} ${s.bg} px-3 py-2 shadow-[4px_4px_0_0_#000]`}
+      className={`pointer-events-auto flex max-w-md items-start gap-2 border-2 border-black ${s.border} ${s.bg} px-3 py-2 shadow-[4px_4px_0_0_#000]`}
       role="alert"
     >
       <span className="mt-0.5 shrink-0">{s.icon}</span>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-white">{item.message}</div>
         {item.detail && (
-          <div className="mt-0.5 truncate text-[11px] text-white/55">{item.detail}</div>
+          <div className="mt-0.5 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] text-white/65">
+            {item.detail}
+          </div>
         )}
       </div>
       <button

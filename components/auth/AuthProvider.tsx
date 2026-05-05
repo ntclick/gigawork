@@ -35,6 +35,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         embeddedWallets: {
           ethereum: { createOnLogin: 'users-without-wallets' },
         },
+        // Force Coinbase Wallet to EOA mode. Smart Wallet hard-codes a chain
+        // allowlist that doesn't include Arc Testnet (5042002), spamming a
+        // "configured chains are not supported" warning to the console.
+        externalWallets: {
+          coinbaseWallet: { config: { preference: { options: 'eoaOnly' } } },
+        },
         defaultChain: arcTestnet,
         supportedChains: [arcTestnet],
       }}

@@ -54,8 +54,28 @@ export async function streamBrain(opts: {
     system: `${HERMES_SYSTEM_PROMPT}\n\n## Available agents (ERC-8004 registry):\n${skillCard}`,
     messages: await convertToModelMessages(opts.uiMessages),
     tools,
-    stopWhen: stepCountIs(24),
+    stopWhen: stepCountIs(10),
     temperature: 0.4,
+    onError: async ({ error }) => {
+      // Persist mid-stream errors (LLM API rejections, network failures) so
+      // they're visible in /api/admin/debug-workflow + the workflow page,
+      // not just thrown to the client where the toast truncates them.
+      const msg = error instanceof Error ? error.message : String(error)
+      const stack = error instanceof Error ? error.stack?.slice(0, 2000) : undefined
+      console.error('[brain.onError]', msg)
+      try {
+        await db.insert(messages).values({
+          workflowId: opts.workflowId,
+          role: 'brain',
+          content: `❌ Brain stream error: ${msg.slice(0, 1500)}`,
+          toolName: 'stream_error',
+          toolPayload: { error: msg, stack },
+        })
+        await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
+      } catch (dbErr) {
+        console.error('[brain.onError] failed to persist', dbErr)
+      }
+    },
     onFinish: async ({ text, finishReason }) => {
       // Auto-finalize: Kimi sometimes streams the final report as plain text
       // instead of calling finalizeReport. We persist the assembled text
