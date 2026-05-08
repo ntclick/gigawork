@@ -178,7 +178,6 @@ export async function streamBrain(opts: {
     system: `${HERMES_SYSTEM_PROMPT}\n\n## Available agents (ERC-8004 registry):\n${skillCard}`,
     messages: await convertToModelMessages(opts.uiMessages),
     tools,
-    maxTokens: 4000,
     stopWhen: stepCountIs(10),
     // temperature: not set — Kimi K2 only supports the default (1).
     onError: async ({ error }) => {

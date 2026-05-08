@@ -198,12 +198,12 @@ export async function checkOnChainIdentity(wallet: string): Promise<string | nul
       args: [getAddress(wallet)],
     })
     
-    if (balance > 0n) {
+    if (balance > BigInt(0)) {
       const tokenId = await publicClient.readContract({
         address: IDENTITY_REGISTRY,
         abi: identityAbi,
         functionName: 'tokenOfOwnerByIndex',
-        args: [getAddress(wallet), 0n],
+        args: [getAddress(wallet), BigInt(0)],
       })
       return tokenId.toString()
     }
