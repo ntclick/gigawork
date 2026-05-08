@@ -205,6 +205,10 @@ export function HomeClient() {
                       onToggle={() =>
                         setExpandedId((cur) => (cur === tpl.id ? null : tpl.id))
                       }
+                      onSubmit={async (envelope) => {
+                        setExpandedId(null)
+                        await submit(envelope)
+                      }}
                       onFillFreeText={(p) => {
                         // If the template has a slotted form, parse and load
                         // segments — that switches the input area to the
