@@ -56,7 +56,7 @@ export function WorkflowDocPanel({
   return (
     <aside className="giga-theme hidden w-96 shrink-0 overflow-y-auto border-l border-black bg-[var(--giga-panel)] p-6 lg:block">
       {/* Live status banner */}
-      <StatusBanner busy={busy} dispatchStats={dispatchStats} hasReport={!!finalReport} />
+      <StatusBanner busy={busy} dispatchStats={dispatchStats} hasReport={!!finalReport} status={status} />
 
       <h2
         className="font-pixel-body mt-2 mb-1 break-words text-2xl uppercase leading-tight md:text-3xl"
@@ -184,11 +184,21 @@ function StatusBanner({
   busy,
   dispatchStats,
   hasReport,
+  status,
 }: {
   busy: boolean
   dispatchStats: { running: number; completed: number; failed: number; total: number }
   hasReport: boolean
+  status: string
 }) {
+  if (status === 'error') {
+    return (
+      <div className="mb-4 inline-flex items-center gap-2 border-2 border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+        <span className="text-red-300">Hermes encountered an error</span>
+      </div>
+    )
+  }
   if (!busy && !hasReport) return null
   if (hasReport && !busy) {
     return (
