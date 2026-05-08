@@ -243,8 +243,8 @@ export async function settleJob(args: {
   const completeData = encodeComplete(jobId, reasonHash)
 
   let nonce = await publicClient.getTransactionCount({ address: adminAccount.address })
-  const submitHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: submitData, nonce: nonce++ })
-  const completeHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: completeData, nonce: nonce++ })
+  const submitHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: submitData, nonce: nonce++ })
+  const completeHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: completeData, nonce: nonce++ })
 
   const [submitReceipt, completeReceipt] = await Promise.all([
     publicClient.waitForTransactionReceipt({ hash: submitHash, confirmations: 1 }),
