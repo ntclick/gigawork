@@ -20,7 +20,7 @@ import { Maximize2, Hexagon, ExternalLink } from 'lucide-react'
 import type { UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 
-import { NodeDetailSheet, type NodeDetail, type NodeEditRequest, type NodeTestRequest } from './NodeDetailSheet'
+import { NodeDetailSheet, type NodeDetail, type NodeEditRequest } from './NodeDetailSheet'
 import type { Erc8183Trail } from './WorkflowDocPanel'
 
 type PlanNode = {
