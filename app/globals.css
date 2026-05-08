@@ -664,5 +664,14 @@ button, a, .gw-transition {
   50%      { left: 120%; }
 }
 
-. g w - m d   h 1   {   f o n t - s i z e :   1 . 5 e m ;   f o n t - w e i g h t :   b o l d ;   m a r g i n - b o t t o m :   0 . 5 e m ;   m a r g i n - t o p :   1 e m ;   }   . g w - m d   h 2   {   f o n t - s i z e :   1 . 2 5 e m ;   f o n t - w e i g h t :   b o l d ;   m a r g i n - b o t t o m :   0 . 5 e m ;   m a r g i n - t o p :   1 e m ;   }   . g w - m d   h 3   {   f o n t - s i z e :   1 . 1 2 5 e m ;   f o n t - w e i g h t :   b o l d ;   m a r g i n - b o t t o m :   0 . 5 e m ;   m a r g i n - t o p :   1 e m ;   }   . g w - m d   p   {   m a r g i n - b o t t o m :   1 e m ;   }   . g w - m d   u l   {   l i s t - s t y l e - t y p e :   d i s c ;   p a d d i n g - l e f t :   1 . 5 e m ;   m a r g i n - b o t t o m :   1 e m ;   }   . g w - m d   o l   {   l i s t - s t y l e - t y p e :   d e c i m a l ;   p a d d i n g - l e f t :   1 . 5 e m ;   m a r g i n - b o t t o m :   1 e m ;   }   . g w - m d   l i   {   m a r g i n - b o t t o m :   0 . 2 5 e m ;   }   . g w - m d   b l o c k q u o t e   {   b o r d e r - l e f t :   4 p x   s o l i d   r g b a ( 2 5 5 , 2 5 5 , 2 5 5 , 0 . 2 ) ;   p a d d i n g - l e f t :   1 e m ;   f o n t - s t y l e :   i t a l i c ;   o p a c i t y :   0 . 8 ;   m a r g i n - b o t t o m :   1 e m ;   }   . g w - m d   p r e   {   b a c k g r o u n d :   r g b a ( 0 , 0 , 0 , 0 . 3 ) ;   p a d d i n g :   1 e m ;   b o r d e r - r a d i u s :   4 p x ;   o v e r f l o w - x :   a u t o ;   m a r g i n - b o t t o m :   1 e m ;   f o n t - f a m i l y :   m o n o s p a c e ;   }   . g w - m d   c o d e   {   b a c k g r o u n d :   r g b a ( 0 , 0 , 0 , 0 . 3 ) ;   p a d d i n g :   0 . 1 e m   0 . 3 e m ;   b o r d e r - r a d i u s :   2 p x ;   f o n t - f a m i l y :   m o n o s p a c e ;   f o n t - s i z e :   0 . 9 e m ;   }  
- 
+/* Markdown typography for final reports */
+.gw-md h1 { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
+.gw-md h2 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
+.gw-md h3 { font-size: 1.125em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
+.gw-md p { margin-bottom: 1em; }
+.gw-md ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
+.gw-md ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 1em; }
+.gw-md li { margin-bottom: 0.25em; }
+.gw-md blockquote { border-left: 4px solid rgba(255,255,255,0.2); padding-left: 1em; font-style: italic; opacity: 0.8; margin-bottom: 1em; }
+.gw-md pre { background: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; overflow-x: auto; margin-bottom: 1em; font-family: monospace; }
+.gw-md code { background: rgba(0,0,0,0.3); padding: 0.1em 0.3em; border-radius: 2px; font-family: monospace; font-size: 0.9em; }
