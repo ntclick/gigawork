@@ -192,16 +192,16 @@ export async function openAndFundJob(args: {
   if (allowance < budget) {
     const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
     const approveData = encodeApprove(AGENTIC_COMMERCE, maxUint256)
-    approveHash = await adminWallet.sendTransaction({ to: USDC_ADDRESS, data: approveData, nonce: nonce++ })
+    approveHash = await adminWallet!.sendTransaction({ to: USDC_ADDRESS, data: approveData, nonce: nonce++ })
     promises.push(publicClient.waitForTransactionReceipt({ hash: approveHash, confirmations: 1 }))
   }
 
   const setBudgetData = encodeSetBudget(jobId, budget)
-  const setBudgetHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: setBudgetData, nonce: nonce++ })
+  const setBudgetHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: setBudgetData, nonce: nonce++ })
   promises.push(publicClient.waitForTransactionReceipt({ hash: setBudgetHash, confirmations: 1 }))
 
   const fundData = encodeFund(jobId)
-  const fundHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: fundData, nonce: nonce++ })
+  const fundHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: fundData, nonce: nonce++ })
   promises.push(publicClient.waitForTransactionReceipt({ hash: fundHash, confirmations: 1 }))
 
   // Await all receipts in parallel
