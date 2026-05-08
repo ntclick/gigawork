@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { checkOnChainIdentity } from '@/lib/chain/identity'
