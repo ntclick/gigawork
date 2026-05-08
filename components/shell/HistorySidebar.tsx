@@ -76,8 +76,13 @@ export function HistorySidebar() {
 
   // Fetch workflow list — refresh on drawer open + every 15s.
   useEffect(() => {
+    if (!ready) return
+    if (!authenticated) {
+      setItems([])
+      return
+    }
     const refresh = () =>
-      fetch('/api/workflows')
+      fetch('/api/workflows', { cache: 'no-store' })
         .then((r) => r.json())
         .then((j) => setItems(j.workflows ?? []))
         .catch(() => {})
@@ -91,10 +96,10 @@ export function HistorySidebar() {
     }
   }, [])
   useEffect(() => {
-    if (historyOpen) {
-      fetch('/api/workflows').then((r) => r.json()).then((j) => setItems(j.workflows ?? [])).catch(() => {})
+    if (historyOpen && authenticated) {
+      fetch('/api/workflows', { cache: 'no-store' }).then((r) => r.json()).then((j) => setItems(j.workflows ?? [])).catch(() => {})
     }
-  }, [historyOpen])
+  }, [historyOpen, authenticated])
 
   // Fetch user balance
   useEffect(() => {

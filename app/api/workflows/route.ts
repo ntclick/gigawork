@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { and, desc, eq } from 'drizzle-orm'
+export const dynamic = 'force-dynamic'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
