@@ -124,6 +124,8 @@ export async function GET(_req: Request, ctx: RouteCtx) {
         ? {
             jobId: wf.erc8183JobId,
             createTx: wf.erc8183CreateTx,
+            setBudgetTx: wf.erc8183SetBudgetTx,
+            approveTx: wf.erc8183ApproveTx,
             fundTx: wf.erc8183FundTx,
             submitTx: wf.erc8183SubmitTx,
             completeTx: wf.erc8183CompleteTx,

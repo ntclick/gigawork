@@ -7,6 +7,10 @@ export const users = pgTable('users', {
   identityTokenId: text('identity_token_id'),
   identityTxHash: text('identity_tx_hash'),
   identityMintedAt: timestamp('identity_minted_at', { withTimezone: true }),
+  // Set by lib/credits/postMintHooks.prefundUserWallet — non-null means the
+  // admin already shipped this user their starter native gas + USDC after
+  // mint. Used to keep the side-effect idempotent across retries.
+  prefundedAt: timestamp('prefunded_at', { withTimezone: true }),
   // ─── Notification preferences (all user-supplied) ──────────────
   // User runs their own Resend (or compatible) email account + their own
   // Telegram bot. Platform doesn't host a shared bot or pay for email —
@@ -33,6 +37,10 @@ export const workflows = pgTable('workflows', {
   //     submit+complete tx hashes are written from finalizeReport. ────
   erc8183JobId: text('erc8183_job_id'),
   erc8183CreateTx: text('erc8183_create_tx'),
+  // Admin-signed setBudget tx (Plan A only — provider role) between
+  // user's createJob and approve/fund. Null in legacy admin-self-loop mode.
+  erc8183SetBudgetTx: text('erc8183_set_budget_tx'),
+  erc8183ApproveTx: text('erc8183_approve_tx'),
   erc8183FundTx: text('erc8183_fund_tx'),
   erc8183SubmitTx: text('erc8183_submit_tx'),
   erc8183CompleteTx: text('erc8183_complete_tx'),

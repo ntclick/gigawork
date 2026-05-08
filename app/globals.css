@@ -623,3 +623,44 @@ button, a, .gw-transition {
 .gw-md strong { color: rgba(255, 255, 255, 0.97); font-weight: 600; }
 .gw-md em { color: rgba(255, 255, 255, 0.78); }
 .gw-md del { color: rgba(255, 255, 255, 0.4); }
+
+/* ═══ n8n-style node detail drawer ═══ */
+@keyframes gw-drawer-in-right {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Spinner — used on test-running state */
+.gw-spinner {
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-top-color: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  animation: gw-spin 600ms linear infinite;
+}
+@keyframes gw-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Shine sweep on "Test this step" button */
+.gw-shine {
+  position: relative;
+  overflow: hidden;
+}
+.gw-shine::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 50%; height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.18),
+    transparent
+  );
+  animation: gw-shine-sweep 2.5s ease-in-out infinite;
+}
+@keyframes gw-shine-sweep {
+  0%, 100% { left: -100%; }
+  50%      { left: 120%; }
+}
+

@@ -10,13 +10,14 @@ import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
 import type { NodeEditRequest } from '@/components/chat/NodeDetailSheet'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { AppRail } from '@/components/shell/AppRail'
-import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { toast } from '@/components/ui/toast'
 
 type Erc8183Trail = {
   jobId: string
   createTx: string | null
+  setBudgetTx: string | null
+  approveTx: string | null
   fundTx: string | null
   submitTx: string | null
   completeTx: string | null
@@ -41,6 +42,16 @@ export default function WorkflowPage() {
     transport: new DefaultChatTransport({ api: `/api/workflow/${id}/stream` }),
     onFinish: ({ message }) => {
       window.dispatchEvent(new CustomEvent('gw:credits-changed'))
+      // settleJob fires admin-side from finalizeReport once the brain emits
+      // the report tool. The submit/complete tx hashes write to DB ~1s after
+      // onFinish here. Re-fetch snapshot once shortly after to pick up the
+      // new tx hashes for the ERC-8183 trail panel without forcing a reload.
+      setTimeout(() => {
+        fetch(`/api/workflow/${id}/messages`)
+          .then((r) => r.json())
+          .then((j: Snapshot) => setSnapshot(j))
+          .catch(() => {})
+      }, 2500)
       // Surface non-stop finish reasons as warning. (finishReason is on the
       // streaming chunk, not the final message — we just signal completion.)
       const text = (message.parts ?? [])
@@ -88,21 +99,25 @@ export default function WorkflowPage() {
   }, [messages])
 
   // Hydrate from DB so reload preserves the canvas + doc panel.
+  // We also re-fetch when the stream finishes (status transitions to 'idle')
+  // so that the ERC-8183 trail picks up the Submit/Complete transaction hashes.
   useEffect(() => {
-    if (!id) return
+    if (!id || status === 'streaming' || status === 'submitted') return
     let cancelled = false
     fetch(`/api/workflow/${id}/messages`)
       .then((r) => r.json())
       .then((j: Snapshot) => {
         if (cancelled) return
         setSnapshot(j)
-        if (j.messages.length > 0) setMessages(j.messages)
+        // Only set initial messages if we don't have them yet, so we don't
+        // overwrite the UI state with stale DB state during a live chat.
+        if (j.messages.length > 0 && messages.length === 0) setMessages(j.messages)
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [id, setMessages])
+  }, [id, status, setMessages, messages.length])
 
   // Auto-send only when this workflow has never streamed
   useEffect(() => {
@@ -128,15 +143,19 @@ export default function WorkflowPage() {
       {/* Main shell: thin AppRail · canvas · doc panel */}
       <div className="giga-theme flex flex-1 overflow-hidden bg-[var(--giga-dark)]">
         <AppRail />
-        <HistorySidebar />
 
         {/* CANVAS COLUMN */}
         <main className="relative flex flex-1 flex-col overflow-hidden bg-[var(--giga-dark)]">
           {/* Workflow header */}
-          <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6">
-            <div className="min-w-0">
-              <span className="font-pixel-body text-base text-gray-500 sm:text-xl">v1</span>
-              <h1 className="font-pixel-body ml-2 inline truncate text-xl uppercase text-white sm:text-2xl lg:text-3xl">
+          <div className="flex items-center justify-between gap-3 border-b border-white/[0.05] bg-[#12101f] px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2 rounded border border-[var(--giga-accent)]/30 bg-[var(--giga-accent)]/10 px-2 py-1">
+                <span className={`h-2 w-2 rounded-full bg-[var(--giga-accent)] ${busy ? 'animate-pulse' : ''}`} />
+                <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--giga-accent)]">
+                  Hermes Orchestrator
+                </span>
+              </div>
+              <h1 className="font-pixel-body inline truncate text-xl uppercase text-white sm:text-2xl lg:text-3xl">
                 {title}
               </h1>
             </div>
@@ -153,9 +172,11 @@ export default function WorkflowPage() {
           <div className="giga-grid-bg relative flex-1 overflow-hidden">
             <WorkflowCanvas
               messages={messages}
+              workflowId={id}
+              erc8183={snapshot?.workflow.erc8183 ?? null}
               onEditNode={(req) => {
                 if (busy) {
-                  toast.warning('Brain đang chạy', 'Đợi step hiện tại xong rồi sửa lại.')
+                  toast.warning('Hermes is running', 'Wait for the current step to finish before editing.')
                   return
                 }
                 const envelope =
@@ -171,7 +192,7 @@ export default function WorkflowPage() {
             {busy && (
               <div className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs font-pixel-body">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]" />
-                <span className="text-[var(--giga-accent)]">Brain running…</span>
+                <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
               </div>
             )}
           </div>
@@ -213,7 +234,7 @@ function BottomPromptBar({ busy, onSend }: { busy: boolean; onSend: (text: strin
               send()
             }
           }}
-          placeholder={busy ? 'Brain running… (wait before refining)' : 'Refine this workflow with a prompt…'}
+          placeholder={busy ? 'Hermes is orchestrating… (wait before refining)' : 'Refine this workflow with a prompt…'}
           disabled={busy}
           rows={1}
           className="font-pixel-body min-h-[2.25rem] flex-1 resize-none bg-transparent text-base text-white outline-none placeholder:text-gray-400 disabled:cursor-not-allowed sm:text-xl"

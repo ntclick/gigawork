@@ -58,7 +58,7 @@ let INFLIGHT: Promise<Skill[]> | null = null
 async function fetchSkills(): Promise<Skill[]> {
   if (CACHE) return CACHE
   if (INFLIGHT) return INFLIGHT
-  INFLIGHT = fetch('/api/skills', { cache: 'force-cache' })
+  INFLIGHT = fetch('/api/skills', { cache: 'no-store' })
     .then((r) => r.json())
     .then((j: { skills: Skill[] }) => {
       CACHE = j.skills ?? []

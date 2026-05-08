@@ -1,10 +1,31 @@
 import { NextResponse } from 'next/server'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
+import { checkOnChainIdentity } from '@/lib/chain/identity'
+import { db } from '@/lib/db/client'
+import { users } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 export async function GET() {
   try {
-    const u = await getCurrentUser()
+    let u = await getCurrentUser()
+
+    // Auto-sync external mints if we don't have a token recorded yet
+    if (!u.identityTokenId) {
+      const onChainTokenId = await checkOnChainIdentity(u.wallet)
+      if (onChainTokenId) {
+        // Found one on-chain! Update DB silently
+        const [updated] = await db
+          .update(users)
+          .set({ identityTokenId: onChainTokenId })
+          .where(eq(users.id, u.id))
+          .returning()
+        if (updated) {
+          u = updated
+        }
+      }
+    }
+
     return NextResponse.json({
       id: u.id,
       wallet: u.wallet,

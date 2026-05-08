@@ -22,7 +22,7 @@ export const arcTestnet = defineChain({
 
 export const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(RPC_URL),
+  transport: http(RPC_URL, { batch: true }),
 })
 
 export const adminAccount = PK ? privateKeyToAccount(PK as `0x${string}`) : null
@@ -31,7 +31,7 @@ export const adminWallet = adminAccount
   ? createWalletClient({
       account: adminAccount,
       chain: arcTestnet,
-      transport: http(RPC_URL),
+      transport: http(RPC_URL, { batch: true }),
     })
   : null
 

@@ -38,6 +38,7 @@ export const ERC8183_ENABLED = process.env.ERC8183_ENABLED === '1'
 
 const erc20Abi = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)'
 ])
 
 const agenticCommerceAbi = [
@@ -174,24 +175,49 @@ export async function openAndFundJob(args: {
   const jobId = extractJobIdFromReceipt(create.receipt.logs)
   if (!jobId) throw new Error('JobCreated event missing from receipt')
 
-  // Step 2 — setBudget
+  // Step 2 & 3 — Check allowance & Approve (Max) + setBudget + fund concurrently
+  let approveHash: Hex = '0x0'
+  const allowance = await publicClient.readContract({
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [me, AGENTIC_COMMERCE],
+  })
+
+  // We explicitly fetch the nonce to broadcast subsequent txs without waiting for receipts sequentially
+  let nonce = await publicClient.getTransactionCount({ address: me })
+
+  const promises: Promise<Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>>[] = []
+
+  if (allowance < budget) {
+    const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    const approveData = encodeApprove(AGENTIC_COMMERCE, maxUint256)
+    approveHash = await adminWallet.sendTransaction({ to: USDC_ADDRESS, data: approveData, nonce: nonce++ })
+    promises.push(publicClient.waitForTransactionReceipt({ hash: approveHash, confirmations: 1 }))
+  }
+
   const setBudgetData = encodeSetBudget(jobId, budget)
-  const setBudget = await adminSend(AGENTIC_COMMERCE, setBudgetData)
+  const setBudgetHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: setBudgetData, nonce: nonce++ })
+  promises.push(publicClient.waitForTransactionReceipt({ hash: setBudgetHash, confirmations: 1 }))
 
-  // Step 3 — approve USDC
-  const approveData = encodeApprove(AGENTIC_COMMERCE, budget)
-  const approve = await adminSend(USDC_ADDRESS, approveData)
-
-  // Step 4 — fund escrow → status: Funded
   const fundData = encodeFund(jobId)
-  const fund = await adminSend(AGENTIC_COMMERCE, fundData)
+  const fundHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: fundData, nonce: nonce++ })
+  promises.push(publicClient.waitForTransactionReceipt({ hash: fundHash, confirmations: 1 }))
+
+  // Await all receipts in parallel
+  const receipts = await Promise.all(promises)
+  for (const r of receipts) {
+    if (r.status !== 'success') {
+      throw new Error(`tx ${r.transactionHash} reverted in setup batch`)
+    }
+  }
 
   return {
     jobId: jobId.toString(),
     createTx: create.hash,
-    setBudgetTx: setBudget.hash,
-    approveTx: approve.hash,
-    fundTx: fund.hash,
+    setBudgetTx: setBudgetHash,
+    approveTx: approveHash,
+    fundTx: fundHash,
     contract: AGENTIC_COMMERCE,
     budgetUsdc: args.budgetUsdc,
   }
@@ -213,12 +239,24 @@ export async function settleJob(args: {
   const deliverableHash = keccak256(toHex(args.deliverableSeed))
   const reasonHash = keccak256(toHex(args.reasonSeed ?? 'deliverable-approved'))
 
-  const submit = await adminSend(AGENTIC_COMMERCE, encodeSubmit(jobId, deliverableHash))
-  const complete = await adminSend(AGENTIC_COMMERCE, encodeComplete(jobId, reasonHash))
+  const submitData = encodeSubmit(jobId, deliverableHash)
+  const completeData = encodeComplete(jobId, reasonHash)
+
+  let nonce = await publicClient.getTransactionCount({ address: adminAccount.address })
+  const submitHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: submitData, nonce: nonce++ })
+  const completeHash = await adminWallet.sendTransaction({ to: AGENTIC_COMMERCE, data: completeData, nonce: nonce++ })
+
+  const [submitReceipt, completeReceipt] = await Promise.all([
+    publicClient.waitForTransactionReceipt({ hash: submitHash, confirmations: 1 }),
+    publicClient.waitForTransactionReceipt({ hash: completeHash, confirmations: 1 })
+  ])
+
+  if (submitReceipt.status !== 'success') throw new Error(`submit tx ${submitHash} reverted`)
+  if (completeReceipt.status !== 'success') throw new Error(`complete tx ${completeHash} reverted`)
 
   return {
-    submitTx: submit.hash,
-    completeTx: complete.hash,
+    submitTx: submitHash,
+    completeTx: completeHash,
     deliverableHash,
     reasonHash,
   }
@@ -298,3 +336,167 @@ function extractJobIdFromReceipt(logs: readonly { address: `0x${string}`; data: 
 }
 
 export const ERC8183_CONTRACT = AGENTIC_COMMERCE
+export const USDC_CONTRACT = USDC_ADDRESS
+
+// ─── Plan A: user-as-client, admin-as-provider+evaluator ──────────────
+// Below this line is the new flow where the user's Privy embedded wallet
+// signs createJob/approve/fund and the platform admin signs setBudget/submit/
+// complete. Plan A flag is independent from ERC8183_ENABLED; both must be on
+// for the new flow to actually run.
+export const ERC8183_USER_CLIENT = process.env.ERC8183_USER_CLIENT === '1'
+
+export interface PreparedClientTx {
+  to: `0x${string}`
+  data: Hex
+  description: string
+}
+
+export interface PreparedClientTxBundle {
+  // 3 tx the user signs in order: createJob → approve → fund.
+  // setBudget runs server-side AFTER createJob confirms (provider role).
+  createJob: PreparedClientTx
+  approve: PreparedClientTx
+  fund: PreparedClientTx
+  // Echoed back so the confirm endpoint can re-derive without trusting client
+  budget: string         // wei (uint256 string)
+  budgetUsdc: string     // human (e.g. "0.05")
+  expiredAt: string      // unix seconds
+  description: string
+  contract: `0x${string}`
+}
+
+/**
+ * Build the 3 calldata blobs the user's Privy wallet must sign to open + fund
+ * an ERC-8183 job. Critically, `fund()` is the third tx — but it will revert
+ * unless the provider has called `setBudget()` between createJob and fund.
+ * The flow is:
+ *
+ *   1. user signs createJob → returns tx hash
+ *   2. user signs approve   → returns tx hash
+ *   3. backend admin signs setBudget (after extracting jobId from #1)
+ *   4. user signs fund      → returns tx hash
+ *
+ * To avoid 2 separate frontend round-trips, the recommended UX is:
+ *   - user submits all 3 sigs back-to-back (steps 1, 2, 4 from their POV)
+ *   - backend's confirm endpoint sequences them: receives createJob hash first,
+ *     fires setBudget, then expects approve+fund hashes.
+ *
+ * For now the simpler implementation is: user signs createJob alone, frontend
+ * waits for confirm endpoint to fire setBudget, then user signs approve+fund.
+ * That's 2 wallet popups for the user (create, then approve+fund batched).
+ */
+export async function prepareOpenAndFund(args: {
+  clientAddress: `0x${string}`
+  description: string
+  budgetUsdc?: string
+  expirySeconds?: number
+}): Promise<PreparedClientTxBundle | null> {
+  if (!ERC8183_USER_CLIENT || !adminAccount) return null
+
+  const me = adminAccount.address // admin = provider AND evaluator (Plan A)
+  const expiredAt = BigInt(Math.floor(Date.now() / 1000) + (args.expirySeconds ?? 24 * 3600))
+  const budget = parseUnits(args.budgetUsdc ?? '0.05', USDC_DECIMALS)
+
+  return {
+    createJob: {
+      to: AGENTIC_COMMERCE,
+      data: encodeCreateJob(me, me, expiredAt, args.description),
+      description: 'Create ERC-8183 job (open state)',
+    },
+    approve: {
+      to: USDC_ADDRESS,
+      data: encodeApprove(AGENTIC_COMMERCE, budget),
+      description: `Approve ${args.budgetUsdc ?? '0.05'} USDC for escrow`,
+    },
+    fund: {
+      // fund() needs jobId — frontend gets it from createJob receipt and
+      // re-encodes via encodeFundForJob() below before signing.
+      to: AGENTIC_COMMERCE,
+      data: '0x' as Hex, // placeholder — frontend fills after extracting jobId
+      description: 'Fund escrow (lock USDC)',
+    },
+    budget: budget.toString(),
+    budgetUsdc: args.budgetUsdc ?? '0.05',
+    expiredAt: expiredAt.toString(),
+    description: args.description,
+    contract: AGENTIC_COMMERCE,
+  }
+}
+
+/**
+ * Frontend calls this with the jobId extracted from the createJob receipt to
+ * get the exact fund() calldata. Server-only because it has to match the ABI
+ * exactly — frontend should NOT hand-roll encodeFunctionData lest a typo
+ * cause a revert.
+ */
+export function encodeFundForJob(jobId: bigint): Hex {
+  return encodeFund(jobId)
+}
+
+/**
+ * Admin (provider role) signs setBudget after the user's createJob lands.
+ * Extracts the jobId from the user-provided tx hash, verifies it really came
+ * from clientAddress, then sends setBudget. Returns the jobId + setBudget tx.
+ */
+export async function setBudgetByAdmin(args: {
+  createJobTxHash: Hex
+  expectedClient: `0x${string}`
+  budget: bigint
+}): Promise<{ jobId: bigint; setBudgetTx: Hex }> {
+  if (!adminAccount) throw new Error('ADMIN_PRIVATE_KEY not configured')
+
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: args.createJobTxHash,
+    confirmations: 1,
+    timeout: 60_000,
+  })
+  if (receipt.status !== 'success') {
+    throw new Error(`createJob tx ${args.createJobTxHash} reverted`)
+  }
+
+  const jobId = extractJobIdFromReceipt(receipt.logs)
+  if (!jobId) throw new Error('JobCreated event missing from createJob receipt')
+
+  // Verify msg.sender of createJob matches expected client.
+  const tx = await publicClient.getTransaction({ hash: args.createJobTxHash })
+  if (tx.from.toLowerCase() !== args.expectedClient.toLowerCase()) {
+    throw new Error(`createJob signer mismatch: ${tx.from} != ${args.expectedClient}`)
+  }
+
+  // Admin sends setBudget (provider role per Arc reference impl convention).
+  const setBudgetData = encodeSetBudget(jobId, args.budget)
+  const setBudgetTx = await adminSend(AGENTIC_COMMERCE, setBudgetData)
+
+  return { jobId, setBudgetTx: setBudgetTx.hash }
+}
+
+/**
+ * Verify user-signed approve + fund tx hashes — confirm both succeeded and
+ * came from expectedClient, and that the fund tx targeted the expected jobId.
+ */
+export async function verifyApproveAndFund(args: {
+  approveTxHash: Hex
+  fundTxHash: Hex
+  expectedClient: `0x${string}`
+  expectedJobId: bigint
+}): Promise<void> {
+  const expected = args.expectedClient.toLowerCase()
+
+  for (const [label, hash] of [
+    ['approve', args.approveTxHash],
+    ['fund', args.fundTxHash],
+  ] as const) {
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      confirmations: 1,
+      timeout: 60_000,
+    })
+    if (receipt.status !== 'success') {
+      throw new Error(`${label} tx ${hash} reverted`)
+    }
+    const tx = await publicClient.getTransaction({ hash })
+    if (tx.from.toLowerCase() !== expected) {
+      throw new Error(`${label} tx signer mismatch: ${tx.from} != ${args.expectedClient}`)
+    }
+  }
+}

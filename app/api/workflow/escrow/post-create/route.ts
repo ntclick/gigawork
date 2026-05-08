@@ -1,0 +1,110 @@
+import { NextResponse } from 'next/server'
+import { eq } from 'drizzle-orm'
+import { z } from 'zod'
+
+import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
+import {
+  ERC8183_USER_CLIENT,
+  encodeFundForJob,
+  setBudgetByAdmin,
+} from '@/lib/chain/agenticCommerce'
+import { db } from '@/lib/db/client'
+import { workflows } from '@/lib/db/schema'
+
+const Body = z.object({
+  workflowId: z.string().uuid(),
+  createJobTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  budget: z.string().regex(/^\d+$/), // wei string
+})
+
+/**
+ * POST /api/workflow/escrow/post-create
+ *
+ * Step 2 of user-as-client ERC-8183 flow. Receives the user's createJob tx
+ * hash, extracts the on-chain jobId, then admin-signs setBudget (provider
+ * role per Arc reference impl convention). Returns the fund calldata so the
+ * user's wallet can sign step 3.
+ *
+ * The setBudget tx + jobId are persisted to the workflow row immediately —
+ * this is the audit trail point where the workflow becomes "fundable".
+ * If setBudget reverts (e.g. provider already set price for this jobId
+ * somehow), the workflow row is left without erc8183_job_id so the
+ * frontend can retry from /prepare cleanly.
+ */
+export async function POST(req: Request) {
+  if (!ERC8183_USER_CLIENT) {
+    return NextResponse.json(
+      { error: 'feature_disabled' },
+      { status: 503 },
+    )
+  }
+
+  const parsed = Body.safeParse(await req.json().catch(() => ({})))
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.message }, { status: 400 })
+  }
+
+  let user
+  try {
+    user = await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    throw e
+  }
+
+  const [wf] = await db
+    .select()
+    .from(workflows)
+    .where(eq(workflows.id, parsed.data.workflowId))
+    .limit(1)
+  if (!wf) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (wf.userId !== user.id) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+  if (wf.erc8183JobId) {
+    // Already past this step — return existing state for idempotent retry
+    return NextResponse.json({
+      ok: true,
+      already: true,
+      jobId: wf.erc8183JobId,
+      createTx: wf.erc8183CreateTx,
+    })
+  }
+
+  try {
+    const { jobId, setBudgetTx } = await setBudgetByAdmin({
+      createJobTxHash: parsed.data.createJobTxHash as `0x${string}`,
+      expectedClient: user.wallet as `0x${string}`,
+      budget: BigInt(parsed.data.budget),
+    })
+
+    // Persist trail. erc8183_job_id is the marker that gates re-entry from
+    // /prepare; once set, only /confirm can advance the row.
+    await db
+      .update(workflows)
+      .set({
+        erc8183JobId: jobId.toString(),
+        erc8183CreateTx: parsed.data.createJobTxHash,
+        erc8183SetBudgetTx: setBudgetTx,
+      })
+      .where(eq(workflows.id, wf.id))
+
+    const fundCalldata = encodeFundForJob(jobId)
+
+    return NextResponse.json({
+      ok: true,
+      jobId: jobId.toString(),
+      setBudgetTx,
+      fund: { data: fundCalldata },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[escrow/post-create] failed', msg)
+    return NextResponse.json(
+      { error: 'post_create_failed', detail: msg },
+      { status: 500 },
+    )
+  }
+}

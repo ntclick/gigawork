@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useLogin, usePrivy } from '@privy-io/react-auth'
+import { useLogin, usePrivy, useWallets } from '@privy-io/react-auth'
 import { BadgeCheck, ExternalLink, Loader2, ShieldCheck, Wallet } from 'lucide-react'
+import { createWalletClient, custom, encodeFunctionData, parseAbi, type Hex } from 'viem'
 
 type Identity = {
   hasIdentity: boolean
@@ -16,6 +17,10 @@ const IDENTITY_REGISTRY = (process.env.NEXT_PUBLIC_IDENTITY_REGISTRY ??
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 const ARC_CHAIN_ID = 5042002
 
+const identityAbi = parseAbi([
+  'function register(string agentURI) external returns (uint256 agentId)',
+])
+
 export function IdentityGate({
   children,
   mode = 'block',
@@ -28,7 +33,9 @@ export function IdentityGate({
 }) {
   const { ready, authenticated } = usePrivy()
   const { login } = useLogin()
+  const { wallets } = useWallets()
   const [identity, setIdentity] = useState<Identity | null>(null)
+  const [checked, setChecked] = useState(false) // true once initial /api/me probe finishes
   const [step, setStep] = useState<'idle' | 'signing' | 'confirming'>('idle')
   const [err, setErr] = useState<string | null>(null)
 
@@ -58,24 +65,31 @@ export function IdentityGate({
     }
   }, [])
 
-  // Initial load — if Privy says authenticated, /api/me may 401 briefly while
-  // WalletPill is still POSTing to /api/auth/login (cookie race). Retry up to
-  // ~3.5s, then surface the mint CTA so the user is never stuck on the
-  // "Reading identity…" spinner. If the user is genuinely not authenticated,
-  // the !authenticated branch below handles it (Connect wallet CTA).
+  // Initial load — probe /api/me first. In DEV_WALLET mode the server has a
+  // valid session even though Privy `authenticated` is false, so we must check
+  // the real session before falling back to Privy's auth state.
+  //
+  // For production Privy flow: if /api/me returns 401 initially (cookie race
+  // while WalletPill POSTs /api/auth/login), retry up to ~3.5s.
   useEffect(() => {
     if (!ready) return
-    if (!authenticated) {
-      setIdentity(null)
-      return
-    }
     let cancelled = false
     let attempts = 0
     const tick = async () => {
       if (cancelled) return
       const res = await refresh()
       if (cancelled) return
-      if (res === 'ok') return
+      if (res === 'ok') {
+        setChecked(true)
+        return // DEV_WALLET or real session — identity set
+      }
+      // No session from server — if Privy also says not authenticated, stop.
+      if (!authenticated) {
+        setIdentity(null)
+        setChecked(true)
+        return
+      }
+      // Privy says authenticated but /api/me isn't ready yet (cookie race).
       attempts++
       if (attempts < 5) {
         setTimeout(tick, 700)
@@ -85,6 +99,7 @@ export function IdentityGate({
       // The mint button itself will hit /api/identity/mint which is auth-gated,
       // so a misclassification can't let an unauthenticated user mint.
       setIdentity({ hasIdentity: false, tokenId: null, txHash: null, mintedAt: null })
+      setChecked(true)
     }
     tick()
     return () => {
@@ -95,36 +110,28 @@ export function IdentityGate({
   const mint = async () => {
     setErr(null)
     try {
-      setStep('signing')
-      // v2 uses sponsored mint: the server admin wallet pays gas + signs the
-      // register() tx, and the user row is updated with the resulting
-      // tokenId. The user's Privy wallet doesn't need any testnet ETH.
-      const r = await fetch('/api/identity/mint', { method: 'POST' })
-      const j = (await r.json().catch(() => ({}))) as {
-        ok?: boolean
-        already?: boolean
-        tokenId?: string
-        txHash?: string
-        error?: string
-        detail?: string
-      }
-      if (!r.ok || !j.tokenId) {
-        throw new Error(j.detail || j.error || `mint failed (${r.status})`)
-      }
+      const wallet = wallets[0]
+      if (!wallet) throw new Error('No wallet connected')
+
       setStep('confirming')
 
-      // Optimistic UI: trust the mint response and unlock the gate
-      // immediately. /api/me re-fetch below confirms it server-side and
-      // catches any race where the DB update hadn't replicated yet.
+      const res = await fetch('/api/identity/mint', {
+        method: 'POST',
+      })
+      const data = await res.json()
+      
+      if (!res.ok) {
+        throw new Error(data.detail || data.error || `mint failed (${res.status})`)
+      }
+
       setIdentity({
         hasIdentity: true,
-        tokenId: j.tokenId,
-        txHash: j.txHash ?? null,
+        tokenId: data.tokenId,
+        txHash: data.txHash,
         mintedAt: new Date().toISOString(),
       })
       window.dispatchEvent(new CustomEvent('gw:identity-changed'))
-      // Background re-fetch — if /api/me 5xxs we still keep the optimistic
-      // value so the user isn't pushed back to the gate.
+      window.dispatchEvent(new CustomEvent('gw:credits-changed'))
       refresh().catch(() => {})
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -134,48 +141,38 @@ export function IdentityGate({
     }
   }
 
-  if (!ready) {
-    return <Lock icon={<Loader2 className="h-5 w-5 animate-spin text-cyan-300" />} title="Initializing…" body="" />
-  }
+  // ── Render gates ─────────────────────────────────────────────
+  // Wait until both Privy SDK and our /api/me probe are done before
+  // rendering any gate — avoids the "Connect wallet" flash.
 
-  if (!authenticated) {
-    const lock = (
-      <Lock
-        icon={<Wallet className="h-6 w-6 text-cyan-300" />}
-        title="Connect a wallet to get started"
-        body="Connect with Privy to claim 300 free credits and mint your ERC-8004 identity NFT — required before creating your first workflow."
-        cta={{ label: 'Connect wallet', onClick: () => login() }}
-      />
-    )
-    return mode === 'banner' ? (
-      <>
-        <div className="mb-6">{lock}</div>
-        {children}
-      </>
-    ) : (
-      lock
-    )
-  }
-
-  if (!identity) {
-    const lock = (
+  if (!ready || !checked) {
+    const loading = (
       <Lock
         icon={<Loader2 className="h-5 w-5 animate-spin text-cyan-300" />}
-        title="Loading identity…"
+        title="Initializing…"
         body=""
       />
     )
     return mode === 'banner' ? (
       <>
-        <div className="mb-6">{lock}</div>
+        <div className="mb-4">{loading}</div>
         {children}
       </>
-    ) : (
-      lock
+    ) : loading
+  }
+
+  // ① Already minted → show verified badge, no banners.
+  if (identity?.hasIdentity) {
+    return (
+      <>
+        <VerifiedBadge tokenId={identity.tokenId!} txHash={identity.txHash!} />
+        {children}
+      </>
     )
   }
 
-  if (!identity.hasIdentity) {
+  // ② Connected (session exists) but hasn't minted yet → show mint CTA.
+  if (identity && !identity.hasIdentity) {
     const label =
       step === 'signing' ? 'Signing transaction…' :
       step === 'confirming' ? 'Verifying on-chain…' :
@@ -200,11 +197,22 @@ export function IdentityGate({
     )
   }
 
-  return (
+  // ③ No session at all → prompt to connect wallet via Privy.
+  const lock = (
+    <Lock
+      icon={<Wallet className="h-6 w-6 text-cyan-300" />}
+      title="Connect a wallet to get started"
+      body="Connect with Privy to claim 300 free credits and mint your ERC-8004 identity NFT — required before creating your first workflow."
+      cta={{ label: 'Connect wallet', onClick: () => login() }}
+    />
+  )
+  return mode === 'banner' ? (
     <>
-      <VerifiedBadge tokenId={identity.tokenId!} txHash={identity.txHash!} />
+      <div className="mb-6">{lock}</div>
       {children}
     </>
+  ) : (
+    lock
   )
 }
 

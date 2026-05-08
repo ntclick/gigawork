@@ -382,13 +382,13 @@ export function buildBrainTools(ctx: BrainContext) {
           .where(eq(workflows.id, workflowId))
           .limit(1)
         if (wf?.erc8183JobId && !wf.erc8183CompleteTx) {
-          settleJob({
-            jobId: wf.erc8183JobId,
-            deliverableSeed: `${workflowId}:${summary_markdown.slice(0, 256)}`,
-            reasonSeed: 'workflow-completed',
-          })
-            .then(async (res) => {
-              if (!res) return
+          try {
+            const res = await settleJob({
+              jobId: wf.erc8183JobId,
+              deliverableSeed: `${workflowId}:${summary_markdown.slice(0, 256)}`,
+              reasonSeed: 'workflow-completed',
+            })
+            if (res) {
               await db
                 .update(workflows)
                 .set({
@@ -397,13 +397,13 @@ export function buildBrainTools(ctx: BrainContext) {
                   erc8183DeliverableHash: res.deliverableHash,
                 })
                 .where(eq(workflows.id, workflowId))
-            })
-            .catch((e) =>
-              console.warn(
-                '[finalizeReport] ERC-8183 settle failed',
-                e instanceof Error ? e.message : e,
-              ),
+            }
+          } catch (e) {
+            console.warn(
+              '[finalizeReport] ERC-8183 settle failed',
+              e instanceof Error ? e.message : e,
             )
+          }
         }
       }
 

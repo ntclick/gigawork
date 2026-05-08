@@ -35,9 +35,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`dark ${geistSans.variable} ${geistMono.variable} ${vt323.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#0f131c] text-white/90">
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-[#0f131c] text-white/90">
         <AuthProvider>
           {children}
           <ToastHost />

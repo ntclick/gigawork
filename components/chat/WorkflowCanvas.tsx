@@ -16,11 +16,12 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2 } from 'lucide-react'
+import { Maximize2, Hexagon, ExternalLink } from 'lucide-react'
 import type { UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 
-import { NodeDetailSheet, type NodeDetail, type NodeEditRequest } from './NodeDetailSheet'
+import { NodeDetailSheet, type NodeDetail, type NodeEditRequest, type NodeTestRequest } from './NodeDetailSheet'
+import type { Erc8183Trail } from './WorkflowDocPanel'
 
 type PlanNode = {
   node_id: string
@@ -168,9 +169,13 @@ const PLACEHOLDER_EDGES: Edge[] = [
 export function WorkflowCanvas({
   messages,
   onEditNode,
+  workflowId,
+  erc8183,
 }: {
   messages: UIMessage[]
   onEditNode?: (req: NodeEditRequest) => void
+  workflowId?: string
+  erc8183?: Erc8183Trail | null
 }) {
   // Re-derive plan from messages — pure function, runs every render but cheap.
   const { nodes: planNodes, edges: planEdges, hasPlan, details } = useMemo(
@@ -283,15 +288,47 @@ export function WorkflowCanvas({
               />
             ))}
           </div>
-          <div className="border-2 border-black bg-[var(--giga-panel)] px-4 py-2 text-sm font-medium text-[var(--giga-accent)]">
-            ⚡ Hermes brain is planning…
+          <div className="border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-4 py-2 text-sm font-medium text-[var(--giga-accent)] shadow-[0_0_15px_rgba(255,204,77,0.3)]">
+            🧠 Hermes Agent is orchestrating workflow...
           </div>
         </div>
       )}
+
+      {/* Floating ERC-8183 Trail Panel */}
+      {erc8183 && (
+        <div className="absolute bottom-4 left-4 z-10 w-72 rounded-lg border border-emerald-500/30 bg-[#0a0d14]/90 p-4 backdrop-blur-md shadow-lg pointer-events-auto">
+          <div className="mb-3 flex items-center gap-2 border-b border-emerald-500/20 pb-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-emerald-500/20 text-emerald-400">
+              <Hexagon className="h-3.5 w-3.5" />
+            </div>
+            <h3 className="font-pixel-body text-sm uppercase text-emerald-100">ERC-8183 Trail</h3>
+          </div>
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-white/55">Job ID</span>
+              <span className="font-mono text-emerald-300">#{erc8183.jobId}</span>
+            </div>
+            {erc8183.budgetUsdc && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/55">Budget</span>
+                <span className="font-mono text-cyan-300">{erc8183.budgetUsdc} USDC</span>
+              </div>
+            )}
+            <CanvasTxRow label="Open" tx={erc8183.createTx} />
+            {erc8183.setBudgetTx && <CanvasTxRow label="Set budget" tx={erc8183.setBudgetTx} />}
+            {erc8183.approveTx && <CanvasTxRow label="Approve" tx={erc8183.approveTx} />}
+            <CanvasTxRow label="Fund" tx={erc8183.fundTx} />
+            <CanvasTxRow label="Submit" tx={erc8183.submitTx} />
+            <CanvasTxRow label="Complete" tx={erc8183.completeTx} />
+          </div>
+        </div>
+      )}
+
       <NodeDetailSheet
         detail={selectedNode}
         onClose={() => setSelectedNode(null)}
         onEdit={onEditNode}
+        workflowId={workflowId}
       />
     </div>
   )
@@ -490,3 +527,30 @@ function classify(
   if (isLeaf) return 'success'
   return 'query'
 }
+
+function CanvasTxRow({ label, tx }: { label: string; tx: string | null }) {
+  const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+  if (!tx) {
+    return (
+      <div className="flex items-center justify-between">
+        <span className="text-white/55">{label}</span>
+        <span className="text-white/30">— pending —</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-white/55">{label}</span>
+      <a
+        href={`${EXPLORER}/tx/${tx}`}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 font-mono text-[10px] text-emerald-300 hover:text-emerald-200 hover:underline"
+      >
+        {tx.slice(0, 8)}…{tx.slice(-4)}
+        <ExternalLink className="h-2.5 w-2.5" />
+      </a>
+    </div>
+  )
+}
+

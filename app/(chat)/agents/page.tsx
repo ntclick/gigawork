@@ -188,15 +188,16 @@ function AgentCard({ skill }: { skill: Skill }) {
         <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/10 pt-2 text-xs">
           <span className="font-mono text-white/45">{skill.name}</span>
           {minted ? (
-            <a
-              href={`${EXPLORER}/tx/${skill.agentTxHash}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                window.open(`${EXPLORER}/tx/${skill.agentTxHash}`, '_blank')
+              }}
               className="inline-flex items-center gap-1 text-emerald-300 hover:text-emerald-200"
             >
               8004 #{skill.agentTokenId} <ExternalLink className="h-3 w-3" />
-            </a>
+            </button>
           ) : (
             <span className="text-white/35">unminted</span>
           )}

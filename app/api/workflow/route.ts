@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
-import { ERC8183_ENABLED, openAndFundJob } from '@/lib/chain/agenticCommerce'
+import { ERC8183_ENABLED, ERC8183_USER_CLIENT, openAndFundJob } from '@/lib/chain/agenticCommerce'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, workflows } from '@/lib/db/schema'
@@ -134,27 +134,41 @@ async function handlePost(req: Request) {
   // Open + fund a real ERC-8183 job for this workflow when enabled.
   // Failure here MUST NOT block the workflow — the off-chain pipeline can
   // still produce a useful report, we just lose the on-chain trail.
+  //
+  // Two modes:
+  //  - ERC8183_USER_CLIENT=1 → user's Privy wallet drives 3 sigs from the
+  //    home page via useEscrowPost. The backend tells the frontend to start
+  //    that flow by returning escrow:'user-client' below; admin does NOT
+  //    fire openAndFundJob here.
+  //  - ERC8183_USER_CLIENT=0 (legacy) → admin self-loops 4 tx.
+  let escrowMode: 'user-client' | 'admin' | 'off' = 'off'
   if (ERC8183_ENABLED) {
-    openAndFundJob({
-      description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
-      budgetUsdc: ERC8183_BUDGET,
-    })
-      .then(async (res) => {
-        if (!res) return
-        await db
-          .update(workflows)
-          .set({
-            erc8183JobId: res.jobId,
-            erc8183CreateTx: res.createTx,
-            erc8183FundTx: res.fundTx,
-            erc8183BudgetUsdc: res.budgetUsdc,
-          })
-          .where(eq(workflows.id, wf.id))
+    if (ERC8183_USER_CLIENT) {
+      escrowMode = 'user-client'
+      // Frontend will POST to /api/workflow/escrow/prepare next.
+    } else {
+      escrowMode = 'admin'
+      openAndFundJob({
+        description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
+        budgetUsdc: ERC8183_BUDGET,
       })
-      .catch((e) => {
-        console.warn('[workflow] ERC-8183 open+fund failed', e instanceof Error ? e.message : e)
-      })
+        .then(async (res) => {
+          if (!res) return
+          await db
+            .update(workflows)
+            .set({
+              erc8183JobId: res.jobId,
+              erc8183CreateTx: res.createTx,
+              erc8183FundTx: res.fundTx,
+              erc8183BudgetUsdc: res.budgetUsdc,
+            })
+            .where(eq(workflows.id, wf.id))
+        })
+        .catch((e) => {
+          console.warn('[workflow] ERC-8183 open+fund failed', e instanceof Error ? e.message : e)
+        })
+    }
   }
 
-  return NextResponse.json({ id: wf.id, userId: user.id })
+  return NextResponse.json({ id: wf.id, userId: user.id, escrow: escrowMode })
 }

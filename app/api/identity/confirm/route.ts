@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { publicClient } from '@/lib/chain/client'
+import { prefundUserWallet } from '@/lib/credits/postMintHooks'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 
@@ -161,6 +162,16 @@ export async function POST(req: Request) {
     })
     .where(eq(users.id, user.id))
 
+  // Post-mint side effects (gated by PREFUND_AFTER_MINT=1). Failure here is
+  // logged + swallowed — the mint is already on-chain, the user just won't
+  // have starter USDC pre-funded. They can top up manually if needed.
+  let prefund: Awaited<ReturnType<typeof prefundUserWallet>> | undefined
+  try {
+    prefund = await prefundUserWallet({ userId: user.id, wallet: user.wallet })
+  } catch (e) {
+    console.warn('[identity/confirm] prefund failed', e instanceof Error ? e.message : e)
+  }
+
   return NextResponse.json({
     ok: true,
     tokenId,
@@ -170,5 +181,6 @@ export async function POST(req: Request) {
     role: 'client',
     onChain: true,
     userOwned: true,
+    prefund: prefund ?? { enabled: false },
   })
 }

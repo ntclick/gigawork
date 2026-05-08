@@ -49,6 +49,22 @@ export interface WorkflowTemplate {
    */
   prompt: string
 
+  /**
+   * NEW: cloze-style prompt with editable variable slots. When set, clicking
+   * the card loads it into the EditablePrompt component instead of the raw
+   * textarea — user clicks colored chips to swap tokens/chains/timeframes
+   * without typing free text.
+   *
+   * Grammar:
+   *   - $BTC          → token slot (uppercase cashtag, 1-10 chars)
+   *   - ${chain:eth}  → enum slot, value is the default
+   *   - Other kinds: timeframe, wallet, address, number, text
+   *
+   * Falls back to `prompt` if undefined. See lib/slottedPrompt.ts for the
+   * parser + supported kinds.
+   */
+  slottedPrompt?: string
+
   /** Skills exercised — informational chip on the card (display only). */
   uses: string[]
 }
@@ -126,6 +142,8 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     uses: ['whale-tracker', 'polymarket-pulse', 'report-composer'],
     prompt:
       'Track Polymarket trader at wallet 0x... — pull their last 25 transfers via whale-tracker, cross-reference open Polymarket markets they touched, then compose a brief on their thesis.',
+    slottedPrompt:
+      'Track Polymarket trader at wallet ${wallet:0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503} — pull their last 25 transfers via whale-tracker on ${chain:ethereum}, cross-reference open Polymarket markets they touched, then compose a brief on their thesis.',
   },
 
   // ─── DCA / LADDER (scheduled buys) ────────────────────────────
@@ -192,6 +210,8 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     uses: ['whale-tracker', 'crypto-scanner', 'report-composer'],
     prompt:
       'Track wallet 0xab5801a7d398351b8be11c439e05c5b3259aec9b — pull last 25 transfers, run crypto-scanner on each unique token they bought, then compose a verdict on which 2-3 are worth copying based on liquidity + holder concentration.',
+    slottedPrompt:
+      'Track wallet ${wallet:0xab5801a7d398351b8be11c439e05c5b3259aec9b} on ${chain:ethereum} — pull last 25 transfers, run crypto-scanner on each unique token they bought, then compose a verdict on which 2-3 are worth copying based on liquidity + holder concentration.',
   },
 
   // ─── NOTIFICATION ─────────────────────────────────────────────
@@ -205,5 +225,22 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     uses: ['report-composer', 'email-sender', 'telegram-sender'],
     prompt:
       'Scan BTC + ETH 4h technical signals, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
+    slottedPrompt:
+      'Scan $BTC + $ETH ${timeframe:24h} technical signals on ${chain:ethereum}, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
+  },
+
+  // ─── Quick token + sentiment scan (slotted-first template) ────
+  {
+    id: 'token-pulse',
+    emoji: '📡',
+    title: 'Token Pulse',
+    desc: 'Pick any token + chain + timeframe — get price, on-chain activity, social sentiment.',
+    category: 'research',
+    freeTextOnly: true,
+    uses: ['crypto-scanner', 'social-sentiment', 'report-composer'],
+    prompt:
+      'Scan BTC on ethereum and check 24h sentiment + on-chain activity, then compose a one-page brief.',
+    slottedPrompt:
+      'Scan $BTC on ${chain:ethereum} and check ${timeframe:24h} sentiment + on-chain activity, then compose a one-page brief.',
   },
 ]

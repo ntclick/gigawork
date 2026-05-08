@@ -28,9 +28,10 @@ interface Props {
   onSubmit: (envelope: string) => Promise<void> | void
   onCancel: () => void
   userCredits?: number
+  hasIdentity?: boolean
 }
 
-export function TemplateForm({ template, onSubmit, onCancel, userCredits }: Props) {
+export function TemplateForm({ template, onSubmit, onCancel, userCredits, hasIdentity = true }: Props) {
   const skill = useSkill(template.skillName)
   const props = skill?.manifest?.input_schema?.properties ?? {}
   const required = new Set(skill?.manifest?.input_schema?.required ?? [])
@@ -119,14 +120,14 @@ export function TemplateForm({ template, onSubmit, onCancel, userCredits }: Prop
   }
 
   return (
-    <div className="border-t-2 border-black bg-[var(--giga-dark)]/60 p-4">
+    <div className="border-t border-white/[0.06] bg-[var(--giga-dark)]/80 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs uppercase tracking-wider text-[var(--giga-accent)]">
+        <div className="text-xs font-medium uppercase tracking-wider text-[var(--giga-accent)]">
           ▸ {skill.manifest.display_name ?? template.skillName}
         </div>
         {skill.agentTokenId && (
-          <div className="font-mono text-xs text-white/55">
-            8004 #{skill.agentTokenId}
+          <div className="rounded bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-white/40">
+            ERC-8004 #{skill.agentTokenId}
           </div>
         )}
       </div>
@@ -151,37 +152,37 @@ export function TemplateForm({ template, onSubmit, onCancel, userCredits }: Prop
         ))}
 
         <div>
-          <label className="mb-1 block text-xs uppercase tracking-wider text-white/55">
-            Extra note <span className="text-white/35">(optional)</span>
+          <label className="mb-1 block text-xs uppercase tracking-wider text-white/50">
+            Extra note <span className="text-white/30">(optional)</span>
           </label>
           <textarea
             value={userNote}
             onChange={(e) => setUserNote(e.target.value)}
             placeholder="e.g., should I DCA into this, or focus on holder distribution"
             rows={2}
-            className="w-full resize-none border-2 border-black bg-[#1f1f33] px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-[var(--giga-accent)] focus:outline-none"
+            className="w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder:text-white/25 focus:border-[var(--giga-accent)]/40 focus:outline-none"
           />
         </div>
       </div>
 
       {/* Cost preview + balance */}
-      <div className="mt-4 flex items-center justify-between border-2 border-cyan-400/30 bg-cyan-400/[0.05] px-3 py-2 text-xs">
-        <span className="text-white/65">
+      <div className="mt-4 flex items-center justify-between rounded-lg border border-cyan-400/20 bg-cyan-400/[0.04] px-3 py-2 text-xs">
+        <span className="text-white/60">
           Cost ~{totalCost} credit
           {followupCount > 0 && (
-            <span className="ml-1 text-white/40">
+            <span className="ml-1 text-white/35">
               ({1 + followupCount} skills × {primaryCost} cr)
             </span>
           )}
         </span>
-        <span className={insufficient ? 'text-red-300' : 'text-cyan-200/85'}>
+        <span className={insufficient ? 'text-red-300' : 'text-cyan-200/80'}>
           Balance: <span className="font-mono">{userCredits ?? '—'}</span> cr
           {insufficient && ' ⚠'}
         </span>
       </div>
 
       {error && (
-        <div className="mt-3 border-2 border-red-400/40 bg-red-500/10 px-2 py-1.5 text-xs text-red-300">
+        <div className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {error}
         </div>
       )}
@@ -190,25 +191,27 @@ export function TemplateForm({ template, onSubmit, onCancel, userCredits }: Prop
         <button
           onClick={onCancel}
           disabled={submitting}
-          className="border-2 border-black bg-[#1f1f33] px-4 py-2 text-sm text-white/75 hover:bg-[#27273f] disabled:opacity-40"
+          className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-sm text-white/60 transition hover:bg-white/[0.08] hover:text-white/80 disabled:opacity-40"
         >
-          ✗ Cancel
+          Cancel
         </button>
         <button
           onClick={handleSubmit}
-          disabled={submitting || insufficient}
-          className="flex flex-1 items-center justify-center gap-1.5 border-2 border-black bg-[var(--giga-accent)] px-4 py-2 text-sm font-bold text-black hover:bg-yellow-300 disabled:opacity-40"
+          disabled={submitting || insufficient || !hasIdentity}
+          className="gw-shine flex flex-1 items-center justify-center gap-2 rounded-lg bg-[var(--giga-accent)] px-4 py-2.5 text-sm font-bold text-black transition hover:bg-yellow-300 active:scale-[0.98] disabled:opacity-40"
         >
           {submitting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Sparkles className="h-3.5 w-3.5" />
           )}
-          {insufficient
-            ? `Need ${totalCost - (userCredits ?? 0)} more cr · top up`
+          {!hasIdentity
+            ? 'Mint NFT to Run'
+            : insufficient
+            ? `Need ${totalCost - (userCredits ?? 0)} more cr`
             : submitting
-            ? 'Sending…'
-            : `▶ Run (${totalCost} cr)`}
+            ? 'Running…'
+            : `Run workflow · ${totalCost} cr`}
         </button>
       </div>
     </div>

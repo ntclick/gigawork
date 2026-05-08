@@ -11,6 +11,11 @@ const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcsca
 export interface Erc8183Trail {
   jobId: string
   createTx: string | null
+  // Plan A — admin-signed setBudget after createJob lands. Null when the
+  // legacy admin-self-loop posted the job, since that path bundles
+  // setBudget invisibly into openAndFundJob.
+  setBudgetTx: string | null
+  approveTx: string | null
   fundTx: string | null
   submitTx: string | null
   completeTx: string | null
@@ -71,12 +76,12 @@ export function WorkflowDocPanel({
         {!finalReport && (
           <section>
             <SectionHeading icon={<BookOpen className="h-3.5 w-3.5" />}>
-              Mô tả
+              Description
             </SectionHeading>
             <p className="text-sm leading-relaxed text-white/75 md:text-[15px]">
               {busy
-                ? 'Hermes brain đang phân tích request và lên plan…'
-                : 'Workflow chưa chạy. Gửi prompt từ bottom bar để brain tự chọn agent.'}
+                ? 'Hermes Agent is analyzing the request and orchestrating the workflow...'
+                : 'Workflow has not started. Send a prompt from the bottom bar to let Hermes begin orchestration.'}
             </p>
           </section>
         )}
@@ -85,7 +90,7 @@ export function WorkflowDocPanel({
         {plan.length > 0 && (
           <section>
             <SectionHeading icon={<ListChecks className="h-3.5 w-3.5" />}>
-              Cách hoạt động
+              How it works
             </SectionHeading>
             <ol className="space-y-2 text-[13px] leading-snug text-white/85 md:text-sm">
               {plan.map((n, i) => (
@@ -119,7 +124,7 @@ export function WorkflowDocPanel({
               icon={<FileText className="h-3.5 w-3.5" />}
               accent
             >
-              Báo cáo
+              Report
             </SectionHeading>
             <MarkdownTypewriter
               text={finalReport}
@@ -128,36 +133,13 @@ export function WorkflowDocPanel({
           </section>
         )}
 
-        {/* ERC-8183 on-chain trail — real explorer links per lifecycle step */}
-        {erc8183 && (
-          <section className="border-t border-white/10 pt-5">
-            <SectionHeading icon={<Hexagon className="h-3.5 w-3.5" />}>
-              ERC-8183 trail
-            </SectionHeading>
-            <div className="space-y-1.5 text-[12px]">
-              <div className="flex items-center justify-between">
-                <span className="text-white/55">Job ID</span>
-                <span className="font-mono text-emerald-300">#{erc8183.jobId}</span>
-              </div>
-              {erc8183.budgetUsdc && (
-                <div className="flex items-center justify-between">
-                  <span className="text-white/55">Budget</span>
-                  <span className="font-mono text-cyan-300">{erc8183.budgetUsdc} USDC</span>
-                </div>
-              )}
-              <Erc8183TxRow label="Open" tx={erc8183.createTx} />
-              <Erc8183TxRow label="Fund" tx={erc8183.fundTx} />
-              <Erc8183TxRow label="Submit" tx={erc8183.submitTx} />
-              <Erc8183TxRow label="Complete" tx={erc8183.completeTx} />
-            </div>
-          </section>
-        )}
+
 
         {/* Empty state */}
         {plan.length === 0 && !finalReport && !busy && (
           <section className="border-2 border-dashed border-white/10 bg-white/[0.02] p-4 text-center text-sm text-white/50">
             <Sparkles className="mx-auto mb-2 h-4 w-4 text-[var(--giga-accent)]" />
-            Brain chưa tạo plan. Gửi message từ bottom bar để bắt đầu.
+            Hermes has not started orchestration. Send a message from the bottom bar to begin.
           </section>
         )}
       </div>
@@ -165,30 +147,7 @@ export function WorkflowDocPanel({
   )
 }
 
-function Erc8183TxRow({ label, tx }: { label: string; tx: string | null }) {
-  if (!tx) {
-    return (
-      <div className="flex items-center justify-between">
-        <span className="text-white/55">{label}</span>
-        <span className="text-white/30">— pending —</span>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-white/55">{label}</span>
-      <a
-        href={`${EXPLORER}/tx/${tx}`}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 font-mono text-[11px] text-emerald-300 hover:text-emerald-200 hover:underline"
-      >
-        {tx.slice(0, 8)}…{tx.slice(-4)}
-        <ExternalLink className="h-2.5 w-2.5" />
-      </a>
-    </div>
-  )
-}
+
 
 function SectionHeading({
   icon,
@@ -235,7 +194,7 @@ function StatusBanner({
     return (
       <div className="mb-4 inline-flex items-center gap-2 border-2 border-[#3e6a62] bg-[#1f3632] px-3 py-1.5 text-xs">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-        <span className="text-emerald-300">✓ Workflow complete</span>
+        <span className="text-emerald-300">✓ Hermes orchestration complete</span>
       </div>
     )
   }
@@ -244,7 +203,7 @@ function StatusBanner({
       <div className="mb-4 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]" />
         <span className="text-[var(--giga-accent)]">
-          Running step {dispatchStats.completed + dispatchStats.failed + 1}
+          Hermes executing step {dispatchStats.completed + dispatchStats.failed + 1}
           {dispatchStats.total > 0 ? ` / ${dispatchStats.total}` : ''}
         </span>
       </div>
@@ -271,6 +230,13 @@ function extract(messages: UIMessage[]) {
 
   for (const m of messages) {
     for (const part of m.parts) {
+      if (part.type === 'text' && m.role === 'assistant') {
+        const text = 'text' in part ? part.text : ''
+        if (text) {
+          finalReport = (finalReport || '') + text
+        }
+      }
+
       if (!isToolUIPart(part)) continue
       const toolName = part.type.replace(/^tool-/, '')
       if (toolName === 'planWorkflow' && part.state === 'output-available') {
@@ -289,9 +255,12 @@ function extract(messages: UIMessage[]) {
           running++
         }
       }
-      if (toolName === 'finalizeReport' && part.state === 'output-available') {
-        const input = part.input as { summary_markdown?: string } | undefined
-        if (input?.summary_markdown) finalReport = input.summary_markdown
+      if (toolName === 'finalizeReport') {
+        // Capture streaming input or final output
+        const input = (part.input || {}) as { summary_markdown?: string }
+        if (input.summary_markdown) {
+          finalReport = input.summary_markdown
+        }
       }
     }
   }

@@ -1,27 +1,13 @@
 'use client'
 
 /**
- * TemplateCard — pixel card with inline expand-to-form.
- *
- * Layout (collapsed):
- *   ┌─ research · 8 cr ─────────────┐
- *   │             🛡                │
- *   │         Safe or Rug?          │
- *   │  Token risk check with…       │
- *   │                               │
- *   │  crypto-scanner · 1 chain     │
- *   │  ─────────────────────────    │
- *   │       ▼ Configure             │
- *   └───────────────────────────────┘
+ * TemplateCard — streamlined card with hover effects and clear action CTAs.
  *
  * Two modes:
- *   - Structured (template has skillName) → click expands inline into a
- *     form rendered from the skill's input_schema. Submit posts a
- *     [INTENT=...] envelope to the brain.
- *   - Free-text (template.freeTextOnly) → click loads the prompt into the
- *     parent textarea, like the original behavior.
+ *   - Structured (template has skillName) → click opens inline config form.
+ *   - Free-text (template.freeTextOnly) → click loads slotted/text prompt.
  */
-import { ChevronDown, Sparkles } from 'lucide-react'
+import { ChevronDown, Play, Sparkles } from 'lucide-react'
 
 import type { WorkflowTemplate } from '@/lib/workflowTemplates'
 import { useSkill } from '@/lib/hooks/useSkills'
@@ -39,22 +25,27 @@ interface Props {
   onSubmit: (envelope: string) => Promise<void> | void
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  research: 'Research',
-  'on-chain': 'On-chain',
-  execution: 'Execution',
-  analysis: 'Analysis',
-  synthesis: 'Synthesis',
-  notification: 'Notification',
-}
-
-const CATEGORY_ACCENT: Record<string, string> = {
-  research: 'text-cyan-300/85',
-  'on-chain': 'text-emerald-300/85',
-  execution: 'text-amber-300/85',
-  analysis: 'text-purple-300/85',
-  synthesis: 'text-violet-300/85',
-  notification: 'text-pink-300/85',
+const CATEGORY_ACCENT: Record<string, { text: string; bg: string; border: string }> = {
+  research: {
+    text: 'text-cyan-300',
+    bg: 'bg-cyan-400/[0.06]',
+    border: 'border-cyan-400/20',
+  },
+  'on-chain': {
+    text: 'text-emerald-300',
+    bg: 'bg-emerald-400/[0.06]',
+    border: 'border-emerald-400/20',
+  },
+  execution: {
+    text: 'text-amber-300',
+    bg: 'bg-amber-400/[0.06]',
+    border: 'border-amber-400/20',
+  },
+  analysis: {
+    text: 'text-purple-300',
+    bg: 'bg-purple-400/[0.06]',
+    border: 'border-purple-400/20',
+  },
 }
 
 export function TemplateCard({
@@ -84,94 +75,84 @@ export function TemplateCard({
     }
   }
 
-  const catLabel = CATEGORY_LABEL[template.category] ?? template.category
-  const catAccent = CATEGORY_ACCENT[template.category] ?? 'text-white/60'
+  const accent = CATEGORY_ACCENT[template.category] ?? CATEGORY_ACCENT.research
 
   return (
     <div
-      className={`group transition-opacity ${
-        dimmed ? 'pointer-events-none opacity-25' : 'opacity-100'
-      } ${expanded ? 'col-span-2 sm:col-span-3 lg:col-span-4' : ''}`}
+      className={`transition-all duration-200 ${
+        dimmed ? 'pointer-events-none opacity-20 blur-[1px]' : 'opacity-100'
+      }`}
     >
       <div
-        className={`flex h-full flex-col border-2 bg-[var(--giga-panel)] transition ${
-          expanded
-            ? 'border-[var(--giga-accent)] shadow-[6px_6px_0_0_#000]'
-            : 'border-black hover:border-[var(--giga-accent)]/60'
-        }`}
+        className={`gw-card-hover flex h-full flex-col overflow-hidden rounded-xl border transition-all ${accent.border} bg-[var(--giga-panel)]/80 hover:border-[var(--giga-accent)]/30 hover:bg-[var(--giga-panel)]`}
       >
         <button
           type="button"
           onClick={handleClick}
           className="flex w-full flex-1 cursor-pointer flex-col text-left"
         >
-          {/* Header bar: category · cost */}
-          <div className="flex items-center justify-between border-b-2 border-black bg-[var(--giga-sidebar)] px-3 py-2 text-xs uppercase tracking-wider">
-            <span className={`font-medium ${catAccent}`}>{catLabel}</span>
+          {/* Top row: emoji + category badge + cost */}
+          <div className="flex items-start justify-between px-4 pt-4 pb-2">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl leading-none sm:text-3xl">{template.emoji}</span>
+              <span className={`rounded-md ${accent.bg} px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${accent.text}`}>
+                {template.category === 'execution' ? 'trading' : template.category}
+              </span>
+            </div>
             {isStructured ? (
               <span
-                className={`font-mono ${
-                  insufficient ? 'text-red-300' : 'text-[var(--giga-accent)]'
+                className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold ${
+                  insufficient
+                    ? 'bg-red-400/10 text-red-300'
+                    : 'bg-[var(--giga-accent)]/10 text-[var(--giga-accent)]'
                 }`}
               >
                 {totalCost} cr
               </span>
             ) : (
-              <span className="text-white/45">free-text</span>
+              <span className="rounded-md bg-white/[0.04] px-2 py-0.5 text-[10px] text-white/40">
+                free-text
+              </span>
             )}
           </div>
 
-          {/* Body */}
-          <div className="flex flex-1 flex-col items-center px-4 pt-5 pb-3 text-center">
-            <div className="mb-3 text-4xl leading-none sm:text-5xl">{template.emoji}</div>
-            <h3 className="mb-2 text-lg font-bold text-white sm:text-xl">
+          {/* Title + desc */}
+          <div className="flex flex-1 flex-col px-4 pb-3">
+            <h3 className="mb-1 text-base font-semibold leading-tight text-white sm:text-lg">
               {template.title}
             </h3>
-            <p className="mb-3 line-clamp-2 text-sm leading-snug text-white/65">
+            <p className="line-clamp-2 text-xs leading-relaxed text-white/50 sm:text-sm">
               {template.desc}
             </p>
-
-            {/* Skills used row */}
-            <div className="mt-auto mb-3 flex flex-wrap items-center justify-center gap-1.5">
-              {template.uses.slice(0, 3).map((s) => (
-                <span
-                  key={s}
-                  className="border border-white/10 bg-black/30 px-2 py-0.5 font-mono text-[11px] text-white/65"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
           </div>
 
-          {/* Footer affordance — same row position across all cards */}
-          <div className="border-t border-white/10 px-3 py-2.5">
+          {/* Skills chips */}
+          <div className="flex flex-wrap items-center gap-1 px-4 pb-3">
+            {template.uses.slice(0, 3).map((s) => (
+              <span
+                key={s}
+                className="rounded border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-white/40"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+
+          {/* Footer CTA */}
+          <div className="mt-auto border-t border-white/[0.06] px-4 py-2.5">
             {isStructured ? (
-              <div className="flex items-center justify-center gap-1.5 text-xs font-medium uppercase tracking-wider text-[var(--giga-accent)]">
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${
-                    expanded ? 'rotate-180' : ''
-                  }`}
-                />
-                {expanded ? 'Collapse' : 'Configure'}
+              <div className="flex items-center justify-center gap-1.5 text-xs font-medium text-[var(--giga-accent)]">
+                <ChevronDown className="h-3.5 w-3.5" />
+                Configure & Run
               </div>
             ) : (
-              <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider text-white/55 group-hover:text-white/75">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-white/45 transition group-hover:text-white/65">
                 <Sparkles className="h-3.5 w-3.5" />
                 Use as prompt
               </div>
             )}
           </div>
         </button>
-
-        {expanded && isStructured && (
-          <TemplateForm
-            template={template}
-            userCredits={userCredits}
-            onSubmit={onSubmit}
-            onCancel={onToggle}
-          />
-        )}
       </div>
     </div>
   )
