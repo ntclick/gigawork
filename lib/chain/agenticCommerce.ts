@@ -244,14 +244,14 @@ export async function settleJob(args: {
 
   let nonce = await publicClient.getTransactionCount({ address: adminAccount.address })
   const submitHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: submitData, nonce: nonce++ })
-  const completeHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: completeData, nonce: nonce++ })
-
-  const [submitReceipt, completeReceipt] = await Promise.all([
-    publicClient.waitForTransactionReceipt({ hash: submitHash, confirmations: 1 }),
-    publicClient.waitForTransactionReceipt({ hash: completeHash, confirmations: 1 })
-  ])
-
+  const submitReceipt = await publicClient.waitForTransactionReceipt({ hash: submitHash, confirmations: 1 })
   if (submitReceipt.status !== 'success') throw new Error(`submit tx ${submitHash} reverted`)
+
+  // Explicitly fetch nonce again in case of other concurrent txs, or just use nonce.
+  // We'll just rely on the wallet's nonce resolution or get a fresh one since we waited.
+  const nextNonce = await publicClient.getTransactionCount({ address: adminAccount.address })
+  const completeHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: completeData, nonce: nextNonce })
+  const completeReceipt = await publicClient.waitForTransactionReceipt({ hash: completeHash, confirmations: 1 })
   if (completeReceipt.status !== 'success') throw new Error(`complete tx ${completeHash} reverted`)
 
   return {
