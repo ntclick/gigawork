@@ -14,6 +14,7 @@ export function ReportCard({
 }) {
   const [copied, setCopied] = useState<'md' | 'json' | null>(null)
   const [showJson, setShowJson] = useState(false)
+  const stats = getReportStats(summary, raw)
 
   const copy = async (kind: 'md' | 'json') => {
     const text = kind === 'md' ? summary : JSON.stringify(raw, null, 2)
@@ -25,11 +26,19 @@ export function ReportCard({
   }
 
   return (
-    <div className="gw-fade-in gw-gradient-border my-4 rounded-2xl p-px">
-      <div className="rounded-2xl bg-[#0f131c]/85 p-5 backdrop-blur">
-        <div className="mb-3 flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-cyan-300/85">
-          <ScrollText className="h-3 w-3" />
-          Final report
+    <div className="gw-fade-in gw-gradient-border my-4 rounded-lg p-px">
+      <div className="rounded-lg bg-[#0f131c]/85 p-5 backdrop-blur">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest text-cyan-300/85">
+          <div className="flex items-center gap-1.5">
+            <ScrollText className="h-3 w-3" />
+            Final report
+          </div>
+          <span className="ml-auto rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 font-mono text-white/45">
+            {stats.sections} sections
+          </span>
+          <span className="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 font-mono text-white/45">
+            {stats.sources} sources
+          </span>
         </div>
 
         <MarkdownTypewriter text={summary} />
@@ -66,4 +75,29 @@ export function ReportCard({
       </div>
     </div>
   )
+}
+
+function getReportStats(summary: string, raw: Record<string, unknown>) {
+  const sections = Math.max(1, (summary.match(/^##\s+/gm) ?? []).length)
+  const sources = new Set<string>()
+  collectSources(raw, sources)
+  return { sections, sources: sources.size }
+}
+
+function collectSources(value: unknown, sources: Set<string>) {
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const item of value) collectSources(item, sources)
+    return
+  }
+  const record = value as Record<string, unknown>
+  for (const key of ['data_sources', 'sources', 'provider_apis']) {
+    const raw = record[key]
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item) sources.add(String(item))
+      }
+    }
+  }
+  for (const nested of Object.values(record)) collectSources(nested, sources)
 }

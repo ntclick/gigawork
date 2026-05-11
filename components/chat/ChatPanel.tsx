@@ -148,8 +148,9 @@ export function ChatPanel({
                       const input = (part.input as
                         | { summary_markdown?: string; raw_json?: Record<string, unknown> }
                         | undefined) ?? {}
+                      const output = (part.output as { summary_markdown?: string } | undefined) ?? {}
                       return (
-                        <ReportCard key={k} summary={input.summary_markdown ?? ''} raw={input.raw_json ?? {}} />
+                        <ReportCard key={k} summary={output.summary_markdown ?? input.summary_markdown ?? ''} raw={input.raw_json ?? {}} />
                       )
                     }
                   }

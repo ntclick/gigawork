@@ -5,7 +5,7 @@
  */
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Search } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Plus, Search } from 'lucide-react'
 
 import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
@@ -77,6 +77,13 @@ export default function AgentsPage() {
               <h1 className="font-pixel-header text-xl text-white sm:text-2xl">
                 Agents · ERC-8004 registry
               </h1>
+              <Link
+                href="/providers/register"
+                className="ml-auto inline-flex items-center gap-2 border-2 border-black bg-[var(--giga-accent)] px-3 py-2 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-yellow-300"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Register provider
+              </Link>
             </div>
 
             {/* Filters */}

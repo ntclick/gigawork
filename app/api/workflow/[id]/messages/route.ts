@@ -82,13 +82,17 @@ export async function GET(_req: Request, ctx: RouteCtx) {
           input?: unknown
           output?: unknown
           dispatch_tx?: string | null
+          ok?: boolean
+          error?: string
         }
         input = { skill_name: p.skill_name, input: p.input, node_id: m.nodeId }
+        const ok = p.ok === false ? false : !p.error
         output = {
-          ok: true,
+          ok,
           node_id: m.nodeId,
           skill_name: p.skill_name,
           output: p.output,
+          error: p.error,
           dispatch_tx: p.dispatch_tx ?? null,
         }
       } else {

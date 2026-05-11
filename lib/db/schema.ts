@@ -21,6 +21,7 @@ export const users = pgTable('users', {
   emailFrom: text('email_from'),
   telegramBotToken: text('telegram_bot_token'),
   telegramChatId: text('telegram_chat_id'),
+  reputationScore: integer('reputation_score').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -72,6 +73,7 @@ export const skills = pgTable('skills', {
   agentTokenId: text('agent_token_id'),
   agentTxHash: text('agent_tx_hash'),
   agentMintedAt: timestamp('agent_minted_at', { withTimezone: true }),
+  reputationScore: integer('reputation_score').default(0).notNull(),
 })
 
 export const nodes = pgTable('nodes', {

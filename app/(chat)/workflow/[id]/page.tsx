@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 
 import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
-import type { NodeEditRequest } from '@/components/chat/NodeDetailSheet'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { AppRail } from '@/components/shell/AppRail'
 import { MainHeader } from '@/components/shell/MainHeader'
@@ -35,7 +34,7 @@ export default function WorkflowPage() {
   const params = useParams<{ id: string }>()
   const id = params?.id ?? ''
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  const [autoSent, setAutoSent] = useState(false)
+  const autoSentRef = useRef(false)
   const startRef = useRef<number | undefined>(undefined)
 
   const { messages, sendMessage, setMessages, status } = useChat({
@@ -121,14 +120,14 @@ export default function WorkflowPage() {
 
   // Auto-send only when this workflow has never streamed
   useEffect(() => {
-    if (autoSent || !snapshot) return
-    setAutoSent(true)
+    if (autoSentRef.current || !snapshot) return
+    autoSentRef.current = true
     const hasAssistant = snapshot.messages.some((m) => m.role === 'assistant')
     if (!snapshot.isFinished && !hasAssistant && snapshot.workflow.prompt) {
       startRef.current = Date.now()
       sendMessage({ text: snapshot.workflow.prompt })
     }
-  }, [autoSent, snapshot, sendMessage])
+  }, [snapshot, sendMessage])
 
   const busy = status === 'streaming' || status === 'submitted'
   const title = snapshot?.workflow.prompt

@@ -1,6 +1,6 @@
 import { stringToHex, type Hex } from 'viem'
 
-import { adminAccount, adminWallet } from './client'
+import { adminAccount, sendAdminTransaction } from './client'
 
 /**
  * Records a workflow node dispatch on-chain by sending a 0-value self-tx
@@ -25,7 +25,7 @@ export async function signDispatchTx(env: DispatchEnvelope): Promise<{
   txHash: Hex
   calldata: Hex
 } | null> {
-  if (!adminWallet || !adminAccount) return null
+  if (!adminAccount) return null
 
   const payload = JSON.stringify({
     standard: 'ERC-8183',
@@ -44,7 +44,7 @@ export async function signDispatchTx(env: DispatchEnvelope): Promise<{
   const data = stringToHex(truncated) as Hex
 
   try {
-    const txHash = await adminWallet.sendTransaction({
+    const txHash = await sendAdminTransaction({
       to: adminAccount.address,
       value: BigInt(0),
       data,

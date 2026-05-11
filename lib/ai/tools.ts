@@ -1,16 +1,180 @@
 import { tool } from 'ai'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
 import { signDispatchTx } from '@/lib/chain/dispatch'
+import { incrementReputationBatch } from '@/lib/chain/reputation'
 import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
-import { withDbRetry } from '@/lib/db/retry'
-import { messages, nodes, users, workflows } from '@/lib/db/schema'
+import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
 
 export type BrainContext = { workflowId: string; userId: string | null }
+
+function findMarkdown(value: unknown): string | null {
+  return findTextField(value, ['markdown', 'summary_markdown'])
+}
+
+function findEvidenceMarkdown(value: unknown): string | null {
+  return findTextField(value, ['evidence_markdown'])
+}
+
+function findTextField(value: unknown, fieldNames: string[]): string | null {
+  if (!value || typeof value !== 'object') return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findTextField(item, fieldNames)
+      if (found) return found
+    }
+    return null
+  }
+  const record = value as Record<string, unknown>
+  for (const fieldName of fieldNames) {
+    if (typeof record[fieldName] === 'string' && record[fieldName].trim().length > 40) {
+      return record[fieldName].trim()
+    }
+  }
+  for (const item of Object.values(record)) {
+    const found = findTextField(item, fieldNames)
+    if (found) return found
+  }
+  return null
+}
+
+function normalizeFinalReport(summary: string, raw: Record<string, unknown>): string {
+  const trimmed = summary.trim()
+  const composerMarkdown = findMarkdown(raw)
+  const evidenceMarkdown = findEvidenceMarkdown(raw)
+  const weak =
+    trimmed.length < 80 ||
+    /^data unavailable\.?$/i.test(trimmed) ||
+    /^no data/i.test(trimmed)
+  const candidate = weak && composerMarkdown ? composerMarkdown : trimmed
+  const normalized = hasRequiredReportSections(candidate)
+    ? candidate
+    : evidenceMarkdown ??
+      (composerMarkdown && hasRequiredReportSections(composerMarkdown)
+        ? composerMarkdown
+        : buildDeterministicFinalReport(raw))
+  return sanitizeFinalMarkdown(normalized)
+}
+
+function hasRequiredReportSections(markdown: string): boolean {
+  const lower = markdown.toLowerCase()
+  return (
+    lower.includes('executive summary') &&
+    lower.includes('evidence') &&
+    lower.includes('sources') &&
+    lower.includes('recommended next step')
+  )
+}
+
+function sanitizeFinalMarkdown(markdown: string): string {
+  return markdown
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\uFE0E\uFE0F\u200B-\u200D]/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim()
+}
+
+function compactFinalValue(value: unknown): string {
+  if (value == null) return 'data unavailable'
+  if (typeof value === 'string') return value.length > 160 ? `${value.slice(0, 157)}...` : value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return `${value.length} items`
+  if (typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>).slice(0, 5)
+    return keys.length ? keys.join(', ') : 'empty object'
+  }
+  return String(value)
+}
+
+function collectFinalSources(value: unknown, sources = new Set<string>()): Set<string> {
+  if (!value || typeof value !== 'object') return sources
+  if (Array.isArray(value)) {
+    for (const item of value) collectFinalSources(item, sources)
+    return sources
+  }
+  const record = value as Record<string, unknown>
+  for (const key of ['data_sources', 'sources', 'provider_apis']) {
+    const rawSources = record[key]
+    if (Array.isArray(rawSources)) {
+      for (const source of rawSources) if (source) sources.add(String(source))
+    }
+  }
+  for (const nested of Object.values(record)) collectFinalSources(nested, sources)
+  return sources
+}
+
+function buildDeterministicFinalReport(raw: Record<string, unknown>): string {
+  const entries = Object.entries(raw).filter(([key]) => key !== 'report')
+  const sources = [...collectFinalSources(raw)]
+  const failed = entries.filter(([, value]) => {
+    const record = value as Record<string, unknown> | null
+    return !!record && typeof record === 'object' && ('error' in record || record.fallback === true)
+  })
+
+  return [
+    '# Workflow Report',
+    '',
+    '## Executive Summary',
+    `- Agent coverage: ${entries.length} upstream step${entries.length === 1 ? '' : 's'} processed.`,
+    `- Data health: ${failed.length === 0 ? 'All upstream agents returned usable output.' : `${failed.length} upstream step(s) returned an error or fallback.`}`,
+    '- Use this report as a decision support brief, not as financial advice.',
+    '',
+    '## Evidence',
+    ...entries.map(([key, value]) => summarizeFinalEntry(key, value)),
+    '',
+    '## Risks and Gaps',
+    failed.length > 0
+      ? failed.map(([key]) => `- ${key}: returned an error or fallback output.`).join('\n')
+      : '- No failed upstream agent output was detected.',
+    '',
+    '## Recommended Next Step',
+    failed.length > 0
+      ? '- Re-run failed steps, then regenerate the report.'
+      : '- Review evidence values and raw JSON before taking action.',
+    '',
+    '## Sources',
+    sources.length > 0 ? sources.map((source) => `- ${source}`).join('\n') : '- No source list was returned by upstream agents.',
+    '',
+    `Generated at: ${new Date().toISOString()}`,
+  ].join('\n')
+}
+
+function summarizeFinalEntry(key: string, value: unknown): string {
+  const record = value as Record<string, unknown> | null
+  if (!record || typeof record !== 'object') return `### ${key}\n- Result: ${compactFinalValue(value)}`
+  const preferred = [
+    'summary',
+    'verdict',
+    'risk_score',
+    'reasoning',
+    'price',
+    'price_usd',
+    'price_change_24h_pct',
+    'market_cap_usd',
+    'liquidity_usd',
+    'volume_24h_usd',
+    'rsi_14',
+    'macd_histogram',
+  ]
+  const lines = [
+    `### ${key}`,
+    record.error ? `- Status: failed (${compactFinalValue(record.error)})` : '- Status: completed',
+  ]
+  for (const field of preferred) {
+    if (record[field] != null && lines.length < 8) lines.push(`- ${field}: ${compactFinalValue(record[field])}`)
+  }
+  if (lines.length === 2) {
+    for (const [field, fieldValue] of Object.entries(record).slice(0, 5)) {
+      if (!['generated_at', 'dispatch_tx'].includes(field)) lines.push(`- ${field}: ${compactFinalValue(fieldValue)}`)
+    }
+  }
+  return lines.join('\n')
+}
 
 export function buildBrainTools(ctx: BrainContext) {
   const { workflowId, userId } = ctx
@@ -327,6 +491,7 @@ export function buildBrainTools(ctx: BrainContext) {
       raw_json: z.record(z.string(), z.unknown()).default({}),
     }),
     execute: async ({ summary_markdown, raw_json }) => {
+      const finalMarkdown = normalizeFinalReport(summary_markdown, raw_json)
       // Guardrail: refuse to finalize if no dispatchSkill ran yet. Kimi
       // sometimes plans → finalizes directly with a "data unavailable"
       // excuse, skipping the actual research step. We force at least one
@@ -363,7 +528,7 @@ export function buildBrainTools(ctx: BrainContext) {
       await db.insert(messages).values({
         workflowId,
         role: 'brain',
-        content: summary_markdown,
+        content: finalMarkdown,
         toolName: 'finalizeReport',
         toolPayload: { raw_json },
       })
@@ -376,6 +541,7 @@ export function buildBrainTools(ctx: BrainContext) {
       // Background fire-and-forget — the report is already saved, the
       // settle txs only add the on-chain trail.
       if (ERC8183_ENABLED) {
+        let didSettleWorkflow = false
         const [wf] = await db
           .select()
           .from(workflows)
@@ -385,7 +551,7 @@ export function buildBrainTools(ctx: BrainContext) {
           try {
             const res = await settleJob({
               jobId: wf.erc8183JobId,
-              deliverableSeed: `${workflowId}:${summary_markdown.slice(0, 256)}`,
+              deliverableSeed: `${workflowId}:${finalMarkdown.slice(0, 256)}`,
               reasonSeed: 'workflow-completed',
             })
             if (res) {
@@ -397,6 +563,7 @@ export function buildBrainTools(ctx: BrainContext) {
                   erc8183DeliverableHash: res.deliverableHash,
                 })
                 .where(eq(workflows.id, workflowId))
+              didSettleWorkflow = true
             }
           } catch (e) {
             console.warn(
@@ -405,9 +572,77 @@ export function buildBrainTools(ctx: BrainContext) {
             )
           }
         }
+
+        // ── Reputation increment (fire-and-forget, non-fatal) ─────
+        // After a successful settle, bump on-chain reputation for every
+        // completed skill's agentTokenId + the workflow owner's identityTokenId.
+        if (!didSettleWorkflow) {
+          return { ok: true, summary_markdown: finalMarkdown }
+        }
+
+        try {
+          // 1. Gather agentTokenIds of completed skills in this workflow
+          const skillRows = await db
+            .select({ agentTokenId: skills.agentTokenId, skillId: skills.id })
+            .from(nodes)
+            .innerJoin(skills, eq(nodes.skillId, skills.id))
+            .where(
+              and(
+                eq(nodes.workflowId, workflowId),
+                eq(nodes.status, 'completed'),
+                isNotNull(skills.agentTokenId),
+              ),
+            )
+
+          // 2. Grab user's identityTokenId
+          const [u] = userId
+            ? await db
+                .select({ identityTokenId: users.identityTokenId })
+                .from(users)
+                .where(eq(users.id, userId))
+                .limit(1)
+            : []
+
+          // 3. Deduplicate all tokenIds
+          const tokenIds = [
+            ...new Set(
+              [
+                ...skillRows.map((r) => r.agentTokenId!),
+                u?.identityTokenId,
+              ].filter(Boolean),
+            ),
+          ] as string[]
+
+          if (tokenIds.length > 0) {
+            const repTx = await incrementReputationBatch(tokenIds)
+            if (repTx) {
+              const skillIds = [...new Set(skillRows.map((row) => row.skillId))]
+
+              // 4. Update DB cache — skills
+              for (const skillId of skillIds) {
+                await db
+                  .update(skills)
+                  .set({ reputationScore: sql`reputation_score + 1` })
+                  .where(eq(skills.id, skillId))
+              }
+              // 5. Update DB cache — user
+              if (userId && u?.identityTokenId) {
+                await db
+                  .update(users)
+                  .set({ reputationScore: sql`reputation_score + 1` })
+                  .where(eq(users.id, userId))
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(
+            '[finalizeReport] reputation update failed (non-fatal)',
+            e instanceof Error ? e.message : e,
+          )
+        }
       }
 
-      return { ok: true }
+      return { ok: true, summary_markdown: finalMarkdown }
     },
   })
 

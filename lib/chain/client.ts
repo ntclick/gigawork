@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, defineChain, http } from 'viem'
+import { createPublicClient, createWalletClient, defineChain, http, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 const RPC_URL = process.env.ARC_RPC_URL ?? process.env.NEXT_PUBLIC_ARC_RPC
@@ -34,6 +34,30 @@ export const adminWallet = adminAccount
       transport: http(RPC_URL, { batch: true }),
     })
   : null
+
+let adminTxQueue: Promise<unknown> = Promise.resolve()
+
+export function sendAdminTransaction(args: {
+  to: `0x${string}`
+  data?: Hex
+  value?: bigint
+}): Promise<Hex> {
+  const run = adminTxQueue.then(async () => {
+    if (!adminWallet || !adminAccount) {
+      throw new Error('admin wallet not configured (ADMIN_PRIVATE_KEY missing)')
+    }
+
+    const nonce = await publicClient.getTransactionCount({
+      address: adminAccount.address,
+      blockTag: 'pending',
+    })
+
+    return adminWallet.sendTransaction({ ...args, nonce })
+  })
+
+  adminTxQueue = run.catch(() => undefined)
+  return run
+}
 
 export function explorerTxUrl(hash: string): string {
   const base = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'

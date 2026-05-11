@@ -31,6 +31,8 @@ export async function GET() {
       id: u.id,
       wallet: u.wallet,
       credits: u.credits,
+      reputationScore: u.reputationScore,
+      createdAt: u.createdAt,
       identity: {
         hasIdentity: !!u.identityTokenId,
         tokenId: u.identityTokenId,

@@ -32,13 +32,20 @@ export async function callSkillEndpoint(
     return local(input)
   }
 
-  const res = await fetch(skill.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  if (!res.ok) {
-    throw new Error(`skill ${skill.name} failed: ${res.status} ${await res.text().catch(() => '')}`)
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 20_000)
+  try {
+    const res = await fetch(skill.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: ctrl.signal,
+    })
+    if (!res.ok) {
+      throw new Error(`skill ${skill.name} failed: ${res.status} ${await res.text().catch(() => '')}`)
+    }
+    return res.json()
+  } finally {
+    clearTimeout(timer)
   }
-  return res.json()
 }

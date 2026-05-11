@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FolderClosed, Library, Plus, Settings } from 'lucide-react'
+import { BookOpen, FolderClosed, Library, Plus, Settings } from 'lucide-react'
 
 import { useUI } from './UIShell'
 
@@ -58,6 +58,20 @@ export function AppRail() {
           <Library className="h-5 w-5" />
         </div>
         <span className="font-pixel-body text-[10px] uppercase leading-tight">Component<br />Library</span>
+      </Link>
+
+      <Link
+        href="/docs"
+        className={[
+          'group flex flex-col items-center text-center transition-opacity',
+          pathname.startsWith('/docs') ? 'opacity-100' : 'opacity-70 hover:opacity-100',
+        ].join(' ')}
+        title="Docs"
+      >
+        <div className="mb-2 flex h-8 w-8 items-center justify-center">
+          <BookOpen className="h-5 w-5" />
+        </div>
+        <span className="font-pixel-body text-[10px] uppercase leading-tight">User<br />Docs</span>
       </Link>
 
       <Link

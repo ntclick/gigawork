@@ -1,0 +1,10 @@
+.git
+.next
+node_modules
+*.log
+Dockerfile
+docker-compose.yml
+raw_page.html
+tsconfig.tsbuildinfo
+.claude
+.env.local

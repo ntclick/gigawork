@@ -18,7 +18,11 @@
     "test:workflow": "tsx scripts/test-workflow.ts",
     "db:add-topup-uniq": "tsx scripts/add-topup-uniq.ts",
     "db:add-notify-cols": "tsx scripts/add-notify-cols.ts",
-    "test:topup": "tsx scripts/test-topup.ts"
+    "test:topup": "tsx scripts/test-topup.ts",
+    "db:add-reputation-cols": "tsx scripts/add-reputation-cols.ts",
+    "reputation:compile": "tsx scripts/compile-reputation.ts",
+    "reputation:test": "tsx scripts/test-reputation.ts",
+    "reputation:deploy": "tsx scripts/deploy-reputation.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",
@@ -56,8 +60,21 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "solc": "0.8.28",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@reown/appkit",
+      "bufferutil",
+      "esbuild",
+      "keccak",
+      "msw",
+      "sharp",
+      "unrs-resolver",
+      "utf-8-validate"
+    ]
   }
 }

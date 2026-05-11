@@ -16,7 +16,20 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2, Hexagon, ExternalLink } from 'lucide-react'
+import {
+  CheckCircle2,
+  Cpu,
+  ExternalLink,
+  FileText,
+  GitBranch,
+  Hexagon,
+  Maximize2,
+  Play,
+  Search,
+  Send,
+  XCircle,
+  type LucideIcon,
+} from 'lucide-react'
 import type { UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 
@@ -49,13 +62,14 @@ function PixelNode({ data }: NodeProps) {
   const d = data as PixelNodeData
   const { kind, status, label, skill } = d
   const decoration = NODE_DECOR[kind]
+  const Icon = decoration.icon
   const verifiedPill = status === 'completed'
     ? VERIFIED_PILL[kind]
     : status === 'running'
-      ? { bg: 'rgba(255, 204, 77, 0.12)', border: 'var(--giga-accent)', text: '#ffe082', label: '⏳ Running…' }
+      ? { bg: 'rgba(255, 204, 77, 0.12)', border: 'var(--giga-accent)', text: '#ffe082', label: 'Running' }
       : status === 'failed'
-        ? { bg: 'rgba(239,68,68,0.15)', border: '#ef4444', text: '#fca5a5', label: '✕ Failed' }
-        : { bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.15)', text: 'rgba(255,255,255,0.5)', label: '◌ Pending' }
+        ? { bg: 'rgba(239,68,68,0.15)', border: '#ef4444', text: '#fca5a5', label: 'Failed' }
+        : { bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.15)', text: 'rgba(255,255,255,0.5)', label: 'Pending' }
 
   // Decision = diamond shape (rotate 45deg + un-rotate inner)
   if (kind === 'decision') {
@@ -64,7 +78,7 @@ function PixelNode({ data }: NodeProps) {
         <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
         <div className="giga-node-decision flex h-36 w-36 rotate-45 items-center justify-center">
           <div className="-rotate-45 flex flex-col items-center px-2 text-center text-white">
-            <div className="mb-1 text-3xl">{decoration.emoji}</div>
+            <Icon className="mb-1 h-7 w-7" aria-hidden="true" />
             <div className="text-[12px] font-bold uppercase leading-tight" style={{ wordBreak: 'break-word' }}>
               {label}
             </div>
@@ -89,7 +103,7 @@ function PixelNode({ data }: NodeProps) {
       <div
         className={`${decoration.cls} ${sizeCls} flex flex-col items-center justify-center p-3 text-center`}
       >
-        <div className="mb-2 text-3xl leading-none">{decoration.emoji}</div>
+        <Icon className={`mb-2 h-7 w-7 ${kind === 'compute' ? 'text-black/80' : 'text-white/85'}`} aria-hidden="true" />
         <div
           className={`text-[13px] font-bold uppercase leading-tight ${kind === 'compute' ? 'text-black' : 'text-white'}`}
           style={{ wordBreak: 'break-word', hyphens: 'auto' }}
@@ -118,26 +132,26 @@ function PixelNode({ data }: NodeProps) {
 
 const nodeTypes = { pixel: PixelNode }
 
-const NODE_DECOR: Record<NodeKind, { cls: string; emoji: string }> = {
-  trigger:   { cls: 'giga-node-blue',     emoji: '⏰' },
-  query:     { cls: 'giga-node-blue',     emoji: '📊' },
-  compute:   { cls: 'giga-node-yellow',   emoji: '🎛️' },
-  decision:  { cls: 'giga-node-decision', emoji: '💎' },
-  success:   { cls: 'giga-node-green',    emoji: '💲' },
-  fail:      { cls: 'giga-node-red',      emoji: '❌' },
-  notify:    { cls: 'giga-node-pink',     emoji: '📨' },
-  synthesis: { cls: 'giga-node-violet',   emoji: '📝' },
+const NODE_DECOR: Record<NodeKind, { cls: string; icon: LucideIcon }> = {
+  trigger:   { cls: 'giga-node-blue',     icon: Play },
+  query:     { cls: 'giga-node-blue',     icon: Search },
+  compute:   { cls: 'giga-node-yellow',   icon: Cpu },
+  decision:  { cls: 'giga-node-decision', icon: GitBranch },
+  success:   { cls: 'giga-node-green',    icon: CheckCircle2 },
+  fail:      { cls: 'giga-node-red',      icon: XCircle },
+  notify:    { cls: 'giga-node-pink',     icon: Send },
+  synthesis: { cls: 'giga-node-violet',   icon: FileText },
 }
 
 const VERIFIED_PILL: Record<NodeKind, { bg: string; border: string; text: string; label: string }> = {
-  trigger:   { bg: '#2d3a54', border: '#4c648a', text: '#5eead4', label: '✓ Verified' },
-  query:     { bg: '#2d3a54', border: '#4c648a', text: '#5eead4', label: '✓ Verified' },
-  compute:   { bg: '#5c4d21', border: '#a68c3c', text: '#fde68a', label: '✓ Verified' },
-  decision:  { bg: '#2d3a54', border: '#3e4f6e', text: '#5eead4', label: '✓ Verified' },
-  success:   { bg: '#1f3632', border: '#3e6a62', text: '#6ee7b7', label: '✓ Verified' },
-  fail:      { bg: '#4a272b', border: '#7a4248', text: '#fca5a5', label: '✓ Verified' },
-  notify:    { bg: '#3a1f33', border: '#8e3a6a', text: '#f9a8d4', label: '✓ Sent' },
-  synthesis: { bg: '#2a1d3e', border: '#5e3a8e', text: '#c4b5fd', label: '✓ Composed' },
+  trigger:   { bg: '#2d3a54', border: '#4c648a', text: '#5eead4', label: 'Verified' },
+  query:     { bg: '#2d3a54', border: '#4c648a', text: '#5eead4', label: 'Verified' },
+  compute:   { bg: '#5c4d21', border: '#a68c3c', text: '#fde68a', label: 'Verified' },
+  decision:  { bg: '#2d3a54', border: '#3e4f6e', text: '#5eead4', label: 'Verified' },
+  success:   { bg: '#1f3632', border: '#3e6a62', text: '#6ee7b7', label: 'Verified' },
+  fail:      { bg: '#4a272b', border: '#7a4248', text: '#fca5a5', label: 'Verified' },
+  notify:    { bg: '#3a1f33', border: '#8e3a6a', text: '#f9a8d4', label: 'Sent' },
+  synthesis: { bg: '#2a1d3e', border: '#5e3a8e', text: '#c4b5fd', label: 'Composed' },
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -246,6 +260,10 @@ export function WorkflowCanvas({
   const showPlaceholder = !hasPlan
   const flowNodes = showPlaceholder ? PLACEHOLDERS : rfNodes
   const flowEdges = showPlaceholder ? PLACEHOLDER_EDGES : rfEdges
+  const lifecycle = useMemo(
+    () => buildLifecycle(hasPlan, details, erc8183),
+    [hasPlan, details, erc8183],
+  )
 
   return (
     <div className="relative h-full w-full">
@@ -293,6 +311,36 @@ export function WorkflowCanvas({
           </div>
         </div>
       )}
+
+      <div className="pointer-events-none absolute left-4 top-4 z-10 hidden max-w-[calc(100%-2rem)] gap-2 md:flex">
+        {lifecycle.map((step) => (
+          <div
+            key={step.label}
+            className={`flex items-center gap-2 border px-3 py-2 text-xs backdrop-blur-md ${
+              step.state === 'done'
+                ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+                : step.state === 'active'
+                  ? 'border-[var(--giga-accent)]/50 bg-[var(--giga-accent)]/10 text-[var(--giga-accent)]'
+                  : step.state === 'failed'
+                    ? 'border-red-400/40 bg-red-500/10 text-red-200'
+                    : 'border-white/10 bg-[#0a0d14]/75 text-white/45'
+            }`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                step.state === 'done'
+                  ? 'bg-emerald-300'
+                  : step.state === 'active'
+                    ? 'animate-pulse bg-[var(--giga-accent)]'
+                    : step.state === 'failed'
+                      ? 'bg-red-300'
+                      : 'bg-white/25'
+              }`}
+            />
+            <span className="whitespace-nowrap font-medium">{step.label}</span>
+          </div>
+        ))}
+      </div>
 
       {/* Floating ERC-8183 Trail Panel */}
       {erc8183 && (
@@ -526,6 +574,39 @@ function classify(
   if (isRoot) return 'trigger'
   if (isLeaf) return 'success'
   return 'query'
+}
+
+function buildLifecycle(
+  hasPlan: boolean,
+  details: Map<string, DispatchDetail>,
+  erc8183?: Erc8183Trail | null,
+): Array<{ label: string; state: 'idle' | 'active' | 'done' | 'failed' }> {
+  const statuses = [...details.values()].map((d) => d.status)
+  const hasRunning = statuses.includes('running')
+  const hasFailed = statuses.includes('failed')
+  const allCompleted = statuses.length > 0 && statuses.every((s) => s === 'completed')
+  const hasSubmit = !!erc8183?.submitTx
+  const hasComplete = !!erc8183?.completeTx
+
+  return [
+    { label: 'Plan', state: hasPlan ? 'done' : 'active' },
+    {
+      label: 'Dispatch',
+      state: hasFailed ? 'failed' : allCompleted ? 'done' : hasRunning || hasPlan ? 'active' : 'idle',
+    },
+    {
+      label: 'Compose',
+      state: allCompleted ? 'done' : hasRunning || hasPlan ? 'idle' : 'active',
+    },
+    {
+      label: 'Settle',
+      state: hasComplete ? 'done' : hasSubmit ? 'active' : allCompleted ? 'active' : 'idle',
+    },
+    {
+      label: 'Reputation',
+      state: hasComplete ? 'done' : 'idle',
+    },
+  ]
 }
 
 function CanvasTxRow({ label, tx }: { label: string; tx: string | null }) {

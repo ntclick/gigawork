@@ -25,7 +25,7 @@
  */
 import { decodeEventLog, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex } from 'viem'
 
-import { adminAccount, adminWallet, publicClient } from './client'
+import { adminAccount, publicClient, sendAdminTransaction } from './client'
 
 const AGENTIC_COMMERCE = (process.env.AGENTIC_COMMERCE_ADDRESS ??
   '0x0747EEf0706327138c69792bF28Cd525089e4583') as `0x${string}`
@@ -135,10 +135,10 @@ export interface SettleResult {
  * Throws on revert. Returns the tx hash + receipt.
  */
 async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>> }> {
-  if (!adminWallet || !adminAccount) {
+  if (!adminAccount) {
     throw new Error('admin wallet not configured (ADMIN_PRIVATE_KEY missing)')
   }
-  const hash = await adminWallet.sendTransaction({ to, data })
+  const hash = await sendAdminTransaction({ to, data })
   const receipt = await publicClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
@@ -175,7 +175,8 @@ export async function openAndFundJob(args: {
   const jobId = extractJobIdFromReceipt(create.receipt.logs)
   if (!jobId) throw new Error('JobCreated event missing from receipt')
 
-  // Step 2 & 3 — Check allowance & Approve (Max) + setBudget + fund concurrently
+  // Step 2 & 3 — Check allowance & Approve (Max), setBudget, and fund.
+  // Keep admin txs serialized to avoid nonce collisions with dispatch/finalize.
   let approveHash: Hex = '0x0'
   const allowance = await publicClient.readContract({
     address: USDC_ADDRESS,
@@ -184,40 +185,25 @@ export async function openAndFundJob(args: {
     args: [me, AGENTIC_COMMERCE],
   })
 
-  // We explicitly fetch the nonce to broadcast subsequent txs without waiting for receipts sequentially
-  let nonce = await publicClient.getTransactionCount({ address: me })
-
-  const promises: Promise<Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>>[] = []
-
   if (allowance < budget) {
     const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
     const approveData = encodeApprove(AGENTIC_COMMERCE, maxUint256)
-    approveHash = await adminWallet!.sendTransaction({ to: USDC_ADDRESS, data: approveData, nonce: nonce++ })
-    promises.push(publicClient.waitForTransactionReceipt({ hash: approveHash, confirmations: 1 }))
+    const approve = await adminSend(USDC_ADDRESS, approveData)
+    approveHash = approve.hash
   }
 
   const setBudgetData = encodeSetBudget(jobId, budget)
-  const setBudgetHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: setBudgetData, nonce: nonce++ })
-  promises.push(publicClient.waitForTransactionReceipt({ hash: setBudgetHash, confirmations: 1 }))
+  const setBudget = await adminSend(AGENTIC_COMMERCE, setBudgetData)
 
   const fundData = encodeFund(jobId)
-  const fundHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: fundData, nonce: nonce++ })
-  promises.push(publicClient.waitForTransactionReceipt({ hash: fundHash, confirmations: 1 }))
-
-  // Await all receipts in parallel
-  const receipts = await Promise.all(promises)
-  for (const r of receipts) {
-    if (r.status !== 'success') {
-      throw new Error(`tx ${r.transactionHash} reverted in setup batch`)
-    }
-  }
+  const fund = await adminSend(AGENTIC_COMMERCE, fundData)
 
   return {
     jobId: jobId.toString(),
     createTx: create.hash,
-    setBudgetTx: setBudgetHash,
+    setBudgetTx: setBudget.hash,
     approveTx: approveHash,
-    fundTx: fundHash,
+    fundTx: fund.hash,
     contract: AGENTIC_COMMERCE,
     budgetUsdc: args.budgetUsdc,
   }
@@ -242,21 +228,12 @@ export async function settleJob(args: {
   const submitData = encodeSubmit(jobId, deliverableHash)
   const completeData = encodeComplete(jobId, reasonHash)
 
-  let nonce = await publicClient.getTransactionCount({ address: adminAccount.address })
-  const submitHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: submitData, nonce: nonce++ })
-  const submitReceipt = await publicClient.waitForTransactionReceipt({ hash: submitHash, confirmations: 1 })
-  if (submitReceipt.status !== 'success') throw new Error(`submit tx ${submitHash} reverted`)
-
-  // Explicitly fetch nonce again in case of other concurrent txs, or just use nonce.
-  // We'll just rely on the wallet's nonce resolution or get a fresh one since we waited.
-  const nextNonce = await publicClient.getTransactionCount({ address: adminAccount.address })
-  const completeHash = await adminWallet!.sendTransaction({ to: AGENTIC_COMMERCE, data: completeData, nonce: nextNonce })
-  const completeReceipt = await publicClient.waitForTransactionReceipt({ hash: completeHash, confirmations: 1 })
-  if (completeReceipt.status !== 'success') throw new Error(`complete tx ${completeHash} reverted`)
+  const submit = await adminSend(AGENTIC_COMMERCE, submitData)
+  const complete = await adminSend(AGENTIC_COMMERCE, completeData)
 
   return {
-    submitTx: submitHash,
-    completeTx: completeHash,
+    submitTx: submit.hash,
+    completeTx: complete.hash,
     deliverableHash,
     reasonHash,
   }

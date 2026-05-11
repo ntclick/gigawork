@@ -2,11 +2,9 @@
 
 import { useMemo } from 'react'
 import { isToolUIPart, type UIMessage } from 'ai'
-import { BookOpen, ExternalLink, FileText, Hexagon, ListChecks, Sparkles } from 'lucide-react'
+import { BookOpen, FileText, Hexagon, ListChecks, Sparkles } from 'lucide-react'
 
 import { MarkdownTypewriter } from './Typewriter'
-
-const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
 export interface Erc8183Trail {
   jobId: string
@@ -115,6 +113,26 @@ export function WorkflowDocPanel({
           </section>
         )}
 
+        {(plan.length > 0 || erc8183) && (
+          <section>
+            <SectionHeading icon={<Hexagon className="h-3.5 w-3.5" />}>
+              Execution Trace
+            </SectionHeading>
+            <div className="space-y-2 text-xs">
+              <TraceRow label="Plan" done={plan.length > 0} />
+              <TraceRow
+                label="Dispatch agents"
+                done={dispatchStats.total > 0 && dispatchStats.completed + dispatchStats.failed >= dispatchStats.total}
+                active={dispatchStats.running > 0}
+                detail={`${dispatchStats.completed} completed, ${dispatchStats.failed} failed`}
+              />
+              <TraceRow label="Compose report" done={!!finalReport} />
+              <TraceRow label="Settle ERC-8183" done={!!erc8183?.completeTx} active={!!erc8183?.submitTx && !erc8183?.completeTx} />
+              <TraceRow label="Reputation cache" done={!!erc8183?.completeTx} />
+            </div>
+          </section>
+        )}
+
         {/* Full markdown report — supports tables / bullets / headers via
             remark-gfm. Typewriter reveal only happens once; afterwards it
             stays static. */}
@@ -144,6 +162,32 @@ export function WorkflowDocPanel({
         )}
       </div>
     </aside>
+  )
+}
+
+function TraceRow({
+  label,
+  done,
+  active,
+  detail,
+}: {
+  label: string
+  done: boolean
+  active?: boolean
+  detail?: string
+}) {
+  return (
+    <div className="flex items-center gap-2 border border-white/10 bg-black/15 px-2.5 py-2">
+      <span
+        className={`h-2 w-2 rounded-full ${
+          done ? 'bg-emerald-300' : active ? 'animate-pulse bg-[var(--giga-accent)]' : 'bg-white/20'
+        }`}
+      />
+      <span className={done ? 'text-white/85' : active ? 'text-[var(--giga-accent)]' : 'text-white/45'}>
+        {label}
+      </span>
+      {detail && <span className="ml-auto font-mono text-[10px] text-white/35">{detail}</span>}
+    </div>
   )
 }
 
@@ -268,8 +312,9 @@ function extract(messages: UIMessage[]) {
       if (toolName === 'finalizeReport') {
         // Capture streaming input or final output
         const input = (part.input || {}) as { summary_markdown?: string }
-        if (input.summary_markdown) {
-          finalReport = input.summary_markdown
+        const output = (part.output || {}) as { summary_markdown?: string }
+        if (output.summary_markdown || input.summary_markdown) {
+          finalReport = output.summary_markdown ?? input.summary_markdown ?? null
         }
       }
     }

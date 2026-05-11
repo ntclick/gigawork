@@ -8,7 +8,8 @@
  *   5. Đọc lại nodes + messages → in dispatch_tx, output, final report
  */
 import { config as loadEnv } from 'dotenv'
-loadEnv({ path: '.env.local' })
+import type { UIMessage } from 'ai'
+loadEnv({ path: '.env' })
 
 const ADMIN_WALLET = '0xafe6dd950dc2cf561e8daba1725e0e6840f70549'
 const CLIENT_TOKEN_ID = '2917'
@@ -22,6 +23,7 @@ const DEFAULT_PROMPT =
 async function main() {
   // Lazy-import sau khi env đã load (db client đọc DATABASE_URL ở top-level)
   const { eq } = await import('drizzle-orm')
+  const { ERC8183_ENABLED, openAndFundJob } = await import('../lib/chain/agenticCommerce')
   const { streamBrain } = await import('../lib/ai/brain')
   const { db } = await import('../lib/db/client')
   const { messages, nodes, users, workflows } = await import('../lib/db/schema')
@@ -47,7 +49,7 @@ async function main() {
       .returning()
     user = created
   } else {
-    const patch: Record<string, unknown> = {}
+    const patch: Partial<typeof users.$inferInsert> = {}
     if (u.identityTokenId !== CLIENT_TOKEN_ID) {
       patch.identityTokenId = CLIENT_TOKEN_ID
       patch.identityTxHash = '0xe9398a4a52a98136f2a24450e8a7d413dd9b2dbb095dee0fee6c2afe92ab5073'
@@ -55,7 +57,7 @@ async function main() {
     }
     if (u.credits < 200) patch.credits = 1000
     if (Object.keys(patch).length) {
-      await db.update(users).set(patch as any).where(eq(users.id, u.id))
+      await db.update(users).set(patch).where(eq(users.id, u.id))
     }
     user = { ...u, ...patch } as typeof u
   }
@@ -69,20 +71,50 @@ async function main() {
 
   await db.insert(messages).values({ workflowId: wf.id, role: 'user', content: prompt })
 
+  if (ERC8183_ENABLED) {
+    console.log('Opening + funding ERC-8183 job...')
+    const escrow = await openAndFundJob({
+      description: `GigaWork workflow ${wf.id}: ${prompt.slice(0, 96)}`,
+      budgetUsdc: process.env.ERC8183_BUDGET_USDC ?? '0.05',
+    })
+
+    if (escrow) {
+      await db
+        .update(workflows)
+        .set({
+          erc8183JobId: escrow.jobId,
+          erc8183CreateTx: escrow.createTx,
+          erc8183SetBudgetTx: escrow.setBudgetTx,
+          erc8183ApproveTx: escrow.approveTx,
+          erc8183FundTx: escrow.fundTx,
+          erc8183BudgetUsdc: escrow.budgetUsdc,
+        })
+        .where(eq(workflows.id, wf.id))
+
+      console.log(`   jobId   : ${escrow.jobId}`)
+      console.log(`   create  : ${EXPLORER}/tx/${escrow.createTx}`)
+      console.log(`   budget  : ${EXPLORER}/tx/${escrow.setBudgetTx}`)
+      console.log(`   fund    : ${EXPLORER}/tx/${escrow.fundTx}\n`)
+    }
+  }
+
   console.log('① Streaming brain (Kimi)…')
   const t0 = Date.now()
+  const uiMessages: UIMessage[] = [
+    { id: 'seed', role: 'user', parts: [{ type: 'text', text: prompt }] },
+  ]
   const result = await streamBrain({
     workflowId: wf.id,
     userId: user.id,
-    uiMessages: [{ id: 'seed', role: 'user' as const, parts: [{ type: 'text' as const, text: prompt }] }] as any,
+    uiMessages,
   })
 
   let chunks = 0
   let textLen = 0
   let toolCalls = 0
-  for await (const part of (result as any).fullStream) {
+  for await (const part of result.fullStream) {
     chunks++
-    if (part.type === 'text-delta' || part.type === 'text') textLen += (part.text ?? part.textDelta ?? '').length
+    if (part.type === 'text-delta') textLen += part.text.length
     if (part.type === 'tool-call') {
       toolCalls++
       console.log(`   → tool-call: ${part.toolName}`)

@@ -1,0 +1,112 @@
+{
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_operator",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newScore",
+          "type": "uint256"
+        }
+      ],
+      "name": "ScoreIncremented",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getScore",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "increment",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "tokenIds",
+          "type": "uint256[]"
+        }
+      ],
+      "name": "incrementBatch",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "operator",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "scores",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080604052348015600e575f5ffd5b50604051610442380380610442833981016040819052602b91604f565b600180546001600160a01b0319166001600160a01b0392909216919091179055607a565b5f60208284031215605e575f5ffd5b81516001600160a01b03811681146073575f5ffd5b9392505050565b6103bb806100875f395ff3fe608060405234801561000f575f5ffd5b5060043610610055575f3560e01c80630e1af57b146100595780632ee691a31461008b578063570ca735146100aa5780637cf5dab0146100d55780639e50ceae146100ea575b5f5ffd5b6100786100673660046102c5565b5f9081526020819052604090205490565b6040519081526020015b60405180910390f35b6100786100993660046102c5565b5f6020819052908152604090205481565b6001546100bd906001600160a01b031681565b6040516001600160a01b039091168152602001610082565b6100e86100e33660046102c5565b6100fd565b005b6100e86100f83660046102dc565b6101ae565b6001546001600160a01b0316331461014b5760405162461bcd60e51b815260206004820152600c60248201526b3737ba1037b832b930ba37b960a11b60448201526064015b60405180910390fd5b5f8181526020819052604081208054916101648361034d565b90915550505f818152602081815260409182902054915191825282917f865bb6951a75cd3bac6b911419dd4e514466fd1e03013bb249b97fb9c4724c1a910160405180910390a250565b6001546001600160a01b031633146101f75760405162461bcd60e51b815260206004820152600c60248201526b3737ba1037b832b930ba37b960a11b6044820152606401610142565b5f5b818110156102c0575f5f84848481811061021557610215610371565b9050602002013581526020019081526020015f205f8154809291906102399061034d565b919050555082828281811061025057610250610371565b905060200201357f865bb6951a75cd3bac6b911419dd4e514466fd1e03013bb249b97fb9c4724c1a5f5f86868681811061028c5761028c610371565b9050602002013581526020019081526020015f20546040516102b091815260200190565b60405180910390a26001016101f9565b505050565b5f602082840312156102d5575f5ffd5b5035919050565b5f5f602083850312156102ed575f5ffd5b823567ffffffffffffffff811115610303575f5ffd5b8301601f81018513610313575f5ffd5b803567ffffffffffffffff811115610329575f5ffd5b8560208260051b840101111561033d575f5ffd5b6020919091019590945092505050565b5f6001820161036a57634e487b7160e01b5f52601160045260245ffd5b5060010190565b634e487b7160e01b5f52603260045260245ffdfea26469706673582212207b90dd13527ed7816d86d0174ba97602cb9ec66669b89672561456107fc9d5b664736f6c634300081c0033"
+}
