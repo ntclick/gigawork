@@ -109,6 +109,19 @@ export async function GET(_req: Request, ctx: RouteCtx) {
       continue
     }
     if (m.role === 'brain' && m.content) {
+      if (m.toolName === 'stream_error') {
+        assistantParts.push({
+          type: 'tool-stream_error',
+          toolCallId: m.id,
+          state: 'output-available',
+          input: {},
+          output: { error: m.content },
+        })
+        continue
+      }
+      if (m.toolName === 'auto_finalize' && m.content.trimStart().startsWith('▸ Planning workflow')) {
+        continue
+      }
       assistantParts.push({ type: 'text', text: m.content })
       continue
     }

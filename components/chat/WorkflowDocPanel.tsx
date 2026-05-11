@@ -286,7 +286,7 @@ function extract(messages: UIMessage[]) {
     for (const part of m.parts) {
       if (part.type === 'text' && m.role === 'assistant') {
         const text = 'text' in part ? part.text : ''
-        if (text) {
+        if (isReportText(text)) {
           finalReport = (finalReport || '') + text
         }
       }
@@ -309,6 +309,9 @@ function extract(messages: UIMessage[]) {
           running++
         }
       }
+      if (toolName === 'stream_error') {
+        failed++
+      }
       if (toolName === 'finalizeReport') {
         // Capture streaming input or final output
         const input = (part.input || {}) as { summary_markdown?: string }
@@ -325,6 +328,15 @@ function extract(messages: UIMessage[]) {
     finalReport,
     dispatchStats: { running, completed, failed, total },
   }
+}
+
+function isReportText(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('▸ Planning workflow')) return false
+  if (trimmed.startsWith('Brain stopped before creating workflow nodes')) return false
+  if (trimmed.startsWith('Workflow stopped before any agent node')) return false
+  return true
 }
 
 function truncate(s: string, n: number) {
