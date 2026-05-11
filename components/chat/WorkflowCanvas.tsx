@@ -182,11 +182,13 @@ const PLACEHOLDER_EDGES: Edge[] = [
 // ════════════════════════════════════════════════════════════════
 export function WorkflowCanvas({
   messages,
+  status,
   onEditNode,
   workflowId,
   erc8183,
 }: {
   messages: UIMessage[]
+  status?: string
   onEditNode?: (req: NodeEditRequest) => void
   workflowId?: string
   erc8183?: Erc8183Trail | null
@@ -258,6 +260,8 @@ export function WorkflowCanvas({
   }
 
   const showPlaceholder = !hasPlan
+  const showFailedEmpty = showPlaceholder && status === 'failed'
+  const showCompletedEmpty = showPlaceholder && status === 'completed'
   const flowNodes = showPlaceholder ? PLACEHOLDERS : rfNodes
   const flowEdges = showPlaceholder ? PLACEHOLDER_EDGES : rfEdges
   const lifecycle = useMemo(
@@ -297,17 +301,31 @@ export function WorkflowCanvas({
       </ReactFlow>
       {showPlaceholder && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3">
-          <div className="flex -space-x-2">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="gw-pulse-soft h-7 w-7 rounded-full border-2 border-[#0f131c] bg-gradient-to-br from-[var(--giga-accent)]/40 to-purple-400/20"
-                style={{ animationDelay: `${i * 200}ms` }}
-              />
-            ))}
-          </div>
-          <div className="border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-4 py-2 text-sm font-medium text-[var(--giga-accent)] shadow-[0_0_15px_rgba(255,204,77,0.3)]">
-            🧠 Hermes Agent is orchestrating workflow...
+          {!showFailedEmpty && !showCompletedEmpty && (
+            <div className="flex -space-x-2">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="gw-pulse-soft h-7 w-7 rounded-full border-2 border-[#0f131c] bg-gradient-to-br from-[var(--giga-accent)]/40 to-purple-400/20"
+                  style={{ animationDelay: `${i * 200}ms` }}
+                />
+              ))}
+            </div>
+          )}
+          <div
+            className={`border-2 px-4 py-2 text-sm font-medium ${
+              showFailedEmpty
+                ? 'border-red-400/50 bg-red-500/10 text-red-200'
+                : showCompletedEmpty
+                  ? 'border-white/20 bg-white/[0.04] text-white/65'
+                  : 'border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 text-[var(--giga-accent)] shadow-[0_0_15px_rgba(255,204,77,0.3)]'
+            }`}
+          >
+            {showFailedEmpty
+              ? 'Workflow stopped before any agent node was created.'
+              : showCompletedEmpty
+                ? 'Workflow finished without a replayable canvas plan.'
+                : 'Hermes Agent is orchestrating workflow...'}
           </div>
         </div>
       )}

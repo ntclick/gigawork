@@ -130,6 +130,7 @@ export default function WorkflowPage() {
   }, [snapshot, sendMessage])
 
   const busy = status === 'streaming' || status === 'submitted'
+  const displayStatus = busy ? status : snapshot?.workflow.status ?? status
   const title = snapshot?.workflow.prompt
     ? truncate(snapshot.workflow.prompt, 40)
     : `Workflow ${id.slice(0, 8)}`
@@ -171,6 +172,7 @@ export default function WorkflowPage() {
           <div className="giga-grid-bg relative flex-1 overflow-hidden">
             <WorkflowCanvas
               messages={messages}
+              status={displayStatus}
               workflowId={id}
               erc8183={snapshot?.workflow.erc8183 ?? null}
               onEditNode={(req) => {
@@ -205,7 +207,7 @@ export default function WorkflowPage() {
           title={title}
           prompt={snapshot?.workflow.prompt}
           messages={messages}
-          status={status}
+          status={displayStatus}
           erc8183={snapshot?.workflow.erc8183 ?? null}
         />
       </div>
