@@ -3,7 +3,7 @@ import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 
 import { eq } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
-import { messages, workflows } from '@/lib/db/schema'
+import { messages, nodes, workflows } from '@/lib/db/schema'
 import { listSkills } from '@/lib/skills/registry'
 import { HERMES_SYSTEM_PROMPT } from './prompts'
 import { buildBrainTools } from './tools'
@@ -207,6 +207,30 @@ export async function streamBrain(opts: {
       try {
         const cleanText = (text ?? '').trim()
         const alreadyFinalized = await hasFinalizeMessage(opts.workflowId)
+        const dispatchCount = await countMessages(opts.workflowId, 'dispatchSkill')
+        const nodeCount = await countNodes(opts.workflowId)
+
+        if (!alreadyFinalized && dispatchCount === 0) {
+          const reason =
+            nodeCount === 0
+              ? 'Brain stopped before creating workflow nodes. Please rerun the request.'
+              : 'Brain stopped before dispatching any skill. Please rerun the workflow.'
+          await db.insert(messages).values({
+            workflowId: opts.workflowId,
+            role: 'brain',
+            content: reason,
+            toolName: 'stream_error',
+            toolPayload: {
+              finishReason,
+              source: 'streamText.onFinish',
+              cleanText: cleanText.slice(0, 1000),
+              dispatchCount,
+              nodeCount,
+            },
+          })
+          await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
+          return
+        }
 
         if (cleanText.length > 0 && !alreadyFinalized) {
           await db.insert(messages).values({
@@ -216,10 +240,13 @@ export async function streamBrain(opts: {
             toolName: 'auto_finalize',
             toolPayload: { finishReason, source: 'streamText.onFinish' },
           })
+          await db.update(workflows).set({ status: 'completed' }).where(eq(workflows.id, opts.workflowId))
+          return
         }
 
-        const status = finishReason === 'stop' || finishReason === 'tool-calls' ? 'completed' : 'failed'
-        await db.update(workflows).set({ status }).where(eq(workflows.id, opts.workflowId))
+        if (!alreadyFinalized && finishReason !== 'tool-calls') {
+          await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
+        }
       } catch (e) {
         console.error('[brain.onFinish] failed to persist final state', e)
       }
@@ -233,4 +260,20 @@ async function hasFinalizeMessage(workflowId: string): Promise<boolean> {
     .from(messages)
     .where(eq(messages.workflowId, workflowId))
   return rows.some((m) => m.toolName === 'finalizeReport' || m.toolName === 'auto_finalize')
+}
+
+async function countMessages(workflowId: string, toolName: string): Promise<number> {
+  const rows = await db
+    .select({ toolName: messages.toolName })
+    .from(messages)
+    .where(eq(messages.workflowId, workflowId))
+  return rows.filter((m) => m.toolName === toolName).length
+}
+
+async function countNodes(workflowId: string): Promise<number> {
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(eq(nodes.workflowId, workflowId))
+  return rows.length
 }
