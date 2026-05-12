@@ -142,7 +142,8 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
   const receipt = await publicClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
-    timeout: 60_000,
+    timeout: 180_000,
+    pollingInterval: 3_000,
   })
   if (receipt.status !== 'success') {
     throw new Error(`tx ${hash} reverted`)
@@ -425,7 +426,8 @@ export async function setBudgetByAdmin(args: {
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: args.createJobTxHash,
     confirmations: 1,
-    timeout: 60_000,
+    timeout: 180_000,
+    pollingInterval: 3_000,
   })
   if (receipt.status !== 'success') {
     throw new Error(`createJob tx ${args.createJobTxHash} reverted`)
@@ -466,7 +468,8 @@ export async function verifyApproveAndFund(args: {
     const receipt = await publicClient.waitForTransactionReceipt({
       hash,
       confirmations: 1,
-      timeout: 60_000,
+      timeout: 180_000,
+      pollingInterval: 3_000,
     })
     if (receipt.status !== 'success') {
       throw new Error(`${label} tx ${hash} reverted`)

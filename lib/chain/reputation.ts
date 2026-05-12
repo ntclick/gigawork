@@ -51,7 +51,8 @@ export async function incrementReputationBatch(
   const receipt = await publicClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
-    timeout: 60_000,
+    timeout: 180_000,
+    pollingInterval: 3_000,
   })
 
   if (receipt.status !== 'success') {

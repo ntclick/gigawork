@@ -157,14 +157,9 @@ export function useEscrowPost(): UseEscrowPostReturn {
           setTxHashes((s) => ({ ...s, approve: approveTx }))
         }
 
-        // ── 4. backend admin signs setBudget ───────────────────
+        // ── 4. backend admin signs setBudget (with retry for slow confirms) ──
         setStep('posting-create')
-        const postRes = await fetch('/api/workflow/escrow/post-create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workflowId, createJobTxHash: createTx, approveTxHash: approveTx, budget: prep.budget }),
-        })
-        const post = (await postRes.json().catch(() => ({}))) as {
+        let post: {
           ok?: boolean
           jobId?: string
           setBudgetTx?: Hex
@@ -173,9 +168,30 @@ export function useEscrowPost(): UseEscrowPostReturn {
           detail?: string
           hint?: string
           txHash?: string
+        } = {}
+        let postOk = false
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) {
+            // Wait 5s before retry — give Arc testnet time to confirm
+            await new Promise((r) => setTimeout(r, 5_000))
+          }
+          const postRes = await fetch('/api/workflow/escrow/post-create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflowId, createJobTxHash: createTx, approveTxHash: approveTx, budget: prep.budget }),
+          })
+          post = (await postRes.json().catch(() => ({}))) as typeof post
+          if (postRes.ok && post.jobId && post.setBudgetTx && post.fund?.data) {
+            postOk = true
+            break
+          }
+          // Only retry on timeout errors
+          const isTimeout = /timed out|pending/i.test(post.detail || post.error || '')
+          if (!isTimeout) break
+          console.warn(`[escrow] post-create attempt ${attempt + 1}/3 timed out, retrying…`)
         }
-        if (!postRes.ok || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
-          throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postRes.status}`, post.hint, post.txHash))
+        if (!postOk) {
+          throw new Error(normalizeEscrowError(post.detail || post.error || 'post-create failed', post.hint, post.txHash))
         }
 
         // ── 5. user signs fund ─────────────────────────────────
