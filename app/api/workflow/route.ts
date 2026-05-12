@@ -105,10 +105,11 @@ async function handlePost(req: Request) {
 
   let wf: typeof workflows.$inferSelect
   try {
+    const initialStatus = ERC8183_ENABLED && ERC8183_USER_CLIENT ? 'awaiting_fund' : 'planning'
     const [created] = await withDbRetry(
       () => db
         .insert(workflows)
-        .values({ prompt: parsed.data.prompt, userId: user.id })
+        .values({ prompt: parsed.data.prompt, userId: user.id, status: initialStatus })
         .returning(),
       { label: 'workflow:create' },
     )
@@ -148,25 +149,34 @@ async function handlePost(req: Request) {
       // Frontend will POST to /api/workflow/escrow/prepare next.
     } else {
       escrowMode = 'admin'
-      openAndFundJob({
-        description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
-        budgetUsdc: ERC8183_BUDGET,
-      })
-        .then(async (res) => {
-          if (!res) return
-          await db
-            .update(workflows)
-            .set({
-              erc8183JobId: res.jobId,
-              erc8183CreateTx: res.createTx,
-              erc8183FundTx: res.fundTx,
-              erc8183BudgetUsdc: res.budgetUsdc,
-            })
-            .where(eq(workflows.id, wf.id))
+      try {
+        await db.update(workflows).set({ status: 'funding' }).where(eq(workflows.id, wf.id))
+        const res = await openAndFundJob({
+          description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
+          budgetUsdc: ERC8183_BUDGET,
         })
-        .catch((e) => {
-          console.warn('[workflow] ERC-8183 open+fund failed', e instanceof Error ? e.message : e)
-        })
+        if (!res) throw new Error('openAndFundJob returned null')
+        await db
+          .update(workflows)
+          .set({
+            status: 'planning',
+            erc8183JobId: res.jobId,
+            erc8183CreateTx: res.createTx,
+            erc8183SetBudgetTx: res.setBudgetTx,
+            erc8183ApproveTx: res.approveTx,
+            erc8183FundTx: res.fundTx,
+            erc8183BudgetUsdc: res.budgetUsdc,
+          })
+          .where(eq(workflows.id, wf.id))
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        console.warn('[workflow] ERC-8183 open+fund failed', message)
+        await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, wf.id))
+        return NextResponse.json(
+          { error: 'escrow_fund_failed', message },
+          { status: 503 },
+        )
+      }
     }
   }
 

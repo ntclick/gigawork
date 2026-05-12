@@ -76,6 +76,7 @@ export async function POST(req: Request) {
     await db
       .update(workflows)
       .set({
+        status: 'planning',
         erc8183ApproveTx: parsed.data.approveTxHash,
         erc8183FundTx: parsed.data.fundTxHash,
         erc8183BudgetUsdc: process.env.ERC8183_BUDGET_USDC ?? '0.05',

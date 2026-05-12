@@ -77,7 +77,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
       if (!wallet) {
         setStep('error')
         setError('No wallet connected')
-        return
+        throw new Error('No wallet connected')
       }
 
       try {
@@ -204,14 +204,17 @@ export function useEscrowPost(): UseEscrowPostReturn {
         setStep('done')
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        setStep('error')
         if (/user rejected|denied|cancelled/i.test(msg)) {
           setError('Bạn đã huỷ ký giao dịch')
+          throw new Error('Bạn đã huỷ ký giao dịch')
         } else if (/insufficient.*funds|insufficient.*balance/i.test(msg)) {
           setError('Ví không đủ USDC hoặc gas. Hãy topup hoặc đợi pre-fund.')
+          throw new Error('Ví không đủ USDC hoặc gas. Hãy topup hoặc đợi pre-fund.')
         } else {
           setError(msg)
+          throw new Error(msg)
         }
-        setStep('error')
       }
     },
     [wallets],

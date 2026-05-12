@@ -85,6 +85,7 @@ export async function POST(req: Request) {
     await db
       .update(workflows)
       .set({
+        status: 'funding',
         erc8183JobId: jobId.toString(),
         erc8183CreateTx: parsed.data.createJobTxHash,
         erc8183SetBudgetTx: setBudgetTx,

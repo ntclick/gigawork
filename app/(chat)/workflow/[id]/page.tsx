@@ -123,7 +123,9 @@ export default function WorkflowPage() {
     if (autoSentRef.current || !snapshot) return
     autoSentRef.current = true
     const hasAssistant = snapshot.messages.some((m) => m.role === 'assistant')
-    if (!snapshot.isFinished && !hasAssistant && snapshot.workflow.prompt) {
+    const waitingForEscrow =
+      snapshot.workflow.status === 'awaiting_fund' || snapshot.workflow.status === 'funding'
+    if (!snapshot.isFinished && !waitingForEscrow && !hasAssistant && snapshot.workflow.prompt) {
       startRef.current = Date.now()
       sendMessage({ text: snapshot.workflow.prompt })
     }

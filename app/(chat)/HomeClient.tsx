@@ -2,11 +2,10 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowUp, Coins, Sparkles, Zap } from 'lucide-react'
+import { ArrowUp, Coins, Zap } from 'lucide-react'
 
 import { IdentityGate } from '@/components/auth/IdentityGate'
 import { EditablePrompt } from '@/components/home/EditablePrompt'
-import type { Segment as PromptSegment } from '@/lib/slottedPrompt'
 import { TemplateForm } from '@/components/home/TemplateForm'
 import { TemplateCard } from '@/components/home/TemplateCard'
 import { AppRail } from '@/components/shell/AppRail'
@@ -44,10 +43,15 @@ const CATEGORIES = [
 ] as const
 
 export function HomeClient() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [prompt, setPrompt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(() => {
+    const ex = searchParams?.get('expand')
+    return ex && WORKFLOW_TEMPLATES.some((t) => t.id === ex) ? ex : null
+  })
   const [me, setMe] = useState<Me | null>(null)
   const [activeCategory, setActiveCategory] = useState<string>('all')
   // Slotted prompt mode: when a slot-aware template is loaded, segments !== null
@@ -55,15 +59,6 @@ export function HomeClient() {
   // to raw mode (user clicks "edit raw" or types into textarea) clears segments.
   const [segments, setSegments] = useState<Segment[] | null>(null)
   const [promptFocused, setPromptFocused] = useState(false)
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  useEffect(() => {
-    const ex = searchParams?.get('expand')
-    if (ex && WORKFLOW_TEMPLATES.some((t) => t.id === ex)) {
-      setExpandedId(ex)
-    }
-  }, [searchParams])
 
   useEffect(() => {
     const refresh = () =>
@@ -115,7 +110,11 @@ export function HomeClient() {
         try {
           await escrow.post(id)
         } catch (e) {
-          console.warn('[home] escrow.post failed', e instanceof Error ? e.message : e)
+          const message = e instanceof Error ? e.message : String(e)
+          console.warn('[home] escrow.post failed', message)
+          setErr(`Escrow funding required: ${message}`)
+          setSubmitting(false)
+          return
         }
       }
 
