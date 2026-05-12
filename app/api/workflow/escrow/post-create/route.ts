@@ -103,9 +103,17 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[escrow/post-create] failed', msg)
+    const timedOut = /timed out while waiting for transaction/i.test(msg)
     return NextResponse.json(
-      { error: 'post_create_failed', detail: msg },
-      { status: 500 },
+      {
+        error: timedOut ? 'create_tx_pending' : 'post_create_failed',
+        detail: msg,
+        txHash: parsed.data.createJobTxHash,
+        hint: timedOut
+          ? 'Create job transaction is still pending. Open the explorer and retry funding once it confirms.'
+          : undefined,
+      },
+      { status: timedOut ? 504 : 500 },
     )
   }
 }

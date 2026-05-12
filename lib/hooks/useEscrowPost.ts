@@ -147,9 +147,11 @@ export function useEscrowPost(): UseEscrowPostReturn {
           fund?: { data: string }
           error?: string
           detail?: string
+          hint?: string
+          txHash?: string
         }
         if (!postRes.ok || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
-          throw new Error(post.detail || post.error || `post-create ${postRes.status}`)
+          throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postRes.status}`, post.hint, post.txHash))
         }
 
         // ── 4. user signs approve ──────────────────────────────
@@ -189,9 +191,11 @@ export function useEscrowPost(): UseEscrowPostReturn {
           fundTx?: string
           error?: string
           detail?: string
+          hint?: string
+          txHash?: string
         }
         if (!confirmRes.ok || !confirmed.ok) {
-          throw new Error(confirmed.detail || confirmed.error || `confirm ${confirmRes.status}`)
+          throw new Error(normalizeEscrowError(confirmed.detail || confirmed.error || `confirm ${confirmRes.status}`, confirmed.hint, confirmed.txHash))
         }
 
         setResult({
@@ -221,4 +225,13 @@ export function useEscrowPost(): UseEscrowPostReturn {
   )
 
   return { step, error, result, txHashes, reset, post }
+}
+
+function normalizeEscrowError(detail: string, hint?: string, txHash?: string) {
+  const hash = txHash ?? detail.match(/0x[a-fA-F0-9]{64}/)?.[0]
+  if (/timed out while waiting for transaction/i.test(detail)) {
+    const target = hash ? ` ${hash}` : ''
+    return `${hint ?? 'Transaction is still pending.'}${target}`
+  }
+  return hint ? `${detail}. ${hint}` : detail
 }

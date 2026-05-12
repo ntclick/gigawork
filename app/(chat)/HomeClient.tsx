@@ -27,13 +27,15 @@ function escrowLabel(step: ReturnType<typeof useEscrowPost>['step']): string {
   switch (step) {
     case 'preparing':       return 'Preparing…'
     case 'signing-create':  return 'Sign create…'
-    case 'posting-create':  return 'Confirming…'
+    case 'posting-create':  return 'Create tx…'
     case 'signing-approve': return 'Sign approve…'
     case 'signing-fund':    return 'Sign fund…'
-    case 'confirming':      return 'Confirming…'
+    case 'confirming':      return 'Fund tx…'
     default:                return 'Sending…'
   }
 }
+
+const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
 const CATEGORIES = [
   { key: 'all', label: 'All', icon: '⚡' },
@@ -333,6 +335,9 @@ export function HomeClient() {
                     {err}
                   </div>
                 )}
+                {(submitting || escrow.error || escrow.txHashes.create || escrow.txHashes.approve || escrow.txHashes.fund) && (
+                  <EscrowProgress step={escrow.step} error={escrow.error ?? err} txHashes={escrow.txHashes} />
+                )}
               </section>
             </IdentityGate>
           </div>
@@ -378,5 +383,73 @@ export function HomeClient() {
         </div>
       )}
     </>
+  )
+}
+
+function EscrowProgress({
+  step,
+  error,
+  txHashes,
+}: {
+  step: ReturnType<typeof useEscrowPost>['step']
+  error: string | null
+  txHashes: ReturnType<typeof useEscrowPost>['txHashes']
+}) {
+  const waitingLabel =
+    step === 'posting-create'
+      ? 'Waiting for createJob confirmation and provider setBudget'
+      : step === 'confirming'
+        ? 'Waiting for approve + fund confirmation'
+        : step === 'signing-create'
+          ? 'Wallet signature required: createJob'
+          : step === 'signing-approve'
+            ? 'Wallet signature required: approve USDC'
+            : step === 'signing-fund'
+              ? 'Wallet signature required: fund escrow'
+              : step === 'preparing'
+                ? 'Preparing ERC-8183 transaction bundle'
+                : step === 'done'
+                  ? 'Escrow funded'
+                  : step === 'error'
+                    ? 'Escrow funding needs attention'
+                    : 'ERC-8183 escrow'
+  return (
+    <div className="mt-3 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.04] p-3 text-xs text-white/65">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="font-medium text-cyan-200">{waitingLabel}</span>
+        <span className="font-mono uppercase text-white/35">{step}</span>
+      </div>
+      <div className="space-y-1.5">
+        <EscrowTxRow label="Create job" tx={txHashes.create} active={step === 'posting-create'} />
+        <EscrowTxRow label="Approve USDC" tx={txHashes.approve} active={step === 'confirming'} />
+        <EscrowTxRow label="Fund escrow" tx={txHashes.fund} active={step === 'confirming'} />
+      </div>
+      {error && (
+        <p className="mt-2 border-t border-white/10 pt-2 text-red-200">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function EscrowTxRow({ label, tx, active }: { label: string; tx?: string; active?: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={active ? 'h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]' : 'h-1.5 w-1.5 rounded-full bg-white/20'} />
+      <span className="min-w-0 flex-1 text-white/50">{label}</span>
+      {tx ? (
+        <a
+          href={`${EXPLORER}/tx/${tx}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-[10px] text-cyan-300 hover:text-cyan-200 hover:underline"
+        >
+          {tx.slice(0, 8)}...{tx.slice(-4)}
+        </a>
+      ) : (
+        <span className="font-mono text-[10px] text-white/25">pending</span>
+      )}
+    </div>
   )
 }

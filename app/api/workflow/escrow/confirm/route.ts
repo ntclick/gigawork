@@ -91,9 +91,17 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[escrow/confirm] failed', msg)
+    const timedOut = /timed out while waiting for transaction/i.test(msg)
     return NextResponse.json(
-      { error: 'confirm_failed', detail: msg },
-      { status: 500 },
+      {
+        error: timedOut ? 'fund_tx_pending' : 'confirm_failed',
+        detail: msg,
+        txHash: parsed.data.fundTxHash,
+        hint: timedOut
+          ? 'Fund transaction is still pending. Open the explorer and retry confirmation once it confirms.'
+          : undefined,
+      },
+      { status: timedOut ? 504 : 500 },
     )
   }
 }
