@@ -7,7 +7,7 @@ import { BookOpen, ExternalLink, FileText, Hexagon, ListChecks, Sparkles } from 
 import { MarkdownTypewriter } from './Typewriter'
 
 export interface Erc8183Trail {
-  jobId: string
+  jobId: string | null
   createTx: string | null
   // Plan A — admin-signed setBudget after createJob lands. Null when the
   // legacy admin-self-loop posted the job, since that path bundles
@@ -152,7 +152,7 @@ export function WorkflowDocPanel({
                   <div>
                     <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">ERC-8183 signatures</p>
                     <div className="space-y-1.5">
-                      <MetaRow label="Job" value={`#${erc8183.jobId}`} />
+                      <MetaRow label="Job" value={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
                       {erc8183.budgetUsdc && <MetaRow label="Budget" value={`${erc8183.budgetUsdc} USDC`} />}
                       <TxRow label="Create job" tx={erc8183.createTx} />
                       <TxRow label="Set budget" tx={erc8183.setBudgetTx} />

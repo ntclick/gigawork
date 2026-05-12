@@ -372,7 +372,7 @@ export function WorkflowCanvas({
           <div className="space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-white/55">Job ID</span>
-              <span className="font-mono text-emerald-300">#{erc8183.jobId}</span>
+              <span className="font-mono text-emerald-300">{erc8183.jobId ? `#${erc8183.jobId}` : 'pending'}</span>
             </div>
             {erc8183.budgetUsdc && (
               <div className="flex items-center justify-between">

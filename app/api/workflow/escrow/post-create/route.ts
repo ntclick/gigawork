@@ -8,6 +8,7 @@ import {
   encodeFundForJob,
   setBudgetByAdmin,
 } from '@/lib/chain/agenticCommerce'
+import { pollingClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
 
@@ -65,6 +66,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
   if (wf.erc8183JobId) {
+    if (parsed.data.approveTxHash && !wf.erc8183ApproveTx) {
+      await db
+        .update(workflows)
+        .set({ erc8183ApproveTx: parsed.data.approveTxHash })
+        .where(eq(workflows.id, wf.id))
+    }
     // Already past this step — return existing state for idempotent retry
     const fundCalldata = encodeFundForJob(BigInt(wf.erc8183JobId))
     return NextResponse.json({
@@ -87,6 +94,28 @@ export async function POST(req: Request) {
         erc8183ApproveTx: parsed.data.approveTxHash,
       })
       .where(eq(workflows.id, wf.id))
+
+    let createReceipt
+    try {
+      createReceipt = await pollingClient.getTransactionReceipt({
+        hash: parsed.data.createJobTxHash as `0x${string}`,
+      })
+    } catch {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'create_tx_pending',
+          detail: 'Create job transaction is still pending confirmation.',
+          txHash: parsed.data.createJobTxHash,
+          hint: 'Create job is pending on Arc. Keep this workflow open and press Continue funding again in a few seconds.',
+        },
+        { status: 202 },
+      )
+    }
+
+    if (createReceipt.status !== 'success') {
+      throw new Error(`createJob tx ${parsed.data.createJobTxHash} reverted`)
+    }
 
     const { jobId, setBudgetTx } = await setBudgetByAdmin({
       createJobTxHash: parsed.data.createJobTxHash as `0x${string}`,

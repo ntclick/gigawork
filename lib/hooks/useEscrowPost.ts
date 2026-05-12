@@ -8,9 +8,9 @@
  *   idle
  *   → preparing       : POST /prepare to fetch createJob + approve calldata
  *   → signing-create  : Privy popup #1 — user signs createJob
- *   → posting-create  : POST /post-create, server admin signs setBudget +
- *                       returns fund calldata
  *   → signing-approve : Privy popup #2 — user signs USDC.approve
+ *   → posting-create  : POST /post-create, server admin signs setBudget +
+ *                       returns fund calldata once createJob is confirmed
  *   → signing-fund    : Privy popup #3 — user signs fund(jobId)
  *   → confirming      : POST /confirm to verify both tx hashes
  *   → done | error
@@ -138,6 +138,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
             chain: null,
           })) as Hex
           setTxHashes((s) => ({ ...s, create: createTx }))
+          await trackEscrowTx(workflowId, { createJobTxHash: createTx })
         }
 
         // ── 3. user signs approve immediately ───────────────────
@@ -155,6 +156,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
             chain: null,
           })) as Hex
           setTxHashes((s) => ({ ...s, approve: approveTx }))
+          await trackEscrowTx(workflowId, { createJobTxHash: createTx, approveTxHash: approveTx })
         }
 
         // ── 4. backend admin signs setBudget (with retry for slow confirms) ──
@@ -205,6 +207,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
             chain: null,
           })) as Hex
           setTxHashes((s) => ({ ...s, fund: fundTx }))
+          await trackEscrowTx(workflowId, { fundTxHash: fundTx })
         }
 
         // ── 6. confirm ─────────────────────────────────────────
@@ -258,6 +261,21 @@ export function useEscrowPost(): UseEscrowPostReturn {
   )
 
   return { step, error, result, txHashes, reset, post }
+}
+
+async function trackEscrowTx(
+  workflowId: string,
+  txs: { createJobTxHash?: Hex; approveTxHash?: Hex; fundTxHash?: Hex },
+) {
+  const res = await fetch('/api/workflow/escrow/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workflowId, ...txs }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error || `track escrow tx ${res.status}`)
+  }
 }
 
 function normalizeEscrowError(detail: string, hint?: string, txHash?: string) {

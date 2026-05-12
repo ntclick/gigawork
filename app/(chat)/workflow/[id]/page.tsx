@@ -14,7 +14,7 @@ import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
 import { toast } from '@/components/ui/toast'
 
 type Erc8183Trail = {
-  jobId: string
+  jobId: string | null
   createTx: string | null
   setBudgetTx: string | null
   approveTx: string | null
@@ -225,6 +225,8 @@ export default function WorkflowPage() {
                     }
                   } catch (e) {
                     toast.error('Escrow funding required', e instanceof Error ? e.message : String(e))
+                    const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) => r.json()) as Snapshot
+                    setSnapshot(fresh)
                   }
                 }}
               />

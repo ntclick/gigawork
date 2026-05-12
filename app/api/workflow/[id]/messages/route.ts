@@ -46,6 +46,16 @@ export async function GET(_req: Request, ctx: RouteCtx) {
   )
   if (!wf) return NextResponse.json({ error: 'not found' }, { status: 404 })
 
+  const hasErc8183Trail = !!(
+    wf.erc8183JobId ||
+    wf.erc8183CreateTx ||
+    wf.erc8183SetBudgetTx ||
+    wf.erc8183ApproveTx ||
+    wf.erc8183FundTx ||
+    wf.erc8183SubmitTx ||
+    wf.erc8183CompleteTx
+  )
+
   const rows = await withDbRetry(
     () => db
       .select()
@@ -137,7 +147,7 @@ export async function GET(_req: Request, ctx: RouteCtx) {
       prompt: wf.prompt,
       status: wf.status,
       createdAt: wf.createdAt,
-      erc8183: wf.erc8183JobId
+      erc8183: hasErc8183Trail
         ? {
             jobId: wf.erc8183JobId,
             createTx: wf.erc8183CreateTx,
