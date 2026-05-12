@@ -1,9 +1,9 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 'ai'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
-import { messages, nodes, workflows } from '@/lib/db/schema'
+import { messages, nodes, skills, workflows } from '@/lib/db/schema'
 import { listSkills } from '@/lib/skills/registry'
 import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { HERMES_SYSTEM_PROMPT } from './prompts'
@@ -209,7 +209,8 @@ export async function streamBrain(opts: {
         const cleanText = (text ?? '').trim()
         const alreadyFinalized = await hasFinalizeMessage(opts.workflowId)
         const dispatchCount = await countMessages(opts.workflowId, 'dispatchSkill')
-        const nodeCount = await countNodes(opts.workflowId)
+        const nodeStats = await getNodeStats(opts.workflowId)
+        const nodeCount = nodeStats.total
 
         if (!alreadyFinalized && dispatchCount === 0) {
           const reason =
@@ -234,6 +235,15 @@ export async function streamBrain(opts: {
         }
 
         if (cleanText.length > 0 && !alreadyFinalized) {
+          if (!nodeStats.allTerminal) {
+            await persistIncompleteWorkflow(opts.workflowId, {
+              finishReason,
+              source: 'streamText.onFinish',
+              cleanText: cleanText.slice(0, 1000),
+              nodeStats,
+            })
+            return
+          }
           await publishFinalReport({
             workflowId: opts.workflowId,
             userId: opts.userId,
@@ -242,6 +252,20 @@ export async function streamBrain(opts: {
             toolName: 'auto_finalize',
           })
           return
+        }
+
+        if (!alreadyFinalized && nodeStats.allTerminal) {
+          const composerMarkdown = await findCompletedComposerMarkdown(opts.workflowId)
+          if (composerMarkdown) {
+            await publishFinalReport({
+              workflowId: opts.workflowId,
+              userId: opts.userId,
+              finalMarkdown: composerMarkdown,
+              rawJson: { finishReason, source: 'streamText.onFinish:report-composer' },
+              toolName: 'auto_finalize',
+            })
+            return
+          }
         }
 
         if (!alreadyFinalized && finishReason !== 'tool-calls') {
@@ -270,10 +294,78 @@ async function countMessages(workflowId: string, toolName: string): Promise<numb
   return rows.filter((m) => m.toolName === toolName).length
 }
 
-async function countNodes(workflowId: string): Promise<number> {
+async function getNodeStats(workflowId: string): Promise<{
+  total: number
+  completed: number
+  failed: number
+  running: number
+  pending: number
+  allTerminal: boolean
+}> {
   const rows = await db
-    .select({ id: nodes.id })
+    .select({ status: nodes.status })
     .from(nodes)
     .where(eq(nodes.workflowId, workflowId))
-  return rows.length
+  const total = rows.length
+  const completed = rows.filter((n) => n.status === 'completed').length
+  const failed = rows.filter((n) => n.status === 'failed').length
+  const running = rows.filter((n) => n.status === 'running').length
+  const pending = rows.filter((n) => n.status === 'pending').length
+  return {
+    total,
+    completed,
+    failed,
+    running,
+    pending,
+    allTerminal: total > 0 && completed + failed === total,
+  }
+}
+
+async function findCompletedComposerMarkdown(workflowId: string): Promise<string | null> {
+  const rows = await db
+    .select({ output: nodes.output })
+    .from(nodes)
+    .innerJoin(skills, eq(nodes.skillId, skills.id))
+    .where(
+      and(
+        eq(nodes.workflowId, workflowId),
+        eq(nodes.status, 'completed'),
+        eq(skills.name, 'report-composer'),
+      ),
+    )
+    .limit(1)
+  return findTextField(rows[0]?.output, ['markdown', 'summary_markdown', 'evidence_markdown'])
+}
+
+function findTextField(value: unknown, fieldNames: string[]): string | null {
+  if (!value || typeof value !== 'object') return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findTextField(item, fieldNames)
+      if (found) return found
+    }
+    return null
+  }
+  const record = value as Record<string, unknown>
+  for (const fieldName of fieldNames) {
+    if (typeof record[fieldName] === 'string' && record[fieldName].trim().length > 40) {
+      return record[fieldName].trim()
+    }
+  }
+  for (const item of Object.values(record)) {
+    const found = findTextField(item, fieldNames)
+    if (found) return found
+  }
+  return null
+}
+
+async function persistIncompleteWorkflow(workflowId: string, payload: Record<string, unknown>) {
+  await db.insert(messages).values({
+    workflowId,
+    role: 'brain',
+    content: 'Brain tried to publish a report before all workflow nodes finished. Report was held back.',
+    toolName: 'stream_error',
+    toolPayload: { error: 'workflow_not_terminal', ...payload },
+  })
+  await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, workflowId))
 }

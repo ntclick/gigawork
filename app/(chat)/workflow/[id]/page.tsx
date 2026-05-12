@@ -141,8 +141,7 @@ export default function WorkflowPage() {
     !busy &&
     !!snapshot &&
     (snapshot.workflow.status === 'awaiting_fund' ||
-      snapshot.workflow.status === 'funding' ||
-      (!!snapshot.workflow.erc8183 && !snapshot.workflow.erc8183.fundTx))
+      snapshot.workflow.status === 'funding')
   const title = snapshot?.workflow.prompt
     ? truncate(snapshot.workflow.prompt, 40)
     : `Workflow ${id.slice(0, 8)}`
