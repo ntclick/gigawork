@@ -25,6 +25,14 @@ export const publicClient = createPublicClient({
   transport: http(RPC_URL, { batch: true }),
 })
 
+// Non-batch client for waitForTransactionReceipt — batch transport
+// can return stale/cached results on Alchemy testnet RPCs, causing
+// receipt waits to hang even after the tx confirms on-chain.
+export const pollingClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http(RPC_URL, { batch: false }),
+})
+
 export const adminAccount = PK ? privateKeyToAccount(PK as `0x${string}`) : null
 
 export const adminWallet = adminAccount

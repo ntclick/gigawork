@@ -10,7 +10,7 @@
  */
 import { encodeFunctionData, parseAbi, type Hex } from 'viem'
 
-import { adminAccount, publicClient, sendAdminTransaction } from './client'
+import { adminAccount, pollingClient, publicClient, sendAdminTransaction } from './client'
 
 const REPUTATION_REGISTRY_ADDRESS = process.env
   .REPUTATION_REGISTRY_ADDRESS as `0x${string}` | undefined
@@ -48,7 +48,7 @@ export async function incrementReputationBatch(
     data,
   })
 
-  const receipt = await publicClient.waitForTransactionReceipt({
+  const receipt = await pollingClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
     timeout: 180_000,

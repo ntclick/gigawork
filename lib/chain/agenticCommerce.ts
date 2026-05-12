@@ -25,7 +25,7 @@
  */
 import { decodeEventLog, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex } from 'viem'
 
-import { adminAccount, publicClient, sendAdminTransaction } from './client'
+import { adminAccount, pollingClient, publicClient, sendAdminTransaction } from './client'
 
 const AGENTIC_COMMERCE = (process.env.AGENTIC_COMMERCE_ADDRESS ??
   '0x0747EEf0706327138c69792bF28Cd525089e4583') as `0x${string}`
@@ -139,7 +139,7 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
     throw new Error('admin wallet not configured (ADMIN_PRIVATE_KEY missing)')
   }
   const hash = await sendAdminTransaction({ to, data })
-  const receipt = await publicClient.waitForTransactionReceipt({
+  const receipt = await pollingClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
     timeout: 180_000,
@@ -423,7 +423,7 @@ export async function setBudgetByAdmin(args: {
 }): Promise<{ jobId: bigint; setBudgetTx: Hex }> {
   if (!adminAccount) throw new Error('ADMIN_PRIVATE_KEY not configured')
 
-  const receipt = await publicClient.waitForTransactionReceipt({
+  const receipt = await pollingClient.waitForTransactionReceipt({
     hash: args.createJobTxHash,
     confirmations: 1,
     timeout: 180_000,
@@ -465,7 +465,7 @@ export async function verifyApproveAndFund(args: {
     ['approve', args.approveTxHash],
     ['fund', args.fundTxHash],
   ] as const) {
-    const receipt = await publicClient.waitForTransactionReceipt({
+    const receipt = await pollingClient.waitForTransactionReceipt({
       hash,
       confirmations: 1,
       timeout: 180_000,
