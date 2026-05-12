@@ -341,6 +341,9 @@ export interface PreparedClientTxBundle {
   expiredAt: string      // unix seconds
   description: string
   contract: `0x${string}`
+  provider: `0x${string}`
+  evaluator: `0x${string}`
+  hook: `0x${string}`
 }
 
 /**
@@ -374,6 +377,7 @@ export async function prepareOpenAndFund(args: {
   const me = adminAccount.address // admin = provider AND evaluator (Plan A)
   const expiredAt = BigInt(Math.floor(Date.now() / 1000) + (args.expirySeconds ?? 24 * 3600))
   const budget = parseUnits(args.budgetUsdc ?? '0.05', USDC_DECIMALS)
+  const hook = '0x0000000000000000000000000000000000000000'
 
   return {
     createJob: {
@@ -398,6 +402,9 @@ export async function prepareOpenAndFund(args: {
     expiredAt: expiredAt.toString(),
     description: args.description,
     contract: AGENTIC_COMMERCE,
+    provider: me,
+    evaluator: me,
+    hook,
   }
 }
 

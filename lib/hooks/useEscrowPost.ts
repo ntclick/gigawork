@@ -21,9 +21,33 @@
  */
 import { useWallets } from '@privy-io/react-auth'
 import { useCallback, useState } from 'react'
-import { createWalletClient, custom, type Hex } from 'viem'
+import { createWalletClient, custom, defineChain, parseAbi, type Hex } from 'viem'
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002')
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
+
+const arcTestnet = defineChain({
+  id: ARC_CHAIN_ID,
+  name: 'Arc Testnet',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [ARC_RPC] } },
+  blockExplorers: {
+    default: {
+      name: 'ArcScan',
+      url: process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app',
+    },
+  },
+  testnet: true,
+})
+
+const agenticCommerceAbi = parseAbi([
+  'function createJob(address provider,address evaluator,uint256 expiredAt,string description,address hook) returns (uint256)',
+  'function fund(uint256 jobId, bytes optParams)',
+])
+
+const erc20Abi = parseAbi([
+  'function approve(address spender, uint256 amount) returns (bool)',
+])
 
 export type EscrowStep =
   | 'idle'
@@ -98,6 +122,11 @@ export function useEscrowPost(): UseEscrowPostReturn {
           contract?: string
           usdcContract?: string
           budget?: string
+          expiredAt?: string
+          description?: string
+          provider?: string
+          evaluator?: string
+          hook?: string
           createJob?: { to: string; data: string }
           approve?: { to: string; data: string }
           error?: string
@@ -113,7 +142,13 @@ export function useEscrowPost(): UseEscrowPostReturn {
           setStep('done')
           return
         }
-        if ((!prep.already && !prep.createJob) || !prep.approve || !prep.budget || !prep.contract) {
+        if (
+          (!prep.already && (!prep.provider || !prep.evaluator || !prep.expiredAt || !prep.description || !prep.hook)) ||
+          !prep.approve ||
+          !prep.budget ||
+          !prep.contract ||
+          !prep.usdcContract
+        ) {
           throw new Error('prepare returned incomplete bundle')
         }
 
@@ -128,7 +163,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
         if (typeof currentChain === 'string' && Number.parseInt(currentChain, 16) !== ARC_CHAIN_ID) {
           throw new Error(`Wallet is on chain ${Number.parseInt(currentChain, 16)}, expected Arc Testnet ${ARC_CHAIN_ID}`)
         }
-        const walletClient = createWalletClient({ transport: custom(provider) })
+        const walletClient = createWalletClient({ chain: arcTestnet, transport: custom(provider) })
         const userAddr = wallet.address as `0x${string}`
 
         // ── 2. user signs createJob, or resume existing create tx ─────
@@ -136,11 +171,19 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let createTxFresh = false
         if (!createTx) {
           setStep('signing-create')
-          createTx = (await walletClient.sendTransaction({
+          createTx = (await walletClient.writeContract({
             account: userAddr,
-            to: prep.createJob!.to as `0x${string}`,
-            data: prep.createJob!.data as Hex,
-            chain: null,
+            address: prep.contract as `0x${string}`,
+            abi: agenticCommerceAbi,
+            functionName: 'createJob',
+            args: [
+              prep.provider as `0x${string}`,
+              prep.evaluator as `0x${string}`,
+              BigInt(prep.expiredAt!),
+              prep.description!,
+              prep.hook as `0x${string}`,
+            ],
+            chain: arcTestnet,
           })) as Hex
           createTxFresh = true
           setTxHashes((s) => ({ ...s, create: createTx }))
@@ -173,11 +216,13 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let approveTx = (prep.approveTx ?? post.approveTx) as Hex | undefined
         if (!approveTx) {
           setStep('signing-approve')
-          approveTx = (await walletClient.sendTransaction({
+          approveTx = (await walletClient.writeContract({
             account: userAddr,
-            to: prep.usdcContract as `0x${string}`,
-            data: prep.approve.data as Hex,
-            chain: null,
+            address: prep.usdcContract as `0x${string}`,
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [prep.contract as `0x${string}`, BigInt(prep.budget)],
+            chain: arcTestnet,
           })) as Hex
           setTxHashes((s) => ({ ...s, approve: approveTx }))
           await trackEscrowTx(workflowId, { approveTxHash: approveTx })
@@ -187,11 +232,13 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let fundTx = prep.fundTx as Hex | undefined
         if (!fundTx) {
           setStep('signing-fund')
-          fundTx = (await walletClient.sendTransaction({
+          fundTx = (await walletClient.writeContract({
             account: userAddr,
-            to: prep.contract as `0x${string}`,
-            data: post.fund!.data as Hex,
-            chain: null,
+            address: prep.contract as `0x${string}`,
+            abi: agenticCommerceAbi,
+            functionName: 'fund',
+            args: [BigInt(post.jobId!), '0x'],
+            chain: arcTestnet,
           })) as Hex
           setTxHashes((s) => ({ ...s, fund: fundTx }))
           await trackEscrowTx(workflowId, { fundTxHash: fundTx })
