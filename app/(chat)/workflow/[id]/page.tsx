@@ -224,7 +224,12 @@ export default function WorkflowPage() {
                       autoSentRef.current = true
                     }
                   } catch (e) {
-                    toast.error('Escrow funding required', e instanceof Error ? e.message : String(e))
+                    const message = e instanceof Error ? e.message : String(e)
+                    if (/still pending|pending on Arc|not mined yet/i.test(message)) {
+                      toast.warning('Escrow tx pending', message)
+                    } else {
+                      toast.error('Escrow funding required', message)
+                    }
                     const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) => r.json()) as Snapshot
                     setSnapshot(fresh)
                   }
@@ -300,10 +305,10 @@ function WorkflowEscrowOverlay({
         </div>
 
         <div className="space-y-2 text-sm">
-          <EscrowStepRow label="Create job" tx={createTx} done={!!erc8183?.jobId} active={step === 'posting-create'} />
+          <EscrowStepRow label="Create job" tx={createTx} done={!!erc8183?.jobId} active={(!!createTx && !erc8183?.jobId) || step === 'posting-create'} note={createTx && !erc8183?.jobId ? 'submitted' : undefined} />
           <EscrowStepRow label="Set budget" tx={erc8183?.setBudgetTx ?? undefined} done={!!erc8183?.setBudgetTx} />
-          <EscrowStepRow label="Approve USDC" tx={approveTx === '0x0' ? undefined : approveTx} done={!!approveTx} active={step === 'signing-approve' || step === 'confirming'} note={approveTx === '0x0' ? 'allowance ok' : undefined} />
-          <EscrowStepRow label="Fund escrow" tx={fundTx} done={!!fundTx} active={step === 'signing-fund' || step === 'confirming'} />
+          <EscrowStepRow label="Approve USDC" tx={approveTx === '0x0' ? undefined : approveTx} done={!!fundTx || step === 'done'} active={(!!approveTx && !fundTx) || step === 'signing-approve' || step === 'confirming'} note={approveTx === '0x0' ? 'allowance ok' : approveTx && !fundTx ? 'submitted' : undefined} />
+          <EscrowStepRow label="Fund escrow" tx={fundTx} done={!!fundTx} active={step === 'signing-fund' || step === 'confirming'} note={fundTx && step !== 'done' ? 'submitted' : undefined} />
         </div>
 
         {error && (

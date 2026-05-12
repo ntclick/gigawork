@@ -246,7 +246,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
         setStep('done')
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        setStep('error')
+        const staleTx = /no longer visible|stale hashes were cleared|sign again/i.test(msg)
+        const pendingTx = /still pending|pending on Arc|not mined yet/i.test(msg)
+        setStep(pendingTx ? 'posting-create' : staleTx ? 'idle' : 'error')
+        if (staleTx) setTxHashes({})
         if (/user rejected|denied|cancelled/i.test(msg)) {
           setError('Bạn đã huỷ ký giao dịch')
           throw new Error('Bạn đã huỷ ký giao dịch')

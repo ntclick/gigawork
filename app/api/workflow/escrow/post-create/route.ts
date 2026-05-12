@@ -102,6 +102,23 @@ export async function POST(req: Request) {
         hash: parsed.data.createJobTxHash as `0x${string}`,
       })
     } catch {
+      const pendingTx = await pollingClient
+        .getTransaction({ hash: parsed.data.createJobTxHash as `0x${string}` })
+        .catch(() => null)
+
+      if (pendingTx) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'create_tx_pending',
+            detail: 'Create job transaction is still pending confirmation.',
+            txHash: parsed.data.createJobTxHash,
+            hint: 'Create job is visible on Arc but not mined yet. Keep this workflow open and press Continue funding again in a few seconds.',
+          },
+          { status: 202 },
+        )
+      }
+
       if (!parsed.data.createTxFresh) {
         await db
           .update(workflows)
