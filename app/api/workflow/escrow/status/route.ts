@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
-import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { pollingClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
@@ -20,20 +19,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'workflowId_required' }, { status: 400 })
   }
 
-  let user
-  try {
-    user = await getCurrentUser()
-  } catch (e) {
-    if (e instanceof AuthRequiredError) {
-      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
-    }
-    throw e
-  }
-
   const [wf] = await db
     .select()
     .from(workflows)
-    .where(and(eq(workflows.id, workflowId), eq(workflows.userId, user.id)))
+    .where(eq(workflows.id, workflowId))
     .limit(1)
 
   if (!wf) return NextResponse.json({ error: 'not_found' }, { status: 404 })
