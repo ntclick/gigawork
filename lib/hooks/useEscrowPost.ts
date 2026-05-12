@@ -201,7 +201,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
           fundTx = (await walletClient.sendTransaction({
             account: userAddr,
             to: prep.contract as `0x${string}`,
-            data: post.fund.data as Hex,
+            data: post.fund!.data as Hex,
             chain: null,
           })) as Hex
           setTxHashes((s) => ({ ...s, fund: fundTx }))
