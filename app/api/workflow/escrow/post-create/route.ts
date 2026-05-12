@@ -134,11 +134,13 @@ export async function POST(req: Request) {
           {
             ok: false,
             error: 'create_tx_not_found',
+            recoverable: true,
+            resetCreateTx: true,
             detail: 'Create job transaction is no longer visible on Arc RPC.',
             txHash: parsed.data.createJobTxHash,
             hint: 'The wallet returned a hash, but Arc RPC cannot find it. The stale hashes were cleared; press Continue funding to sign again.',
           },
-          { status: 409 },
+          { status: 200 },
         )
       }
 

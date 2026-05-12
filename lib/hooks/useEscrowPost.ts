@@ -105,6 +105,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
       }
 
       try {
+        for (let attempt = 0; attempt < 2; attempt++) {
         // ── 1. prepare ──────────────────────────────────────────
         setStep('preparing')
         const prepRes = await fetch('/api/workflow/escrow/prepare', {
@@ -207,6 +208,13 @@ export function useEscrowPost(): UseEscrowPostReturn {
           detail?: string
           hint?: string
           txHash?: string
+          recoverable?: boolean
+          resetCreateTx?: boolean
+        }
+        if (post.error === 'create_tx_not_found' && post.resetCreateTx) {
+          setTxHashes({})
+          setStep('idle')
+          if (attempt === 0) continue
         }
         if (!postRes.ok || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
           throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postRes.status}`, post.hint, post.txHash))
@@ -276,6 +284,9 @@ export function useEscrowPost(): UseEscrowPostReturn {
           fundTx,
         })
         setStep('done')
+        return
+        }
+        throw new Error('Escrow funding could not recover stale create transaction')
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         const staleTx = /no longer visible|stale hashes were cleared|sign again/i.test(msg)

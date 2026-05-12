@@ -474,7 +474,6 @@ export interface PreparedClientTxBundle {
   // setBudget runs server-side AFTER createJob confirms (provider role).
   createJob: PreparedClientTx
   approve: PreparedClientTx
-  fund: PreparedClientTx
   // Echoed back so the confirm endpoint can re-derive without trusting client
   budget: string         // wei (uint256 string)
   budgetUsdc: string     // human (e.g. "0.05")
@@ -487,15 +486,17 @@ export interface PreparedClientTxBundle {
 }
 
 /**
- * Build the 3 calldata blobs the user's Privy wallet must sign to open + fund
- * an ERC-8183 job. Critically, `fund()` is the third tx — but it will revert
- * unless the provider has called `setBudget()` between createJob and fund.
+ * Build the client-side calldata the user's Privy wallet must sign to open + fund
+ * an ERC-8183 job. Critically, `fund()` calldata is intentionally not returned
+ * here because it needs the jobId emitted by createJob and must run after the
+ * provider has called `setBudget()`.
  * The flow is:
  *
  *   1. user signs createJob → returns tx hash
  *   2. user signs approve   → returns tx hash
  *   3. backend admin signs setBudget (after extracting jobId from #1)
- *   4. user signs fund      → returns tx hash
+ *   4. backend returns fund(jobId) calldata
+ *   5. user signs fund      → returns tx hash
  *
  * To avoid 2 separate frontend round-trips, the recommended UX is:
  *   - user submits all 3 sigs back-to-back (steps 1, 2, 4 from their POV)
@@ -503,8 +504,8 @@ export interface PreparedClientTxBundle {
  *     fires setBudget, then expects approve+fund hashes.
  *
  * For now the simpler implementation is: user signs createJob alone, frontend
- * waits for confirm endpoint to fire setBudget, then user signs approve+fund.
- * That's 2 wallet popups for the user (create, then approve+fund batched).
+ * waits for post-create to fire setBudget, then user signs approve and fund.
+ * That's 3 wallet confirmations for the user.
  */
 export async function prepareOpenAndFund(args: {
   clientAddress: `0x${string}`
@@ -529,13 +530,6 @@ export async function prepareOpenAndFund(args: {
       to: USDC_ADDRESS,
       data: encodeApprove(AGENTIC_COMMERCE, budget),
       description: `Approve ${args.budgetUsdc ?? '0.05'} USDC for escrow`,
-    },
-    fund: {
-      // fund() needs jobId — frontend gets it from createJob receipt and
-      // re-encodes via encodeFundForJob() below before signing.
-      to: AGENTIC_COMMERCE,
-      data: '0x' as Hex, // placeholder — frontend fills after extracting jobId
-      description: 'Fund escrow (lock USDC)',
     },
     budget: budget.toString(),
     budgetUsdc: args.budgetUsdc ?? '0.05',
