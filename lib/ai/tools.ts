@@ -622,6 +622,14 @@ export function buildBrainTools(ctx: BrainContext) {
             if (tokenIds.length > 0) {
               const repTx = await incrementReputationBatch(tokenIds)
               if (repTx) {
+                await db.insert(messages).values({
+                  workflowId,
+                  role: 'system',
+                  toolName: 'reputationUpdate',
+                  toolPayload: { tx: repTx, tokenIds },
+                  content: null,
+                })
+
                 const skillIds = [...new Set(skillRows.map((row) => row.skillId))]
 
                 // 4. Update DB cache — skills

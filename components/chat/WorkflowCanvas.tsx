@@ -605,6 +605,7 @@ function buildLifecycle(
   const allCompleted = statuses.length > 0 && statuses.every((s) => s === 'completed')
   const hasSubmit = !!erc8183?.submitTx
   const hasComplete = !!erc8183?.completeTx
+  const hasFund = !!erc8183?.fundTx
 
   return [
     { label: 'Plan', state: hasPlan ? 'done' : 'active' },
@@ -618,7 +619,7 @@ function buildLifecycle(
     },
     {
       label: 'Settle',
-      state: hasComplete ? 'done' : hasSubmit ? 'active' : allCompleted ? 'active' : 'idle',
+      state: hasComplete ? 'done' : hasSubmit ? 'active' : hasFund && allCompleted ? 'active' : 'idle',
     },
     {
       label: 'Reputation',

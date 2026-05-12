@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { isToolUIPart, type UIMessage } from 'ai'
-import { BookOpen, FileText, Hexagon, ListChecks, Sparkles } from 'lucide-react'
+import { BookOpen, ExternalLink, FileText, Hexagon, ListChecks, Sparkles } from 'lucide-react'
 
 import { MarkdownTypewriter } from './Typewriter'
 
@@ -47,7 +47,7 @@ export function WorkflowDocPanel({
   status: string
   erc8183?: Erc8183Trail | null
 }) {
-  const { plan, finalReport, dispatchStats } = useMemo(() => extract(messages), [messages])
+  const { plan, finalReport, dispatchStats, dispatches, reputationTx } = useMemo(() => extract(messages), [messages])
 
   const busy = status === 'streaming' || status === 'submitted'
 
@@ -127,9 +127,49 @@ export function WorkflowDocPanel({
                 detail={`${dispatchStats.completed} completed, ${dispatchStats.failed} failed`}
               />
               <TraceRow label="Compose report" done={!!finalReport} />
-              <TraceRow label="Settle ERC-8183" done={!!erc8183?.completeTx} active={!!erc8183?.submitTx && !erc8183?.completeTx} />
-              <TraceRow label="Reputation cache" done={!!erc8183?.completeTx} />
+              <TraceRow label="Settle ERC-8183" done={!!erc8183?.completeTx} active={status === 'settling' || (!!erc8183?.submitTx && !erc8183?.completeTx)} />
+              <TraceRow label="Reputation cache" done={!!reputationTx || !!erc8183?.completeTx} active={status === 'settling' && !!erc8183?.completeTx} />
             </div>
+            {(dispatches.length > 0 || erc8183 || reputationTx) && (
+              <div className="mt-3 space-y-3 border border-white/10 bg-black/15 p-3">
+                {dispatches.length > 0 && (
+                  <div>
+                    <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">Agent signatures</p>
+                    <div className="space-y-1.5">
+                      {dispatches.map((d) => (
+                        <TxRow
+                          key={d.planId}
+                          label={d.label}
+                          tx={d.tx}
+                          muted={d.status !== 'completed'}
+                          detail={d.skill}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {erc8183 && (
+                  <div>
+                    <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">ERC-8183 signatures</p>
+                    <div className="space-y-1.5">
+                      <MetaRow label="Job" value={`#${erc8183.jobId}`} />
+                      {erc8183.budgetUsdc && <MetaRow label="Budget" value={`${erc8183.budgetUsdc} USDC`} />}
+                      <TxRow label="Create job" tx={erc8183.createTx} />
+                      <TxRow label="Set budget" tx={erc8183.setBudgetTx} />
+                      <TxRow label="Approve USDC" tx={erc8183.approveTx} />
+                      <TxRow label="Fund escrow" tx={erc8183.fundTx} />
+                      <TxRow label="Submit deliverable" tx={erc8183.submitTx} />
+                      <TxRow label="Complete job" tx={erc8183.completeTx} />
+                      {erc8183.deliverableHash && <HashRow label="Deliverable" hash={erc8183.deliverableHash} />}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">Reputation</p>
+                  <TxRow label="Increment score" tx={reputationTx} muted={!reputationTx && !erc8183?.completeTx} />
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -187,6 +227,60 @@ function TraceRow({
         {label}
       </span>
       {detail && <span className="ml-auto font-mono text-[10px] text-white/35">{detail}</span>}
+    </div>
+  )
+}
+
+function TxRow({
+  label,
+  tx,
+  detail,
+  muted,
+}: {
+  label: string
+  tx?: string | null
+  detail?: string
+  muted?: boolean
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className={muted ? 'min-w-0 flex-1 truncate text-white/35' : 'min-w-0 flex-1 truncate text-white/65'}>
+        {label}
+        {detail && <span className="ml-1 font-mono text-[10px] text-purple-300/55">→ {detail}</span>}
+      </span>
+      {tx && tx !== '0x0' ? (
+        <a
+          href={`${explorerBase()}/tx/${tx}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-cyan-300 hover:text-cyan-200 hover:underline"
+        >
+          {shortHash(tx)}
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      ) : tx === '0x0' ? (
+        <span className="shrink-0 font-mono text-[10px] text-white/35">allowance ok</span>
+      ) : (
+        <span className="shrink-0 font-mono text-[10px] text-white/25">pending</span>
+      )}
+    </div>
+  )
+}
+
+function MetaRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-white/55">{label}</span>
+      <span className="font-mono text-[10px] text-emerald-300">{value}</span>
+    </div>
+  )
+}
+
+function HashRow({ label, hash }: { label: string; hash: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-white/55">{label}</span>
+      <span className="shrink-0 font-mono text-[10px] text-emerald-300">{shortHash(hash)}</span>
     </div>
   )
 }
@@ -281,6 +375,11 @@ function extract(messages: UIMessage[]) {
   let completed = 0
   let failed = 0
   let total = 0
+  let reputationTx: string | null = null
+  const dispatches = new Map<
+    string,
+    { planId: string; label: string; skill: string; status: 'pending' | 'running' | 'completed' | 'failed'; tx: string | null }
+  >()
 
   for (const m of messages) {
     for (const part of m.parts) {
@@ -301,13 +400,31 @@ function extract(messages: UIMessage[]) {
         }
       }
       if (toolName === 'dispatchSkill') {
+        const input = (part.input as { node_id?: string; skill_name?: string } | undefined) ?? {}
+        const node = plan.find((p) => p.node_id === input.node_id)
+        const key = node?.plan_id ?? input.node_id ?? `dispatch-${dispatches.size}`
+        const current = dispatches.get(key) ?? {
+          planId: key,
+          label: node?.label ?? input.skill_name ?? 'Agent dispatch',
+          skill: node?.skill_name ?? input.skill_name ?? 'unknown-skill',
+          status: 'pending' as const,
+          tx: null,
+        }
         if (part.state === 'output-available') {
-          const out = part.output as { ok?: boolean } | undefined
-          if (out?.ok === false) failed++
-          else completed++
+          const out = part.output as { ok?: boolean; dispatch_tx?: string | null } | undefined
+          if (out?.ok === false) {
+            failed++
+            current.status = 'failed'
+          } else {
+            completed++
+            current.status = 'completed'
+          }
+          current.tx = out?.dispatch_tx ?? current.tx
         } else if (part.state === 'input-streaming' || part.state === 'input-available') {
           running++
+          current.status = 'running'
         }
+        dispatches.set(key, current)
       }
       if (toolName === 'stream_error') {
         failed++
@@ -320,6 +437,10 @@ function extract(messages: UIMessage[]) {
           finalReport = output.summary_markdown ?? input.summary_markdown ?? null
         }
       }
+      if (toolName === 'reputationUpdate') {
+        const output = (part.output || {}) as { tx?: string }
+        reputationTx = output.tx ?? reputationTx
+      }
     }
   }
 
@@ -327,6 +448,8 @@ function extract(messages: UIMessage[]) {
     plan,
     finalReport,
     dispatchStats: { running, completed, failed, total },
+    dispatches: [...dispatches.values()],
+    reputationTx,
   }
 }
 
@@ -337,6 +460,14 @@ function isReportText(text: string) {
   if (trimmed.startsWith('Brain stopped before creating workflow nodes')) return false
   if (trimmed.startsWith('Workflow stopped before any agent node')) return false
   return true
+}
+
+function explorerBase() {
+  return process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+}
+
+function shortHash(hash: string) {
+  return hash.length > 14 ? `${hash.slice(0, 8)}...${hash.slice(-4)}` : hash
 }
 
 function truncate(s: string, n: number) {
