@@ -126,9 +126,17 @@ export default function WorkflowPage() {
   useEffect(() => {
     if (autoSentRef.current || !snapshot) return
     const hasAssistant = snapshot.messages.some((m) => m.role === 'assistant')
+    const hasPlan = snapshotHasPlan(snapshot)
     const waitingForEscrow =
       snapshot.workflow.status === 'awaiting_fund' || snapshot.workflow.status === 'funding'
-    if (!snapshot.isFinished && !waitingForEscrow && !hasAssistant && snapshot.workflow.prompt) {
+    if (
+      snapshot.workflow.status === 'planning' &&
+      !snapshot.isFinished &&
+      !waitingForEscrow &&
+      !hasAssistant &&
+      !hasPlan &&
+      snapshot.workflow.prompt
+    ) {
       autoSentRef.current = true
       startRef.current = Date.now()
       sendMessage({ text: snapshot.workflow.prompt })
@@ -154,8 +162,13 @@ export default function WorkflowPage() {
       )) as Snapshot
       setSnapshot(fresh)
       if (fresh.messages.length > 0) setMessages(fresh.messages)
-      autoSentRef.current = false
-      if (!fresh.isFinished && fresh.workflow.prompt) {
+      const shouldStartHermes =
+        fresh.workflow.status === 'planning' &&
+        !fresh.isFinished &&
+        !snapshotHasPlan(fresh) &&
+        fresh.workflow.prompt
+      autoSentRef.current = !shouldStartHermes
+      if (shouldStartHermes) {
         sendMessage({ text: fresh.workflow.prompt })
         autoSentRef.current = true
       }
@@ -432,4 +445,16 @@ function BottomPromptBar({ busy, onSend }: { busy: boolean; onSend: (text: strin
 
 function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+function snapshotHasPlan(snapshot: Snapshot) {
+  return snapshot.messages.some((m) =>
+    m.parts?.some(
+      (part) =>
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        (part as { type?: string }).type === 'tool-planWorkflow',
+    ),
+  )
 }

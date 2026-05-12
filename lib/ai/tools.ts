@@ -207,16 +207,53 @@ export function buildBrainTools(ctx: BrainContext) {
         )
         .limit(1)
       if (priorPlan.length > 0) {
+        const existingOutput = (priorPlan[0]?.toolPayload as { output?: unknown } | null)?.output
+        if (existingOutput && typeof existingOutput === 'object') {
+          return {
+            ok: true,
+            already_planned: true,
+            ...(existingOutput as Record<string, unknown>),
+          }
+        }
         const existingNodes = await db
-          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn })
+          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn, skillName: skills.name })
           .from(nodes)
+          .leftJoin(skills, eq(nodes.skillId, skills.id))
           .where(eq(nodes.workflowId, workflowId))
         return {
-          ok: false,
-          error: 'already_planned',
+          ok: true,
+          already_planned: true,
           message:
             'A plan already exists for this workflow. Do NOT re-plan. Call dispatchSkill on each existing node below, then finalizeReport.',
-          existing_nodes: existingNodes,
+          nodes: existingNodes.map((n) => ({
+            node_id: n.id,
+            plan_id: n.id,
+            label: n.label,
+            skill_name: n.skillName ?? 'unknown-skill',
+            depends_on: n.dependsOn ?? [],
+          })),
+        }
+      }
+
+      const existingNodes = await db
+        .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn, skillName: skills.name })
+        .from(nodes)
+        .leftJoin(skills, eq(nodes.skillId, skills.id))
+        .where(eq(nodes.workflowId, workflowId))
+        .limit(50)
+      if (existingNodes.length > 0) {
+        return {
+          ok: true,
+          already_planned: true,
+          message:
+            'Workflow nodes already exist. Do NOT create another plan. Dispatch the existing nodes below.',
+          nodes: existingNodes.map((n) => ({
+            node_id: n.id,
+            plan_id: n.id,
+            label: n.label,
+            skill_name: n.skillName ?? 'unknown-skill',
+            depends_on: n.dependsOn ?? [],
+          })),
         }
       }
 
@@ -347,6 +384,58 @@ export function buildBrainTools(ctx: BrainContext) {
         return { ok: false, error: `unknown skill ${skill_name}` }
       }
 
+      const [nodeRow] = await db
+        .select({ id: nodes.id, status: nodes.status, output: nodes.output })
+        .from(nodes)
+        .where(and(eq(nodes.id, node_id), eq(nodes.workflowId, workflowId)))
+        .limit(1)
+      if (!nodeRow) {
+        return { ok: false, node_id, skill_name, error: 'unknown node for this workflow' }
+      }
+      if (nodeRow.status === 'completed') {
+        const output = (nodeRow.output ?? {}) as Record<string, unknown>
+        return {
+          ok: true,
+          already_completed: true,
+          node_id,
+          skill_name,
+          output,
+          dispatch_tx: typeof output.dispatch_tx === 'string' ? output.dispatch_tx : null,
+        }
+      }
+      if (nodeRow.status === 'running') {
+        return {
+          ok: true,
+          already_running: true,
+          node_id,
+          skill_name,
+          output: nodeRow.output ?? null,
+          dispatch_tx: null,
+        }
+      }
+
+      const claimedNode = await db
+        .update(nodes)
+        .set({ status: 'running' })
+        .where(and(eq(nodes.id, node_id), eq(nodes.workflowId, workflowId), inArray(nodes.status, ['pending', 'failed'])))
+        .returning({ id: nodes.id })
+      if (claimedNode.length === 0) {
+        const [freshNode] = await db
+          .select({ status: nodes.status, output: nodes.output })
+          .from(nodes)
+          .where(and(eq(nodes.id, node_id), eq(nodes.workflowId, workflowId)))
+          .limit(1)
+        const output = (freshNode?.output ?? {}) as Record<string, unknown>
+        return {
+          ok: freshNode?.status !== 'failed',
+          already_claimed: true,
+          node_id,
+          skill_name,
+          output,
+          dispatch_tx: typeof output.dispatch_tx === 'string' ? output.dispatch_tx : null,
+        }
+      }
+
       // ─── Inject user profile for notification skills ─────────────
       // The brain never sees the user's email, chat_id, or bot_token.
       // We pull from users.notify_email / .telegram_chat_id / .telegram_bot_token
@@ -411,8 +500,6 @@ export function buildBrainTools(ctx: BrainContext) {
           throw err
         }
       }
-
-      await db.update(nodes).set({ status: 'running' }).where(eq(nodes.id, node_id))
 
       try {
         const output = (await callSkillEndpoint(skill, input)) as Record<string, unknown>

@@ -40,6 +40,40 @@ export async function POST(req: Request, ctx: RouteCtx) {
     })
   }
 
+  const hasStarted = wf.status !== 'planning'
+  if (hasStarted) {
+    return new Response(
+      JSON.stringify({
+        error: 'workflow_already_started',
+        status: wf.status,
+        message: 'This workflow is already running or finished. Use the workflow snapshot instead of starting Hermes again.',
+      }),
+      {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )
+  }
+
+  const claimed = await db
+    .update(workflows)
+    .set({ status: 'running' })
+    .where(and(eq(workflows.id, id), eq(workflows.userId, user.id), eq(workflows.status, 'planning')))
+    .returning({ id: workflows.id })
+
+  if (claimed.length === 0) {
+    return new Response(
+      JSON.stringify({
+        error: 'workflow_lock_busy',
+        message: 'Hermes is already working on this workflow.',
+      }),
+      {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )
+  }
+
   const body = (await req.json().catch(() => ({}))) as {
     messages?: UIMessage[]
   }

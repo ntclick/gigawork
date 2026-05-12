@@ -23,7 +23,7 @@
  * Gated by env `ERC8183_ENABLED=1`. When disabled, helpers no-op and
  * return `null` so the existing dispatch envelope path still runs.
  */
-import { decodeEventLog, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex } from 'viem'
+import { decodeEventLog, decodeFunctionData, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex } from 'viem'
 
 import { adminAccount, pollingClient, publicClient, sendAdminTransaction } from './client'
 
@@ -42,6 +42,50 @@ const erc20Abi = parseAbi([
 ])
 
 const agenticCommerceAbi = [
+  {
+    type: 'function',
+    name: 'getJob',
+    stateMutability: 'view',
+    inputs: [{ name: 'jobId', type: 'uint256' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'id', type: 'uint256' },
+          { name: 'client', type: 'address' },
+          { name: 'provider', type: 'address' },
+          { name: 'evaluator', type: 'address' },
+          { name: 'description', type: 'string' },
+          { name: 'budget', type: 'uint256' },
+          { name: 'expiredAt', type: 'uint256' },
+          { name: 'status', type: 'uint8' },
+          { name: 'hook', type: 'address' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'jobs',
+    stateMutability: 'view',
+    inputs: [{ name: 'jobId', type: 'uint256' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'id', type: 'uint256' },
+          { name: 'client', type: 'address' },
+          { name: 'provider', type: 'address' },
+          { name: 'evaluator', type: 'address' },
+          { name: 'description', type: 'string' },
+          { name: 'budget', type: 'uint256' },
+          { name: 'expiredAt', type: 'uint256' },
+          { name: 'status', type: 'uint8' },
+          { name: 'hook', type: 'address' },
+        ],
+      },
+    ],
+  },
   {
     type: 'function',
     name: 'createJob',
@@ -124,8 +168,8 @@ export interface OpenAndFundResult {
 }
 
 export interface SettleResult {
-  submitTx: Hex
-  completeTx: Hex
+  submitTx: Hex | null
+  completeTx: Hex | null
   deliverableHash: Hex
   reasonHash: Hex
 }
@@ -226,8 +270,32 @@ export async function settleJob(args: {
   const deliverableHash = keccak256(toHex(args.deliverableSeed))
   const reasonHash = keccak256(toHex(args.reasonSeed ?? 'deliverable-approved'))
 
+  const status = await readJobStatus(jobId)
   const submitData = encodeSubmit(jobId, deliverableHash)
   const completeData = encodeComplete(jobId, reasonHash)
+
+  if (status === 3) {
+    return {
+      submitTx: null,
+      completeTx: null,
+      deliverableHash,
+      reasonHash,
+    }
+  }
+
+  if (status === 2) {
+    const complete = await adminSend(AGENTIC_COMMERCE, completeData)
+    return {
+      submitTx: null,
+      completeTx: complete.hash,
+      deliverableHash,
+      reasonHash,
+    }
+  }
+
+  if (status !== 1) {
+    throw new Error(`job ${jobId} is not funded; current ERC-8183 status=${status}`)
+  }
 
   const submit = await adminSend(AGENTIC_COMMERCE, submitData)
   const complete = await adminSend(AGENTIC_COMMERCE, completeData)
@@ -238,6 +306,53 @@ export async function settleJob(args: {
     deliverableHash,
     reasonHash,
   }
+}
+
+async function readJobStatus(jobId: bigint) {
+  const job = await publicClient.readContract({
+    address: AGENTIC_COMMERCE,
+    abi: agenticCommerceAbi,
+    functionName: 'getJob',
+    args: [jobId],
+  })
+  return Number(job.status)
+}
+
+async function findExistingSettlementTxs(jobId: bigint): Promise<{
+  submitTx: Hex | null
+  completeTx: Hex | null
+  deliverableHash: Hex | null
+} | null> {
+  const latest = await publicClient.getBlockNumber()
+  const from = latest > 5_000n ? latest - 5_000n : 0n
+  let submitTx: Hex | null = null
+  let completeTx: Hex | null = null
+  let deliverableHash: Hex | null = null
+
+  for (let blockNumber = latest; blockNumber >= from; blockNumber--) {
+    const block = await publicClient.getBlock({ blockNumber, includeTransactions: true })
+    for (const tx of block.transactions) {
+      if (tx.to?.toLowerCase() !== AGENTIC_COMMERCE.toLowerCase()) continue
+      try {
+        const decoded = decodeFunctionData({ abi: agenticCommerceAbi, data: tx.input })
+        if (decoded.functionName !== 'submit' && decoded.functionName !== 'complete') continue
+        if (decoded.args[0] !== jobId) continue
+        if (decoded.functionName === 'submit') {
+          submitTx = tx.hash
+          deliverableHash = decoded.args[1]
+        }
+        if (decoded.functionName === 'complete') completeTx = tx.hash
+      } catch {
+        /* not an ERC-8183 settlement call */
+      }
+    }
+    if (submitTx && completeTx && deliverableHash) break
+    if (blockNumber === 0n) break
+  }
+
+  return submitTx || completeTx || deliverableHash
+    ? { submitTx, completeTx, deliverableHash }
+    : null
 }
 
 // ─── Calldata encoders ────────────────────────────────────────────────

@@ -488,10 +488,8 @@ function extract(messages: UIMessage[], workflowStatus: string) {
 
   let plan: PlanNode[] = []
   let finalReport: string | null = null
-  let running = 0
-  let completed = 0
-  let failed = 0
   let total = 0
+  let streamFailures = 0
   let reputationTx: string | null = null
   let reputationStatus: string | null = null
   let reputationReason: string | null = null
@@ -513,7 +511,7 @@ function extract(messages: UIMessage[], workflowStatus: string) {
       const toolName = part.type.replace(/^tool-/, '')
       if (toolName === 'planWorkflow' && part.state === 'output-available') {
         const out = part.output as { nodes?: PlanNode[] } | undefined
-        if (out?.nodes?.length) {
+        if (out?.nodes?.length && plan.length === 0) {
           plan = out.nodes
           total = out.nodes.length
         }
@@ -521,6 +519,7 @@ function extract(messages: UIMessage[], workflowStatus: string) {
       if (toolName === 'dispatchSkill') {
         const input = (part.input as { node_id?: string; skill_name?: string } | undefined) ?? {}
         const node = plan.find((p) => p.node_id === input.node_id)
+        if (plan.length > 0 && !node) continue
         const key = node?.plan_id ?? input.node_id ?? `dispatch-${dispatches.size}`
         const current = dispatches.get(key) ?? {
           planId: key,
@@ -532,21 +531,18 @@ function extract(messages: UIMessage[], workflowStatus: string) {
         if (part.state === 'output-available') {
           const out = part.output as { ok?: boolean; dispatch_tx?: string | null } | undefined
           if (out?.ok === false) {
-            failed++
             current.status = 'failed'
           } else {
-            completed++
             current.status = 'completed'
           }
           current.tx = out?.dispatch_tx ?? current.tx
         } else if (part.state === 'input-streaming' || part.state === 'input-available') {
-          running++
           current.status = 'running'
         }
         dispatches.set(key, current)
       }
       if (toolName === 'stream_error') {
-        failed++
+        streamFailures++
       }
       if (toolName === 'finalizeReport') {
         const output = (part.output || {}) as { ok?: boolean; summary_markdown?: string }
@@ -563,11 +559,16 @@ function extract(messages: UIMessage[], workflowStatus: string) {
     }
   }
 
+  const uniqueDispatches = [...dispatches.values()]
+  const running = uniqueDispatches.filter((d) => d.status === 'running').length
+  const completed = uniqueDispatches.filter((d) => d.status === 'completed').length
+  const failed = uniqueDispatches.filter((d) => d.status === 'failed').length + streamFailures
+
   return {
     plan,
     finalReport,
     dispatchStats: { running, completed, failed, total },
-    dispatches: [...dispatches.values()],
+    dispatches: uniqueDispatches,
     reputationTx,
     reputationStatus,
     reputationReason,

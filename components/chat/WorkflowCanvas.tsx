@@ -419,11 +419,12 @@ function buildFromMessages(messages: UIMessage[]): {
       const toolName = part.type.replace(/^tool-/, '')
       if (toolName === 'planWorkflow' && part.state === 'output-available') {
         const out = part.output as { nodes?: PlanNode[] } | undefined
-        if (out?.nodes?.length) plan = out.nodes
+        if (out?.nodes?.length && plan.length === 0) plan = out.nodes
       }
       if (toolName === 'dispatchSkill') {
         const input = (part.input as { node_id?: string; input_json?: string } | undefined) ?? {}
         const planId = findPlanIdByNodeId(plan, input.node_id)
+        if (plan.length > 0 && !planId) continue
         if (!planId) continue
         const det = details.get(planId) ?? {
           status: 'pending' as DispatchState,
@@ -519,6 +520,7 @@ function planIndex(messages: UIMessage[]): Map<string, { label: string; skill: s
       if (!isToolUIPart(part)) continue
       const toolName = part.type.replace(/^tool-/, '')
       if (toolName === 'planWorkflow' && part.state === 'output-available') {
+        if (out.size > 0) continue
         const o = part.output as { nodes?: PlanNode[] } | undefined
         for (const n of o?.nodes ?? []) {
           out.set(n.plan_id, { label: n.label, skill: n.skill_name })
