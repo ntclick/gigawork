@@ -430,11 +430,9 @@ function extract(messages: UIMessage[]) {
         failed++
       }
       if (toolName === 'finalizeReport') {
-        // Capture streaming input or final output
-        const input = (part.input || {}) as { summary_markdown?: string }
-        const output = (part.output || {}) as { summary_markdown?: string }
-        if (output.summary_markdown || input.summary_markdown) {
-          finalReport = output.summary_markdown ?? input.summary_markdown ?? null
+        const output = (part.output || {}) as { ok?: boolean; summary_markdown?: string }
+        if (part.state === 'output-available' && output.ok !== false && output.summary_markdown) {
+          finalReport = output.summary_markdown
         }
       }
       if (toolName === 'reputationUpdate') {

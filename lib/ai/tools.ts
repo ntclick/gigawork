@@ -525,13 +525,6 @@ export function buildBrainTools(ctx: BrainContext) {
         }
       }
 
-      await db.insert(messages).values({
-        workflowId,
-        role: 'brain',
-        content: finalMarkdown,
-        toolName: 'finalizeReport',
-        toolPayload: { raw_json },
-      })
       await db
         .update(workflows)
         .set({ status: ERC8183_ENABLED ? 'settling' : 'completed' })
@@ -542,6 +535,7 @@ export function buildBrainTools(ctx: BrainContext) {
       // response is flushed, the worker can freeze and leave the workflow
       // stuck after "Compose report".
       if (ERC8183_ENABLED) {
+        let settledForReport = false
         try {
           // ── Step 1: Settle ERC-8183 job ──────────────────────────
           const [wf] = await db
@@ -551,7 +545,9 @@ export function buildBrainTools(ctx: BrainContext) {
             .limit(1)
 
           let didSettle = false
-          if (wf?.erc8183JobId && !wf.erc8183CompleteTx) {
+          if (wf?.erc8183CompleteTx) {
+            didSettle = true
+          } else if (wf?.erc8183JobId && wf.erc8183FundTx) {
             try {
               const res = await settleJob({
                 jobId: wf.erc8183JobId,
@@ -571,14 +567,12 @@ export function buildBrainTools(ctx: BrainContext) {
               }
             } catch (e) {
               console.warn(
-                '[finalizeReport] ERC-8183 settle failed (non-fatal)',
+                '[finalizeReport] ERC-8183 settle failed',
                 e instanceof Error ? e.message : e,
               )
             }
-          } else if (!wf?.erc8183JobId) {
-            // No on-chain job (user-client mode or escrow disabled) —
-            // reputation still runs, settle is a no-op.
-            didSettle = true
+          } else {
+            console.warn('[finalizeReport] missing funded ERC-8183 job; report will not complete')
           }
 
           // ── Step 2: Reputation increment (always runs after settle) ──
@@ -586,6 +580,22 @@ export function buildBrainTools(ctx: BrainContext) {
           // if settle explicitly failed (tx reverted).
           if (!didSettle) {
             console.warn('[finalizeReport] skipping reputation: settle failed')
+            await db.insert(messages).values({
+              workflowId,
+              role: 'brain',
+              content: 'ERC-8183 settlement did not complete, so the final report was not published.',
+              toolName: 'stream_error',
+              toolPayload: { error: 'settlement_incomplete' },
+            })
+            await db
+              .update(workflows)
+              .set({ status: 'settlement_failed' })
+              .where(eq(workflows.id, workflowId))
+            return {
+              ok: false,
+              error: 'settlement_incomplete',
+              message: 'ERC-8183 submit/complete must finish before the final report is published.',
+            }
           } else {
             // 1. Gather agentTokenIds of completed skills in this workflow
             const skillRows = await db
@@ -648,19 +658,34 @@ export function buildBrainTools(ctx: BrainContext) {
                 }
               }
             }
+            settledForReport = true
           }
         } catch (e) {
           console.warn(
             '[finalizeReport] reputation update failed (non-fatal)',
             e instanceof Error ? e.message : e,
           )
-        } finally {
-          await db
-            .update(workflows)
-            .set({ status: 'completed' })
-            .where(eq(workflows.id, workflowId))
+        }
+        if (!settledForReport) {
+          return {
+            ok: false,
+            error: 'settlement_incomplete',
+            message: 'ERC-8183 submit/complete must finish before the final report is published.',
+          }
         }
       }
+
+      await db.insert(messages).values({
+        workflowId,
+        role: 'brain',
+        content: finalMarkdown,
+        toolName: 'finalizeReport',
+        toolPayload: { raw_json },
+      })
+      await db
+        .update(workflows)
+        .set({ status: 'completed' })
+        .where(eq(workflows.id, workflowId))
 
       return { ok: true, summary_markdown: finalMarkdown }
     },
