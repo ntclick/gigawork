@@ -47,7 +47,7 @@ export function WorkflowDocPanel({
   status: string
   erc8183?: Erc8183Trail | null
 }) {
-  const { plan, finalReport, dispatchStats, dispatches, reputationTx, reputationStatus, reputationReason } = useMemo(() => extract(messages), [messages])
+  const { plan, finalReport, dispatchStats, dispatches, reputationTx, reputationStatus, reputationReason } = useMemo(() => extract(messages, status), [messages, status])
 
   const busy = status === 'streaming' || status === 'submitted'
 
@@ -203,14 +203,18 @@ function UnifiedTrail({
       : dispatchStats.running > 0 || planCount > 0
         ? 'active'
         : 'idle'
-  const reportState: TrailState = hasReport
+  const composer = dispatches.find((d) => d.skill === 'report-composer')
+  const reportReady = hasReport || composer?.status === 'completed'
+  const reportState: TrailState = reportReady
     ? 'done'
-    : agentDone || status === 'streaming' || status === 'submitted'
+    : composer?.status === 'failed'
+      ? 'failed'
+      : composer?.status === 'running' || composer?.status === 'pending' || agentDone || status === 'streaming' || status === 'submitted'
       ? 'active'
       : 'idle'
   const settleState: TrailState = erc8183?.completeTx
     ? 'done'
-    : erc8183?.submitTx || (erc8183?.fundTx && hasReport)
+    : erc8183?.submitTx || (erc8183?.fundTx && reportReady)
       ? 'active'
       : 'idle'
   const reputationState: TrailState = reputationTx
@@ -232,7 +236,7 @@ function UnifiedTrail({
           state={agentState}
           detail={`${dispatchStats.completed}/${dispatchStats.total || dispatches.length || 0} done`}
         />
-        <TrailRow label="Report" state={reportState} detail={hasReport ? 'ready' : 'compose'} />
+        <TrailRow label="Report" state={reportState} detail={reportReady ? 'ready' : composer?.status ?? 'compose'} />
         <TrailRow label="Settle" state={settleState} detail={erc8183?.jobId ? `#${erc8183.jobId}` : 'pending'} />
         <TrailRow label="Reputation" state={reputationState} detail={reputationTx ? 'cached' : 'pending'} />
       </div>
@@ -261,7 +265,7 @@ function UnifiedTrail({
           <TrailTxRow label="Set budget" tx={erc8183.setBudgetTx} state={erc8183.setBudgetTx ? 'done' : erc8183.jobId ? 'active' : 'idle'} />
           <TrailTxRow label="Approve USDC" tx={erc8183.approveTx} state={erc8183.approveTx ? 'done' : erc8183.setBudgetTx ? 'active' : 'idle'} />
           <TrailTxRow label="Fund escrow" tx={erc8183.fundTx} state={erc8183.fundTx ? 'done' : erc8183.approveTx ? 'active' : 'idle'} />
-          <TrailTxRow label="Submit deliverable" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : hasReport && erc8183.fundTx ? 'active' : 'idle'} />
+          <TrailTxRow label="Submit deliverable" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : reportReady && erc8183.fundTx ? 'active' : 'idle'} />
           <TrailTxRow label="Complete job" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
           {erc8183.deliverableHash && <HashRow label="Deliverable" hash={erc8183.deliverableHash} />}
         </div>
@@ -473,7 +477,7 @@ function StatusBanner({
   return null
 }
 
-function extract(messages: UIMessage[]) {
+function extract(messages: UIMessage[], workflowStatus: string) {
   type PlanNode = {
     node_id: string
     plan_id: string
@@ -500,7 +504,7 @@ function extract(messages: UIMessage[]) {
     for (const part of m.parts) {
       if (part.type === 'text' && m.role === 'assistant') {
         const text = 'text' in part ? part.text : ''
-        if (isReportText(text)) {
+        if (workflowStatus === 'completed' && isReportText(text)) {
           finalReport = (finalReport || '') + text
         }
       }

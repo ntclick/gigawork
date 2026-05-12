@@ -265,8 +265,8 @@ export function WorkflowCanvas({
   const flowNodes = showPlaceholder ? PLACEHOLDERS : rfNodes
   const flowEdges = showPlaceholder ? PLACEHOLDER_EDGES : rfEdges
   const trail = useMemo(
-    () => buildCanvasTrail(messages, planNodes, details, erc8183),
-    [messages, planNodes, details, erc8183],
+    () => buildCanvasTrail(messages, planNodes, details, erc8183, status),
+    [messages, planNodes, details, erc8183, status],
   )
 
   return (
@@ -344,7 +344,7 @@ export function WorkflowCanvas({
             <div className="grid grid-cols-2 gap-1.5">
               <CanvasStateRow label="Plan" state={trail.planState} detail={`${planNodes.length || 0} steps`} />
               <CanvasStateRow label="Agents" state={trail.agentState} detail={`${trail.completed}/${trail.total || 0}`} />
-              <CanvasStateRow label="Report" state={trail.reportState} detail={trail.hasReport ? 'ready' : 'compose'} />
+              <CanvasStateRow label="Report" state={trail.reportState} detail={trail.reportReady ? 'ready' : trail.reportDetail} />
               <CanvasStateRow label="Settle" state={trail.settleState} detail={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
               <CanvasStateRow label="Repute" state={trail.reputationState} detail={trail.reputationTx ? 'cached' : 'pending'} />
             </div>
@@ -373,7 +373,7 @@ export function WorkflowCanvas({
             <CanvasTxRow label="Set budget" tx={erc8183.setBudgetTx} active={!!erc8183.jobId && !erc8183.setBudgetTx} />
             <CanvasTxRow label="Approve USDC" tx={erc8183.approveTx} active={!!erc8183.setBudgetTx && !erc8183.approveTx} />
             <CanvasTxRow label="Fund escrow" tx={erc8183.fundTx} active={!!erc8183.approveTx && !erc8183.fundTx} />
-            <CanvasTxRow label="Submit deliverable" tx={erc8183.submitTx} active={trail.hasReport && !!erc8183.fundTx && !erc8183.submitTx} />
+            <CanvasTxRow label="Submit deliverable" tx={erc8183.submitTx} active={trail.reportReady && !!erc8183.fundTx && !erc8183.submitTx} />
             <CanvasTxRow label="Complete job" tx={erc8183.completeTx} active={!!erc8183.submitTx && !erc8183.completeTx} />
             {trail.reputationTx && <CanvasTxRow label="Reputation cache" tx={trail.reputationTx} />}
             </div>
@@ -592,6 +592,7 @@ function buildCanvasTrail(
   planNodes: Node[],
   details: Map<string, DispatchDetail>,
   erc8183?: Erc8183Trail | null,
+  workflowStatus?: string,
 ) {
   const statuses = [...details.values()].map((d) => d.status)
   const running = statuses.filter((s) => s === 'running').length
@@ -599,7 +600,10 @@ function buildCanvasTrail(
   const completed = statuses.filter((s) => s === 'completed').length
   const total = planNodes.length
   const agentsDone = total > 0 && completed + failed >= total
-  const { hasReport, reputationTx } = extractCanvasMilestones(messages)
+  const { hasReport, reputationTx } = extractCanvasMilestones(messages, workflowStatus)
+  const composerNode = planNodes.find((node) => (node.data as PixelNodeData).skill === 'report-composer')
+  const composerState = composerNode ? details.get(composerNode.id)?.status ?? 'pending' : undefined
+  const reportReady = hasReport || composerState === 'completed'
   const planState: CanvasTrailState = total > 0 ? 'done' : 'active'
   const agentState: CanvasTrailState = failed > 0
     ? 'failed'
@@ -608,14 +612,16 @@ function buildCanvasTrail(
       : running > 0 || total > 0
         ? 'active'
         : 'idle'
-  const reportState: CanvasTrailState = hasReport
+  const reportState: CanvasTrailState = reportReady
     ? 'done'
-    : agentsDone || running > 0
+    : composerState === 'failed'
+      ? 'failed'
+      : composerState === 'running' || composerState === 'pending' || agentsDone || running > 0
       ? 'active'
       : 'idle'
   const settleState: CanvasTrailState = erc8183?.completeTx
     ? 'done'
-    : erc8183?.submitTx || (erc8183?.fundTx && hasReport)
+    : erc8183?.submitTx || (erc8183?.fundTx && reportReady)
       ? 'active'
       : 'idle'
   const reputationState: CanvasTrailState = reputationTx
@@ -643,6 +649,8 @@ function buildCanvasTrail(
     settleState,
     reputationState,
     hasReport,
+    reportReady,
+    reportDetail: composerState ?? 'compose',
     reputationTx,
     completed,
     total,
@@ -666,14 +674,14 @@ function buildCanvasTrail(
   }
 }
 
-function extractCanvasMilestones(messages: UIMessage[]) {
+function extractCanvasMilestones(messages: UIMessage[], workflowStatus?: string) {
   let hasReport = false
   let reputationTx: string | null = null
   for (const m of messages) {
     for (const part of m.parts) {
       if (part.type === 'text' && m.role === 'assistant') {
         const text = 'text' in part ? part.text : ''
-        if (isCanvasReportText(text)) hasReport = true
+        if (workflowStatus === 'completed' && isCanvasReportText(text)) hasReport = true
       }
       if (!isToolUIPart(part)) continue
       const toolName = part.type.replace(/^tool-/, '')
