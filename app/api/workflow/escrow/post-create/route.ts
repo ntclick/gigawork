@@ -16,6 +16,7 @@ const Body = z.object({
   workflowId: z.string().uuid(),
   createJobTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   approveTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
+  createTxFresh: z.boolean().optional(),
   budget: z.string().regex(/^\d+$/), // wei string
 })
 
@@ -101,6 +102,29 @@ export async function POST(req: Request) {
         hash: parsed.data.createJobTxHash as `0x${string}`,
       })
     } catch {
+      if (!parsed.data.createTxFresh) {
+        await db
+          .update(workflows)
+          .set({
+            status: 'awaiting_fund',
+            erc8183CreateTx: null,
+            erc8183ApproveTx: null,
+            erc8183SetBudgetTx: null,
+          })
+          .where(eq(workflows.id, wf.id))
+
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'create_tx_not_found',
+            detail: 'Create job transaction is no longer visible on Arc RPC.',
+            txHash: parsed.data.createJobTxHash,
+            hint: 'The wallet returned a hash, but Arc RPC cannot find it. The stale hashes were cleared; press Continue funding to sign again.',
+          },
+          { status: 409 },
+        )
+      }
+
       return NextResponse.json(
         {
           ok: false,

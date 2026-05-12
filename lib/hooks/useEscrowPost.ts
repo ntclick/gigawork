@@ -129,6 +129,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
 
         // ── 2. user signs createJob, or resume existing create tx ─────
         let createTx = prep.createTx as Hex | undefined
+        let createTxFresh = false
         if (!createTx) {
           setStep('signing-create')
           createTx = (await walletClient.sendTransaction({
@@ -137,6 +138,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
             data: prep.createJob!.data as Hex,
             chain: null,
           })) as Hex
+          createTxFresh = true
           setTxHashes((s) => ({ ...s, create: createTx }))
           await trackEscrowTx(workflowId, { createJobTxHash: createTx })
         }
@@ -180,7 +182,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
           const postRes = await fetch('/api/workflow/escrow/post-create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workflowId, createJobTxHash: createTx, approveTxHash: approveTx, budget: prep.budget }),
+            body: JSON.stringify({ workflowId, createJobTxHash: createTx, approveTxHash: approveTx, createTxFresh, budget: prep.budget }),
           })
           post = (await postRes.json().catch(() => ({}))) as typeof post
           if (postRes.ok && post.jobId && post.setBudgetTx && post.fund?.data) {
