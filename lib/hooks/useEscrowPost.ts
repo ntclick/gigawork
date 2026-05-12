@@ -93,6 +93,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
           already?: boolean
           jobId?: string
           createTx?: string
+          approveTx?: string
           fundTx?: string
           contract?: string
           usdcContract?: string
@@ -105,11 +106,14 @@ export function useEscrowPost(): UseEscrowPostReturn {
         if (!prepRes.ok) {
           throw new Error(prep.detail || prep.error || `prepare ${prepRes.status}`)
         }
-        if (prep.already) {
+        if (prep.createTx) setTxHashes((s) => ({ ...s, create: prep.createTx as Hex }))
+        if (prep.approveTx) setTxHashes((s) => ({ ...s, approve: prep.approveTx as Hex }))
+        if (prep.fundTx) setTxHashes((s) => ({ ...s, fund: prep.fundTx as Hex }))
+        if (prep.already && prep.fundTx) {
           setStep('done')
           return
         }
-        if (!prep.createJob || !prep.approve || !prep.budget || !prep.contract) {
+        if ((!prep.already && !prep.createJob) || !prep.approve || !prep.budget || !prep.contract) {
           throw new Error('prepare returned incomplete bundle')
         }
 
@@ -123,15 +127,18 @@ export function useEscrowPost(): UseEscrowPostReturn {
         const walletClient = createWalletClient({ transport: custom(provider) })
         const userAddr = wallet.address as `0x${string}`
 
-        // ── 2. user signs createJob ────────────────────────────
-        setStep('signing-create')
-        const createTx = (await walletClient.sendTransaction({
-          account: userAddr,
-          to: prep.createJob.to as `0x${string}`,
-          data: prep.createJob.data as Hex,
-          chain: null,
-        })) as Hex
-        setTxHashes((s) => ({ ...s, create: createTx }))
+        // ── 2. user signs createJob, or resume existing create tx ─────
+        let createTx = prep.createTx as Hex | undefined
+        if (!createTx) {
+          setStep('signing-create')
+          createTx = (await walletClient.sendTransaction({
+            account: userAddr,
+            to: prep.createJob!.to as `0x${string}`,
+            data: prep.createJob!.data as Hex,
+            chain: null,
+          })) as Hex
+          setTxHashes((s) => ({ ...s, create: createTx }))
+        }
 
         // ── 3. backend admin signs setBudget ───────────────────
         setStep('posting-create')
@@ -155,24 +162,30 @@ export function useEscrowPost(): UseEscrowPostReturn {
         }
 
         // ── 4. user signs approve ──────────────────────────────
-        setStep('signing-approve')
-        const approveTx = (await walletClient.sendTransaction({
-          account: userAddr,
-          to: prep.usdcContract as `0x${string}`,
-          data: prep.approve.data as Hex,
-          chain: null,
-        })) as Hex
-        setTxHashes((s) => ({ ...s, approve: approveTx }))
+        let approveTx = prep.approveTx as Hex | undefined
+        if (!approveTx) {
+          setStep('signing-approve')
+          approveTx = (await walletClient.sendTransaction({
+            account: userAddr,
+            to: prep.usdcContract as `0x${string}`,
+            data: prep.approve.data as Hex,
+            chain: null,
+          })) as Hex
+          setTxHashes((s) => ({ ...s, approve: approveTx }))
+        }
 
         // ── 5. user signs fund ─────────────────────────────────
-        setStep('signing-fund')
-        const fundTx = (await walletClient.sendTransaction({
-          account: userAddr,
-          to: prep.contract as `0x${string}`,
-          data: post.fund.data as Hex,
-          chain: null,
-        })) as Hex
-        setTxHashes((s) => ({ ...s, fund: fundTx }))
+        let fundTx = prep.fundTx as Hex | undefined
+        if (!fundTx) {
+          setStep('signing-fund')
+          fundTx = (await walletClient.sendTransaction({
+            account: userAddr,
+            to: prep.contract as `0x${string}`,
+            data: post.fund.data as Hex,
+            chain: null,
+          })) as Hex
+          setTxHashes((s) => ({ ...s, fund: fundTx }))
+        }
 
         // ── 6. confirm ─────────────────────────────────────────
         setStep('confirming')
@@ -199,9 +212,9 @@ export function useEscrowPost(): UseEscrowPostReturn {
         }
 
         setResult({
-          jobId: post.jobId,
+          jobId: post.jobId!,
           createTx,
-          setBudgetTx: post.setBudgetTx,
+          setBudgetTx: post.setBudgetTx!,
           approveTx,
           fundTx,
         })

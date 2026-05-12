@@ -58,17 +58,6 @@ export async function POST(req: Request) {
   if (wf.userId !== user.id) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-  if (wf.erc8183JobId) {
-    // Idempotent: re-click after partial completion — frontend should pivot
-    // to /post-create or /confirm depending on which tx hashes already exist.
-    return NextResponse.json({
-      ok: true,
-      already: true,
-      jobId: wf.erc8183JobId,
-      createTx: wf.erc8183CreateTx,
-      fundTx: wf.erc8183FundTx,
-    })
-  }
 
   try {
     const bundle = await prepareOpenAndFund({
@@ -83,6 +72,30 @@ export async function POST(req: Request) {
         { error: 'admin_unconfigured', detail: 'ADMIN_PRIVATE_KEY missing on server' },
         { status: 503 },
       )
+    }
+
+    if (wf.erc8183JobId || wf.erc8183CreateTx) {
+      // Idempotent resume after partial completion. This may be:
+      // - create tx pending: createTx exists but jobId is still null
+      // - setBudget done: jobId exists but fundTx is still null
+      // - funded: fundTx exists and the workflow can run
+      return NextResponse.json({
+        ok: true,
+        already: true,
+        workflowId: wf.id,
+        chainId: arcTestnet.id,
+        contract: bundle.contract,
+        usdcContract: bundle.approve.to,
+        budget: bundle.budget,
+        budgetUsdc: bundle.budgetUsdc,
+        expiredAt: bundle.expiredAt,
+        jobId: wf.erc8183JobId,
+        createTx: wf.erc8183CreateTx,
+        setBudgetTx: wf.erc8183SetBudgetTx,
+        approveTx: wf.erc8183ApproveTx,
+        fundTx: wf.erc8183FundTx,
+        approve: { to: bundle.approve.to, data: bundle.approve.data },
+      })
     }
 
     return NextResponse.json({

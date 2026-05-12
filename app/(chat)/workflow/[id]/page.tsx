@@ -10,6 +10,7 @@ import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { AppRail } from '@/components/shell/AppRail'
 import { MainHeader } from '@/components/shell/MainHeader'
+import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
 import { toast } from '@/components/ui/toast'
 
 type Erc8183Trail = {
@@ -36,6 +37,7 @@ export default function WorkflowPage() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const autoSentRef = useRef(false)
   const startRef = useRef<number | undefined>(undefined)
+  const escrow = useEscrowPost()
 
   const { messages, sendMessage, setMessages, status } = useChat({
     transport: new DefaultChatTransport({ api: `/api/workflow/${id}/stream` }),
@@ -121,11 +123,11 @@ export default function WorkflowPage() {
   // Auto-send only when this workflow has never streamed
   useEffect(() => {
     if (autoSentRef.current || !snapshot) return
-    autoSentRef.current = true
     const hasAssistant = snapshot.messages.some((m) => m.role === 'assistant')
     const waitingForEscrow =
       snapshot.workflow.status === 'awaiting_fund' || snapshot.workflow.status === 'funding'
     if (!snapshot.isFinished && !waitingForEscrow && !hasAssistant && snapshot.workflow.prompt) {
+      autoSentRef.current = true
       startRef.current = Date.now()
       sendMessage({ text: snapshot.workflow.prompt })
     }
@@ -133,6 +135,12 @@ export default function WorkflowPage() {
 
   const busy = status === 'streaming' || status === 'submitted'
   const displayStatus = busy ? status : snapshot?.workflow.status ?? status
+  const needsEscrow =
+    !busy &&
+    !!snapshot &&
+    (snapshot.workflow.status === 'awaiting_fund' ||
+      snapshot.workflow.status === 'funding' ||
+      (!!snapshot.workflow.erc8183 && !snapshot.workflow.erc8183.fundTx))
   const title = snapshot?.workflow.prompt
     ? truncate(snapshot.workflow.prompt, 40)
     : `Workflow ${id.slice(0, 8)}`
@@ -198,6 +206,29 @@ export default function WorkflowPage() {
                 <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
               </div>
             )}
+            {needsEscrow && (
+              <WorkflowEscrowOverlay
+                erc8183={snapshot.workflow.erc8183 ?? null}
+                step={escrow.step}
+                error={escrow.error}
+                txHashes={escrow.txHashes}
+                onContinue={async () => {
+                  try {
+                    await escrow.post(id)
+                    const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) => r.json()) as Snapshot
+                    setSnapshot(fresh)
+                    if (fresh.messages.length > 0) setMessages(fresh.messages)
+                    autoSentRef.current = false
+                    if (!fresh.isFinished && fresh.workflow.prompt) {
+                      sendMessage({ text: fresh.workflow.prompt })
+                      autoSentRef.current = true
+                    }
+                  } catch (e) {
+                    toast.error('Escrow funding required', e instanceof Error ? e.message : String(e))
+                  }
+                }}
+              />
+            )}
           </div>
 
           {/* Bottom prompt bar */}
@@ -214,6 +245,121 @@ export default function WorkflowPage() {
         />
       </div>
     </>
+  )
+}
+
+const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+
+function WorkflowEscrowOverlay({
+  erc8183,
+  step,
+  error,
+  txHashes,
+  onContinue,
+}: {
+  erc8183: Erc8183Trail | null
+  step: ReturnType<typeof useEscrowPost>['step']
+  error: string | null
+  txHashes: ReturnType<typeof useEscrowPost>['txHashes']
+  onContinue: () => Promise<void>
+}) {
+  const [running, setRunning] = useState(false)
+  const createTx = txHashes.create ?? erc8183?.createTx ?? undefined
+  const approveTx = txHashes.approve ?? erc8183?.approveTx ?? undefined
+  const fundTx = txHashes.fund ?? erc8183?.fundTx ?? undefined
+  const current =
+    step === 'posting-create'
+      ? 'Waiting for createJob confirmation, then provider setBudget'
+      : step === 'signing-approve'
+        ? 'Approve USDC spend in wallet'
+        : step === 'signing-fund'
+          ? 'Sign fund escrow in wallet'
+          : step === 'confirming'
+            ? 'Waiting for fund confirmation'
+            : step === 'error'
+              ? 'Funding needs attention'
+              : 'ERC-8183 funding required before agents run'
+
+  return (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg border border-[var(--giga-accent)]/40 bg-[#12101f] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-pixel-body text-xl uppercase text-white">Fund ERC-8183 escrow</h2>
+            <p className="mt-1 text-sm text-white/55">
+              Agents will start only after create, approve, and fund are confirmed.
+            </p>
+          </div>
+          <span className="font-mono text-[10px] uppercase text-[var(--giga-accent)]">{step}</span>
+        </div>
+
+        <div className="mb-4 border border-cyan-400/20 bg-cyan-400/[0.04] p-3 text-sm text-cyan-100">
+          {current}
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <EscrowStepRow label="Create job" tx={createTx} done={!!erc8183?.jobId} active={step === 'posting-create'} />
+          <EscrowStepRow label="Set budget" tx={erc8183?.setBudgetTx ?? undefined} done={!!erc8183?.setBudgetTx} />
+          <EscrowStepRow label="Approve USDC" tx={approveTx === '0x0' ? undefined : approveTx} done={!!approveTx} active={step === 'signing-approve' || step === 'confirming'} note={approveTx === '0x0' ? 'allowance ok' : undefined} />
+          <EscrowStepRow label="Fund escrow" tx={fundTx} done={!!fundTx} active={step === 'signing-fund' || step === 'confirming'} />
+        </div>
+
+        {error && (
+          <div className="mt-4 border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+            {error}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={running}
+          onClick={async () => {
+            setRunning(true)
+            try {
+              await onContinue()
+            } finally {
+              setRunning(false)
+            }
+          }}
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 bg-[var(--giga-accent)] px-4 py-3 font-pixel-body text-lg text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {running ? <span className="gw-spinner h-4 w-4" /> : null}
+          {running ? 'Processing escrow...' : 'Continue funding'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EscrowStepRow({
+  label,
+  tx,
+  done,
+  active,
+  note,
+}: {
+  label: string
+  tx?: string
+  done?: boolean
+  active?: boolean
+  note?: string
+}) {
+  return (
+    <div className="flex items-center gap-2 border border-white/10 bg-black/20 px-3 py-2">
+      <span className={`h-2 w-2 rounded-full ${done ? 'bg-emerald-300' : active ? 'animate-pulse bg-[var(--giga-accent)]' : 'bg-white/20'}`} />
+      <span className={done ? 'text-white/85' : active ? 'text-[var(--giga-accent)]' : 'text-white/45'}>{label}</span>
+      <span className="ml-auto font-mono text-[10px]">
+        {tx ? (
+          <a href={`${EXPLORER}/tx/${tx}`} target="_blank" rel="noreferrer" className="text-cyan-300 hover:text-cyan-200 hover:underline">
+            {tx.slice(0, 8)}...{tx.slice(-4)}
+          </a>
+        ) : note ? (
+          <span className="text-white/35">{note}</span>
+        ) : (
+          <span className="text-white/25">pending</span>
+        )}
+      </span>
+    </div>
   )
 }
 

@@ -65,15 +65,26 @@ export async function POST(req: Request) {
   }
   if (wf.erc8183JobId) {
     // Already past this step — return existing state for idempotent retry
+    const fundCalldata = encodeFundForJob(BigInt(wf.erc8183JobId))
     return NextResponse.json({
       ok: true,
       already: true,
       jobId: wf.erc8183JobId,
       createTx: wf.erc8183CreateTx,
+      setBudgetTx: wf.erc8183SetBudgetTx,
+      fund: { data: fundCalldata },
     })
   }
 
   try {
+    await db
+      .update(workflows)
+      .set({
+        status: 'funding',
+        erc8183CreateTx: parsed.data.createJobTxHash,
+      })
+      .where(eq(workflows.id, wf.id))
+
     const { jobId, setBudgetTx } = await setBudgetByAdmin({
       createJobTxHash: parsed.data.createJobTxHash as `0x${string}`,
       expectedClient: user.wallet as `0x${string}`,
