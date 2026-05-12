@@ -1,12 +1,12 @@
 import { tool } from 'ai'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { signDispatchTx } from '@/lib/chain/dispatch'
 import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
-import { messages, nodes, users, workflows } from '@/lib/db/schema'
+import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
 
 export type BrainContext = { workflowId: string; userId: string | null }
@@ -468,6 +468,9 @@ export function buildBrainTools(ctx: BrainContext) {
           },
           content: null,
         })
+
+        await autoPublishIfWorkflowReady(workflowId, userId)
+
         return {
           ok: true,
           node_id,
@@ -566,4 +569,48 @@ export function buildBrainTools(ctx: BrainContext) {
   })
 
   return { planWorkflow, dispatchSkill, finalizeReport }
+}
+
+async function autoPublishIfWorkflowReady(workflowId: string, userId: string | null) {
+  const existingFinal = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.workflowId, workflowId),
+        inArray(messages.toolName, ['finalizeReport', 'auto_finalize']),
+      ),
+    )
+    .limit(1)
+  if (existingFinal.length > 0) return
+
+  const allNodes = await db
+    .select({
+      id: nodes.id,
+      status: nodes.status,
+      output: nodes.output,
+      skillName: skills.name,
+    })
+    .from(nodes)
+    .leftJoin(skills, eq(nodes.skillId, skills.id))
+    .where(eq(nodes.workflowId, workflowId))
+
+  if (allNodes.length === 0) return
+  const allTerminal = allNodes.every((n) => n.status === 'completed' || n.status === 'failed')
+  if (!allTerminal) return
+
+  const composer = allNodes.find((n) => n.status === 'completed' && n.skillName === 'report-composer')
+  const finalMarkdown = findMarkdown(composer?.output) ?? findEvidenceMarkdown(composer?.output)
+  if (!finalMarkdown) return
+
+  await publishFinalReport({
+    workflowId,
+    userId,
+    finalMarkdown,
+    rawJson: {
+      source: 'dispatchSkill:auto-publish',
+      nodes: allNodes.map((n) => ({ id: n.id, status: n.status, skillName: n.skillName })),
+    },
+    toolName: 'auto_finalize',
+  })
 }

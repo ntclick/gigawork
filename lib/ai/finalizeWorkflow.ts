@@ -18,6 +18,21 @@ export async function publishFinalReport({
   rawJson?: Record<string, unknown>
   toolName: 'finalizeReport' | 'auto_finalize'
 }): Promise<{ ok: true } | { ok: false; error: string; message: string }> {
+  const existingFinal = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.workflowId, workflowId),
+        sql`${messages.toolName} in ('finalizeReport', 'auto_finalize')`,
+      ),
+    )
+    .limit(1)
+  if (existingFinal.length > 0) {
+    await db.update(workflows).set({ status: 'completed' }).where(eq(workflows.id, workflowId))
+    return { ok: true }
+  }
+
   await db
     .update(workflows)
     .set({ status: ERC8183_ENABLED ? 'settling' : 'completed' })
