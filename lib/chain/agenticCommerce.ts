@@ -182,7 +182,18 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
   if (!adminAccount) {
     throw new Error('admin wallet not configured (ADMIN_PRIVATE_KEY missing)')
   }
-  const hash = await sendAdminTransaction({ to, data })
+  let hash: Hex | null = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    hash = await sendAdminTransaction({ to, data })
+    const visible = await waitForTxVisibility(hash, 8_000)
+    if (visible) break
+    if (attempt === 2) {
+      throw new Error(`tx ${hash} was signed but not visible on RPC mempool`)
+    }
+    console.warn(`[adminSend] tx ${hash} not visible yet, rebroadcasting (attempt ${attempt + 1}/2)`)
+  }
+  if (!hash) throw new Error('failed to broadcast admin transaction')
+
   const receipt = await pollingClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
@@ -193,6 +204,20 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
     throw new Error(`tx ${hash} reverted`)
   }
   return { hash, receipt }
+}
+
+async function waitForTxVisibility(hash: Hex, timeoutMs: number): Promise<boolean> {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const tx = await publicClient.getTransaction({ hash })
+      if (tx) return true
+    } catch {
+      // Keep polling until timeout. Some RPC nodes need a short propagation delay.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 800))
+  }
+  return false
 }
 
 /**
