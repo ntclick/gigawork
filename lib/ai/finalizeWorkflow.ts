@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
 import { incrementReputationBatch } from '@/lib/chain/reputation'
@@ -99,17 +99,19 @@ async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
 
 async function cacheReputation(workflowId: string, userId: string | null) {
   try {
-    const skillRows = await db
-      .select({ agentTokenId: skills.agentTokenId, skillId: skills.id })
+    // Count completed skills (with or without on-chain agentTokenId)
+    const allCompletedSkills = await db
+      .select({ skillId: skills.id, agentTokenId: skills.agentTokenId })
       .from(nodes)
       .innerJoin(skills, eq(nodes.skillId, skills.id))
       .where(
         and(
           eq(nodes.workflowId, workflowId),
           eq(nodes.status, 'completed'),
-          isNotNull(skills.agentTokenId),
         ),
       )
+
+    const skillsWithToken = allCompletedSkills.filter((r) => !!r.agentTokenId)
 
     const [u] = userId
       ? await db
@@ -122,15 +124,64 @@ async function cacheReputation(workflowId: string, userId: string | null) {
     const tokenIds = [
       ...new Set(
         [
-          ...skillRows.map((r) => r.agentTokenId!),
+          ...skillsWithToken.map((r) => r.agentTokenId!),
           u?.identityTokenId,
         ].filter(Boolean),
       ),
     ] as string[]
 
-    if (tokenIds.length === 0) return
+    // Always cache DB reputation for completed skills, even when
+    // on-chain increment is unavailable.
+    const uniqueSkillIds = [...new Set(allCompletedSkills.map((row) => row.skillId))]
+    for (const skillId of uniqueSkillIds) {
+      await db
+        .update(skills)
+        .set({ reputationScore: sql`reputation_score + 1` })
+        .where(eq(skills.id, skillId))
+    }
+
+    if (userId) {
+      await db
+        .update(users)
+        .set({ reputationScore: sql`reputation_score + 1` })
+        .where(eq(users.id, userId))
+    }
+
+    // Attempt on-chain reputation increment
+    if (tokenIds.length === 0) {
+      await db.insert(messages).values({
+        workflowId,
+        role: 'system',
+        toolName: 'reputationUpdate',
+        toolPayload: {
+          tx: null,
+          tokenIds: [],
+          status: 'skipped',
+          reason: 'No on-chain identity tokens found for user or skills. DB reputation was still incremented.',
+        },
+        content: null,
+      })
+      return
+    }
+
     const repTx = await incrementReputationBatch(tokenIds)
-    if (!repTx) return
+    if (!repTx) {
+      // Registry not configured or admin wallet missing — record so
+      // UI shows a clear status instead of "pending" forever.
+      await db.insert(messages).values({
+        workflowId,
+        role: 'system',
+        toolName: 'reputationUpdate',
+        toolPayload: {
+          tx: null,
+          tokenIds,
+          status: 'skipped',
+          reason: 'REPUTATION_REGISTRY_ADDRESS not configured or admin wallet missing. DB reputation was still incremented.',
+        },
+        content: null,
+      })
+      return
+    }
 
     await db.insert(messages).values({
       workflowId,
@@ -139,21 +190,21 @@ async function cacheReputation(workflowId: string, userId: string | null) {
       toolPayload: { tx: repTx, tokenIds },
       content: null,
     })
-
-    for (const skillId of [...new Set(skillRows.map((row) => row.skillId))]) {
-      await db
-        .update(skills)
-        .set({ reputationScore: sql`reputation_score + 1` })
-        .where(eq(skills.id, skillId))
-    }
-
-    if (userId && u?.identityTokenId) {
-      await db
-        .update(users)
-        .set({ reputationScore: sql`reputation_score + 1` })
-        .where(eq(users.id, userId))
-    }
   } catch (e) {
     console.warn('[publishFinalReport] reputation update failed (non-fatal)', e instanceof Error ? e.message : e)
+    // Record the failure so UI can show error state
+    try {
+      await db.insert(messages).values({
+        workflowId,
+        role: 'system',
+        toolName: 'reputationUpdate',
+        toolPayload: {
+          tx: null,
+          status: 'error',
+          reason: e instanceof Error ? e.message : String(e),
+        },
+        content: null,
+      })
+    } catch { /* double-fault — ignore */ }
   }
 }

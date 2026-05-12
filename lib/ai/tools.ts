@@ -223,6 +223,20 @@ export function buildBrainTools(ctx: BrainContext) {
       const skillRows = await db.query.skills.findMany()
       const byName = new Map(skillRows.map((s) => [s.name, s]))
 
+      // Validate: reject unknown skill names so the brain doesn't
+      // dispatch against agents that don't exist.
+      const unknown = planned.filter((p) => !byName.has(p.skill_name))
+      if (unknown.length > 0) {
+        return {
+          ok: false,
+          error: 'unknown_skills',
+          message:
+            `These skill names are NOT in the registry: ${unknown.map((u) => u.skill_name).join(', ')}. ` +
+            `You MUST use exact names from the "Available agents" list. Re-plan with valid skill names only.`,
+          available_skills: [...byName.keys()],
+        }
+      }
+
       const rows = planned.map((p) => ({
         workflowId,
         kind: 'skill_call',
@@ -490,13 +504,12 @@ export function buildBrainTools(ctx: BrainContext) {
       raw_json: z.record(z.string(), z.unknown()).default({}),
     }),
     execute: async ({ summary_markdown, raw_json }) => {
-      const finalMarkdown = normalizeFinalReport(summary_markdown, raw_json)
       // Guardrail: refuse to finalize if no dispatchSkill ran yet. Kimi
       // sometimes plans → finalizes directly with a "data unavailable"
       // excuse, skipping the actual research step. We force at least one
       // dispatch to have happened by checking the messages table.
-      const dispatched = await db
-        .select({ id: messages.id })
+      const dispatchMsgs = await db
+        .select({ id: messages.id, toolPayload: messages.toolPayload })
         .from(messages)
         .where(
           and(
@@ -504,9 +517,8 @@ export function buildBrainTools(ctx: BrainContext) {
             eq(messages.toolName, 'dispatchSkill'),
           ),
         )
-        .limit(1)
 
-      if (dispatched.length === 0) {
+      if (dispatchMsgs.length === 0) {
         // Surface the actual planned nodes so Kimi knows exactly what to dispatch.
         const planned = await db
           .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn })
@@ -523,11 +535,28 @@ export function buildBrainTools(ctx: BrainContext) {
             'dispatchSkill({ node_id: "<uuid from planned_nodes>", skill_name: "polymarket-pulse", input: { query: "Iran warship", limit: 5 } })',
         }
       }
+
+      // Auto-enrich: collect all dispatch outputs from the messages
+      // table and merge into raw_json. The brain often passes an empty
+      // object or only partial data — this ensures the deterministic
+      // report builder always has real upstream outputs to work with.
+      const enriched = { ...raw_json }
+      for (const msg of dispatchMsgs) {
+        const payload = msg.toolPayload as Record<string, unknown> | null
+        if (!payload) continue
+        const skillName = (payload.skill_name as string) ?? ''
+        const output = payload.output as Record<string, unknown> | null
+        if (skillName && output && !(skillName in enriched)) {
+          enriched[skillName] = output
+        }
+      }
+
+      const finalMarkdown = normalizeFinalReport(summary_markdown, enriched)
       const published = await publishFinalReport({
         workflowId,
         userId,
         finalMarkdown,
-        rawJson: raw_json,
+        rawJson: enriched,
         toolName: 'finalizeReport',
       })
       if (!published.ok) return published

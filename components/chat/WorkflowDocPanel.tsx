@@ -47,7 +47,7 @@ export function WorkflowDocPanel({
   status: string
   erc8183?: Erc8183Trail | null
 }) {
-  const { plan, finalReport, dispatchStats, dispatches, reputationTx } = useMemo(() => extract(messages), [messages])
+  const { plan, finalReport, dispatchStats, dispatches, reputationTx, reputationStatus, reputationReason } = useMemo(() => extract(messages), [messages])
 
   const busy = status === 'streaming' || status === 'submitted'
 
@@ -126,6 +126,8 @@ export function WorkflowDocPanel({
               status={status}
               erc8183={erc8183}
               reputationTx={reputationTx}
+              reputationStatus={reputationStatus}
+              reputationReason={reputationReason}
             />
           </section>
         )}
@@ -172,6 +174,8 @@ function UnifiedTrail({
   status,
   erc8183,
   reputationTx,
+  reputationStatus,
+  reputationReason,
 }: {
   planCount: number
   dispatchStats: { running: number; completed: number; failed: number; total: number }
@@ -186,6 +190,8 @@ function UnifiedTrail({
   status: string
   erc8183?: Erc8183Trail | null
   reputationTx: string | null
+  reputationStatus: string | null
+  reputationReason: string | null
 }) {
   const agentDone =
     dispatchStats.total > 0 &&
@@ -209,9 +215,13 @@ function UnifiedTrail({
       : 'idle'
   const reputationState: TrailState = reputationTx
     ? 'done'
-    : erc8183?.completeTx
-      ? 'active'
-      : 'idle'
+    : reputationStatus === 'skipped'
+      ? 'done'
+      : reputationStatus === 'error'
+        ? 'failed'
+        : erc8183?.completeTx
+          ? 'active'
+          : 'idle'
 
   return (
     <div className="space-y-3 border border-emerald-400/20 bg-black/20 p-3 text-xs">
@@ -259,7 +269,15 @@ function UnifiedTrail({
 
       <div className="space-y-1.5 border-t border-white/10 pt-3">
         <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Reputation</p>
-        <TrailTxRow label="Increment score" tx={reputationTx} state={reputationState} />
+        <TrailTxRow
+          label="Increment score"
+          tx={reputationTx}
+          state={reputationState}
+          detail={reputationStatus === 'skipped' ? 'DB cached' : reputationStatus === 'error' ? 'failed' : undefined}
+        />
+        {reputationReason && (
+          <p className="ml-4 text-[10px] text-white/30 leading-tight">{reputationReason}</p>
+        )}
       </div>
     </div>
   )
@@ -471,6 +489,8 @@ function extract(messages: UIMessage[]) {
   let failed = 0
   let total = 0
   let reputationTx: string | null = null
+  let reputationStatus: string | null = null
+  let reputationReason: string | null = null
   const dispatches = new Map<
     string,
     { planId: string; label: string; skill: string; status: 'pending' | 'running' | 'completed' | 'failed'; tx: string | null }
@@ -531,8 +551,10 @@ function extract(messages: UIMessage[]) {
         }
       }
       if (toolName === 'reputationUpdate') {
-        const output = (part.output || {}) as { tx?: string }
+        const output = (part.output || {}) as { tx?: string; status?: string; reason?: string }
         reputationTx = output.tx ?? reputationTx
+        if (output.status) reputationStatus = output.status
+        if (output.reason) reputationReason = output.reason
       }
     }
   }
@@ -543,6 +565,8 @@ function extract(messages: UIMessage[]) {
     dispatchStats: { running, completed, failed, total },
     dispatches: [...dispatches.values()],
     reputationTx,
+    reputationStatus,
+    reputationReason,
   }
 }
 
