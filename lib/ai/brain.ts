@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { messages, nodes, workflows } from '@/lib/db/schema'
 import { listSkills } from '@/lib/skills/registry'
-import { ERC8183_ENABLED } from '@/lib/chain/agenticCommerce'
+import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { HERMES_SYSTEM_PROMPT } from './prompts'
 import { buildBrainTools } from './tools'
 
@@ -233,28 +233,14 @@ export async function streamBrain(opts: {
           return
         }
 
-        if (cleanText.length > 0 && !alreadyFinalized && !ERC8183_ENABLED) {
-          await db.insert(messages).values({
+        if (cleanText.length > 0 && !alreadyFinalized) {
+          await publishFinalReport({
             workflowId: opts.workflowId,
-            role: 'brain',
-            content: cleanText,
+            userId: opts.userId,
+            finalMarkdown: cleanText,
+            rawJson: { finishReason, source: 'streamText.onFinish' },
             toolName: 'auto_finalize',
-            toolPayload: { finishReason, source: 'streamText.onFinish' },
           })
-          await db.update(workflows).set({ status: 'completed' }).where(eq(workflows.id, opts.workflowId))
-          return
-        }
-
-        if (cleanText.length > 0 && !alreadyFinalized && ERC8183_ENABLED) {
-          await db.insert(messages).values({
-            workflowId: opts.workflowId,
-            role: 'brain',
-            content:
-              'Brain produced plain text without finalizeReport. ERC-8183 settlement must complete before publishing a final report.',
-            toolName: 'stream_error',
-            toolPayload: { finishReason, source: 'streamText.onFinish', cleanText: cleanText.slice(0, 1000) },
-          })
-          await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
           return
         }
 

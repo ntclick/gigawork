@@ -1,13 +1,12 @@
 import { tool } from 'ai'
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
 import { signDispatchTx } from '@/lib/chain/dispatch'
-import { incrementReputationBatch } from '@/lib/chain/reputation'
+import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
-import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
+import { messages, nodes, users, workflows } from '@/lib/db/schema'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
 
 export type BrainContext = { workflowId: string; userId: string | null }
@@ -524,168 +523,14 @@ export function buildBrainTools(ctx: BrainContext) {
             'dispatchSkill({ node_id: "<uuid from planned_nodes>", skill_name: "polymarket-pulse", input: { query: "Iran warship", limit: 5 } })',
         }
       }
-
-      await db
-        .update(workflows)
-        .set({ status: ERC8183_ENABLED ? 'settling' : 'completed' })
-        .where(eq(workflows.id, workflowId))
-
-      // Settle the ERC-8183 job and update reputation.
-      // Do not fire-and-forget this on serverless runtimes: after the
-      // response is flushed, the worker can freeze and leave the workflow
-      // stuck after "Compose report".
-      if (ERC8183_ENABLED) {
-        let settledForReport = false
-        try {
-          // ── Step 1: Settle ERC-8183 job ──────────────────────────
-          const [wf] = await db
-            .select()
-            .from(workflows)
-            .where(eq(workflows.id, workflowId))
-            .limit(1)
-
-          let didSettle = false
-          if (wf?.erc8183CompleteTx) {
-            didSettle = true
-          } else if (wf?.erc8183JobId && wf.erc8183FundTx) {
-            try {
-              const res = await settleJob({
-                jobId: wf.erc8183JobId,
-                deliverableSeed: `${workflowId}:${finalMarkdown.slice(0, 256)}`,
-                reasonSeed: 'workflow-completed',
-              })
-              if (res) {
-                await db
-                  .update(workflows)
-                  .set({
-                    erc8183SubmitTx: res.submitTx,
-                    erc8183CompleteTx: res.completeTx,
-                    erc8183DeliverableHash: res.deliverableHash,
-                  })
-                  .where(eq(workflows.id, workflowId))
-                didSettle = true
-              }
-            } catch (e) {
-              console.warn(
-                '[finalizeReport] ERC-8183 settle failed',
-                e instanceof Error ? e.message : e,
-              )
-            }
-          } else {
-            console.warn('[finalizeReport] missing funded ERC-8183 job; report will not complete')
-          }
-
-          // ── Step 2: Reputation increment (always runs after settle) ──
-          // Runs whether or not an ERC-8183 job existed. Skipped only
-          // if settle explicitly failed (tx reverted).
-          if (!didSettle) {
-            console.warn('[finalizeReport] skipping reputation: settle failed')
-            await db.insert(messages).values({
-              workflowId,
-              role: 'brain',
-              content: 'ERC-8183 settlement did not complete, so the final report was not published.',
-              toolName: 'stream_error',
-              toolPayload: { error: 'settlement_incomplete' },
-            })
-            await db
-              .update(workflows)
-              .set({ status: 'settlement_failed' })
-              .where(eq(workflows.id, workflowId))
-            return {
-              ok: false,
-              error: 'settlement_incomplete',
-              message: 'ERC-8183 submit/complete must finish before the final report is published.',
-            }
-          } else {
-            // 1. Gather agentTokenIds of completed skills in this workflow
-            const skillRows = await db
-              .select({ agentTokenId: skills.agentTokenId, skillId: skills.id })
-              .from(nodes)
-              .innerJoin(skills, eq(nodes.skillId, skills.id))
-              .where(
-                and(
-                  eq(nodes.workflowId, workflowId),
-                  eq(nodes.status, 'completed'),
-                  isNotNull(skills.agentTokenId),
-                ),
-              )
-
-            // 2. Grab user's identityTokenId
-            const [u] = userId
-              ? await db
-                  .select({ identityTokenId: users.identityTokenId })
-                  .from(users)
-                  .where(eq(users.id, userId))
-                  .limit(1)
-              : []
-
-            // 3. Deduplicate all tokenIds
-            const tokenIds = [
-              ...new Set(
-                [
-                  ...skillRows.map((r) => r.agentTokenId!),
-                  u?.identityTokenId,
-                ].filter(Boolean),
-              ),
-            ] as string[]
-
-            if (tokenIds.length > 0) {
-              const repTx = await incrementReputationBatch(tokenIds)
-              if (repTx) {
-                await db.insert(messages).values({
-                  workflowId,
-                  role: 'system',
-                  toolName: 'reputationUpdate',
-                  toolPayload: { tx: repTx, tokenIds },
-                  content: null,
-                })
-
-                const skillIds = [...new Set(skillRows.map((row) => row.skillId))]
-
-                // 4. Update DB cache — skills
-                for (const skillId of skillIds) {
-                  await db
-                    .update(skills)
-                    .set({ reputationScore: sql`reputation_score + 1` })
-                    .where(eq(skills.id, skillId))
-                }
-                // 5. Update DB cache — user
-                if (userId && u?.identityTokenId) {
-                  await db
-                    .update(users)
-                    .set({ reputationScore: sql`reputation_score + 1` })
-                    .where(eq(users.id, userId))
-                }
-              }
-            }
-            settledForReport = true
-          }
-        } catch (e) {
-          console.warn(
-            '[finalizeReport] reputation update failed (non-fatal)',
-            e instanceof Error ? e.message : e,
-          )
-        }
-        if (!settledForReport) {
-          return {
-            ok: false,
-            error: 'settlement_incomplete',
-            message: 'ERC-8183 submit/complete must finish before the final report is published.',
-          }
-        }
-      }
-
-      await db.insert(messages).values({
+      const published = await publishFinalReport({
         workflowId,
-        role: 'brain',
-        content: finalMarkdown,
+        userId,
+        finalMarkdown,
+        rawJson: raw_json,
         toolName: 'finalizeReport',
-        toolPayload: { raw_json },
       })
-      await db
-        .update(workflows)
-        .set({ status: 'completed' })
-        .where(eq(workflows.id, workflowId))
+      if (!published.ok) return published
 
       return { ok: true, summary_markdown: finalMarkdown }
     },
