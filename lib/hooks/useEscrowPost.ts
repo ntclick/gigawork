@@ -140,12 +140,29 @@ export function useEscrowPost(): UseEscrowPostReturn {
           setTxHashes((s) => ({ ...s, create: createTx }))
         }
 
-        // ── 3. backend admin signs setBudget ───────────────────
+        // ── 3. user signs approve immediately ───────────────────
+        // Approve only depends on spender + amount, not on the jobId, so do
+        // it before waiting for createJob confirmation. This prevents the UX
+        // from getting stuck after a single createJob signature when RPC
+        // confirmation is slow.
+        let approveTx = prep.approveTx as Hex | undefined
+        if (!approveTx) {
+          setStep('signing-approve')
+          approveTx = (await walletClient.sendTransaction({
+            account: userAddr,
+            to: prep.usdcContract as `0x${string}`,
+            data: prep.approve.data as Hex,
+            chain: null,
+          })) as Hex
+          setTxHashes((s) => ({ ...s, approve: approveTx }))
+        }
+
+        // ── 4. backend admin signs setBudget ───────────────────
         setStep('posting-create')
         const postRes = await fetch('/api/workflow/escrow/post-create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workflowId, createJobTxHash: createTx, budget: prep.budget }),
+          body: JSON.stringify({ workflowId, createJobTxHash: createTx, approveTxHash: approveTx, budget: prep.budget }),
         })
         const post = (await postRes.json().catch(() => ({}))) as {
           ok?: boolean
@@ -159,19 +176,6 @@ export function useEscrowPost(): UseEscrowPostReturn {
         }
         if (!postRes.ok || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
           throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postRes.status}`, post.hint, post.txHash))
-        }
-
-        // ── 4. user signs approve ──────────────────────────────
-        let approveTx = prep.approveTx as Hex | undefined
-        if (!approveTx) {
-          setStep('signing-approve')
-          approveTx = (await walletClient.sendTransaction({
-            account: userAddr,
-            to: prep.usdcContract as `0x${string}`,
-            data: prep.approve.data as Hex,
-            chain: null,
-          })) as Hex
-          setTxHashes((s) => ({ ...s, approve: approveTx }))
         }
 
         // ── 5. user signs fund ─────────────────────────────────

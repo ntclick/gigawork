@@ -14,6 +14,7 @@ import { workflows } from '@/lib/db/schema'
 const Body = z.object({
   workflowId: z.string().uuid(),
   createJobTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  approveTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
   budget: z.string().regex(/^\d+$/), // wei string
 })
 
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
       jobId: wf.erc8183JobId,
       createTx: wf.erc8183CreateTx,
       setBudgetTx: wf.erc8183SetBudgetTx,
+      approveTx: wf.erc8183ApproveTx,
       fund: { data: fundCalldata },
     })
   }
@@ -82,6 +84,7 @@ export async function POST(req: Request) {
       .set({
         status: 'funding',
         erc8183CreateTx: parsed.data.createJobTxHash,
+        erc8183ApproveTx: parsed.data.approveTxHash,
       })
       .where(eq(workflows.id, wf.id))
 
