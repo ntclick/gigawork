@@ -264,9 +264,9 @@ export function WorkflowCanvas({
   const showCompletedEmpty = showPlaceholder && status === 'completed'
   const flowNodes = showPlaceholder ? PLACEHOLDERS : rfNodes
   const flowEdges = showPlaceholder ? PLACEHOLDER_EDGES : rfEdges
-  const lifecycle = useMemo(
-    () => buildLifecycle(hasPlan, details, erc8183),
-    [hasPlan, details, erc8183],
+  const trail = useMemo(
+    () => buildCanvasTrail(messages, planNodes, details, erc8183),
+    [messages, planNodes, details, erc8183],
   )
 
   return (
@@ -330,46 +330,35 @@ export function WorkflowCanvas({
         </div>
       )}
 
-      <div className="pointer-events-none absolute left-4 top-4 z-10 hidden max-w-[calc(100%-2rem)] gap-2 md:flex">
-        {lifecycle.map((step) => (
-          <div
-            key={step.label}
-            className={`flex items-center gap-2 border px-3 py-2 text-xs backdrop-blur-md ${
-              step.state === 'done'
-                ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
-                : step.state === 'active'
-                  ? 'border-[var(--giga-accent)]/50 bg-[var(--giga-accent)]/10 text-[var(--giga-accent)]'
-                  : step.state === 'failed'
-                    ? 'border-red-400/40 bg-red-500/10 text-red-200'
-                    : 'border-white/10 bg-[#0a0d14]/75 text-white/45'
-            }`}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                step.state === 'done'
-                  ? 'bg-emerald-300'
-                  : step.state === 'active'
-                    ? 'animate-pulse bg-[var(--giga-accent)]'
-                    : step.state === 'failed'
-                      ? 'bg-red-300'
-                      : 'bg-white/25'
-              }`}
-            />
-            <span className="whitespace-nowrap font-medium">{step.label}</span>
-          </div>
-        ))}
-      </div>
-
       {/* Floating ERC-8183 Trail Panel */}
       {erc8183 && (
-        <div className="absolute bottom-4 left-4 z-10 w-72 rounded-lg border border-emerald-500/30 bg-[#0a0d14]/90 p-4 backdrop-blur-md shadow-lg pointer-events-auto">
+        <div className="pointer-events-auto absolute bottom-4 left-4 z-10 max-h-[56vh] w-80 overflow-y-auto rounded-lg border border-emerald-500/30 bg-[#0a0d14]/90 p-4 shadow-lg backdrop-blur-md">
           <div className="mb-3 flex items-center gap-2 border-b border-emerald-500/20 pb-2">
             <div className="flex h-6 w-6 items-center justify-center rounded bg-emerald-500/20 text-emerald-400">
               <Hexagon className="h-3.5 w-3.5" />
             </div>
             <h3 className="font-pixel-body text-sm uppercase text-emerald-100">ERC-8183 Trail</h3>
+            <span className="ml-auto font-mono text-[10px] uppercase text-white/35">{trail.current}</span>
           </div>
-          <div className="space-y-2 text-xs">
+          <div className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-1.5">
+              <CanvasStateRow label="Plan" state={trail.planState} detail={`${planNodes.length || 0} steps`} />
+              <CanvasStateRow label="Agents" state={trail.agentState} detail={`${trail.completed}/${trail.total || 0}`} />
+              <CanvasStateRow label="Report" state={trail.reportState} detail={trail.hasReport ? 'ready' : 'compose'} />
+              <CanvasStateRow label="Settle" state={trail.settleState} detail={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
+              <CanvasStateRow label="Repute" state={trail.reputationState} detail={trail.reputationTx ? 'cached' : 'pending'} />
+            </div>
+
+            {trail.agentRows.length > 0 && (
+              <div className="space-y-1.5 border-t border-white/10 pt-2">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-white/40">Agent proofs</p>
+                {trail.agentRows.map((row) => (
+                  <CanvasProofRow key={row.id} label={row.label} tx={row.tx} state={row.state} />
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-2 border-t border-white/10 pt-2">
             <div className="flex items-center justify-between">
               <span className="text-white/55">Job ID</span>
               <span className="font-mono text-emerald-300">{erc8183.jobId ? `#${erc8183.jobId}` : 'pending'}</span>
@@ -380,12 +369,14 @@ export function WorkflowCanvas({
                 <span className="font-mono text-cyan-300">{erc8183.budgetUsdc} USDC</span>
               </div>
             )}
-            <CanvasTxRow label="Open" tx={erc8183.createTx} />
-            {erc8183.setBudgetTx && <CanvasTxRow label="Set budget" tx={erc8183.setBudgetTx} />}
-            {erc8183.approveTx && <CanvasTxRow label="Approve" tx={erc8183.approveTx} />}
-            <CanvasTxRow label="Fund" tx={erc8183.fundTx} />
-            <CanvasTxRow label="Submit" tx={erc8183.submitTx} />
-            <CanvasTxRow label="Complete" tx={erc8183.completeTx} />
+            <CanvasTxRow label="Create job" tx={erc8183.createTx} active={!erc8183.jobId && !!erc8183.createTx} />
+            <CanvasTxRow label="Set budget" tx={erc8183.setBudgetTx} active={!!erc8183.jobId && !erc8183.setBudgetTx} />
+            <CanvasTxRow label="Approve USDC" tx={erc8183.approveTx} active={!!erc8183.setBudgetTx && !erc8183.approveTx} />
+            <CanvasTxRow label="Fund escrow" tx={erc8183.fundTx} active={!!erc8183.approveTx && !erc8183.fundTx} />
+            <CanvasTxRow label="Submit deliverable" tx={erc8183.submitTx} active={trail.hasReport && !!erc8183.fundTx && !erc8183.submitTx} />
+            <CanvasTxRow label="Complete job" tx={erc8183.completeTx} active={!!erc8183.submitTx && !erc8183.completeTx} />
+            {trail.reputationTx && <CanvasTxRow label="Reputation cache" tx={trail.reputationTx} />}
+            </div>
           </div>
         </div>
       )}
@@ -594,63 +585,237 @@ function classify(
   return 'query'
 }
 
-function buildLifecycle(
-  hasPlan: boolean,
+type CanvasTrailState = 'idle' | 'active' | 'done' | 'failed'
+
+function buildCanvasTrail(
+  messages: UIMessage[],
+  planNodes: Node[],
   details: Map<string, DispatchDetail>,
   erc8183?: Erc8183Trail | null,
-): Array<{ label: string; state: 'idle' | 'active' | 'done' | 'failed' }> {
+) {
   const statuses = [...details.values()].map((d) => d.status)
-  const hasRunning = statuses.includes('running')
-  const hasFailed = statuses.includes('failed')
-  const allCompleted = statuses.length > 0 && statuses.every((s) => s === 'completed')
-  const hasSubmit = !!erc8183?.submitTx
-  const hasComplete = !!erc8183?.completeTx
-  const hasFund = !!erc8183?.fundTx
+  const running = statuses.filter((s) => s === 'running').length
+  const failed = statuses.filter((s) => s === 'failed').length
+  const completed = statuses.filter((s) => s === 'completed').length
+  const total = planNodes.length
+  const agentsDone = total > 0 && completed + failed >= total
+  const { hasReport, reputationTx } = extractCanvasMilestones(messages)
+  const planState: CanvasTrailState = total > 0 ? 'done' : 'active'
+  const agentState: CanvasTrailState = failed > 0
+    ? 'failed'
+    : agentsDone
+      ? 'done'
+      : running > 0 || total > 0
+        ? 'active'
+        : 'idle'
+  const reportState: CanvasTrailState = hasReport
+    ? 'done'
+    : agentsDone || running > 0
+      ? 'active'
+      : 'idle'
+  const settleState: CanvasTrailState = erc8183?.completeTx
+    ? 'done'
+    : erc8183?.submitTx || (erc8183?.fundTx && hasReport)
+      ? 'active'
+      : 'idle'
+  const reputationState: CanvasTrailState = reputationTx
+    ? 'done'
+    : erc8183?.completeTx
+      ? 'active'
+      : 'idle'
+  const current =
+    reputationState === 'done'
+      ? 'complete'
+      : reputationState === 'active'
+        ? 'reputation'
+        : settleState === 'active'
+          ? 'settling'
+          : reportState === 'active'
+            ? 'report'
+            : agentState === 'active'
+              ? 'agents'
+              : 'funded'
 
-  return [
-    { label: 'Plan', state: hasPlan ? 'done' : 'active' },
-    {
-      label: 'Dispatch',
-      state: hasFailed ? 'failed' : allCompleted ? 'done' : hasRunning || hasPlan ? 'active' : 'idle',
-    },
-    {
-      label: 'Compose',
-      state: allCompleted ? 'done' : hasRunning || hasPlan ? 'idle' : 'active',
-    },
-    {
-      label: 'Settle',
-      state: hasComplete ? 'done' : hasSubmit ? 'active' : hasFund && allCompleted ? 'active' : 'idle',
-    },
-    {
-      label: 'Reputation',
-      state: hasComplete ? 'done' : 'idle',
-    },
-  ]
+  return {
+    planState,
+    agentState,
+    reportState,
+    settleState,
+    reputationState,
+    hasReport,
+    reputationTx,
+    completed,
+    total,
+    current,
+    agentRows: planNodes.map((node) => {
+      const detail = details.get(node.id)
+      const state: CanvasTrailState = detail?.status === 'completed'
+        ? 'done'
+        : detail?.status === 'failed'
+          ? 'failed'
+          : detail?.status === 'running'
+            ? 'active'
+            : 'idle'
+      return {
+        id: node.id,
+        label: String((node.data as PixelNodeData).label ?? node.id),
+        tx: detail?.dispatchTx ?? null,
+        state,
+      }
+    }),
+  }
 }
 
-function CanvasTxRow({ label, tx }: { label: string; tx: string | null }) {
+function extractCanvasMilestones(messages: UIMessage[]) {
+  let hasReport = false
+  let reputationTx: string | null = null
+  for (const m of messages) {
+    for (const part of m.parts) {
+      if (part.type === 'text' && m.role === 'assistant') {
+        const text = 'text' in part ? part.text : ''
+        if (isCanvasReportText(text)) hasReport = true
+      }
+      if (!isToolUIPart(part)) continue
+      const toolName = part.type.replace(/^tool-/, '')
+      if (toolName === 'finalizeReport' && part.state === 'output-available') {
+        const output = (part.output || {}) as { ok?: boolean; summary_markdown?: string }
+        if (output.ok !== false && output.summary_markdown) hasReport = true
+      }
+      if (toolName === 'reputationUpdate' && part.state === 'output-available') {
+        const output = (part.output || {}) as { tx?: string }
+        reputationTx = output.tx ?? reputationTx
+      }
+    }
+  }
+  return { hasReport, reputationTx }
+}
+
+function isCanvasReportText(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('▸ Planning workflow')) return false
+  if (trimmed.startsWith('Brain stopped before creating workflow nodes')) return false
+  if (trimmed.startsWith('Workflow stopped before any agent node')) return false
+  return /^#|executive summary|workflow report|evidence|recommended/i.test(trimmed)
+}
+
+function CanvasStateRow({
+  label,
+  state,
+  detail,
+}: {
+  label: string
+  state: CanvasTrailState
+  detail: string
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 border border-white/10 bg-black/20 px-2 py-1.5">
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+          state === 'done'
+            ? 'bg-emerald-300'
+            : state === 'active'
+              ? 'animate-pulse bg-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'bg-red-300'
+                : 'bg-white/25'
+        }`}
+      />
+      <span
+        className={`truncate ${
+          state === 'done'
+            ? 'text-white/75'
+            : state === 'active'
+              ? 'text-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'text-red-200'
+                : 'text-white/40'
+        }`}
+      >
+        {label}
+      </span>
+      <span className="ml-auto shrink-0 font-mono text-[9px] text-white/35">{detail}</span>
+    </div>
+  )
+}
+
+function CanvasProofRow({
+  label,
+  tx,
+  state,
+}: {
+  label: string
+  tx: string | null
+  state: CanvasTrailState
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+          state === 'done'
+            ? 'bg-emerald-300'
+            : state === 'active'
+              ? 'animate-pulse bg-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'bg-red-300'
+                : 'bg-white/25'
+        }`}
+      />
+      <span className="min-w-0 flex-1 truncate text-white/55">{label}</span>
+      {tx ? (
+        <CanvasTxLink tx={tx} tone="cyan" />
+      ) : (
+        <span className="shrink-0 font-mono text-[10px] text-white/25">
+          {state === 'active' ? 'running' : 'pending'}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function CanvasTxRow({ label, tx, active }: { label: string; tx: string | null; active?: boolean }) {
   const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
   if (!tx) {
     return (
       <div className="flex items-center justify-between">
-        <span className="text-white/55">{label}</span>
-        <span className="text-white/30">— pending —</span>
+        <span className={active ? 'text-[var(--giga-accent)]' : 'text-white/55'}>{label}</span>
+        <span className={active ? 'font-mono text-[10px] text-[var(--giga-accent)]' : 'text-white/30'}>
+          {active ? 'active' : '-- pending --'}
+        </span>
       </div>
     )
   }
   return (
     <div className="flex items-center justify-between">
       <span className="text-white/55">{label}</span>
-      <a
-        href={`${EXPLORER}/tx/${tx}`}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 font-mono text-[10px] text-emerald-300 hover:text-emerald-200 hover:underline"
-      >
-        {tx.slice(0, 8)}…{tx.slice(-4)}
-        <ExternalLink className="h-2.5 w-2.5" />
-      </a>
+      <CanvasTxLink tx={tx} explorer={EXPLORER} />
     </div>
+  )
+}
+
+function CanvasTxLink({
+  tx,
+  tone = 'emerald',
+  explorer,
+}: {
+  tx: string
+  tone?: 'emerald' | 'cyan'
+  explorer?: string
+}) {
+  const base = explorer ?? process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+  const color = tone === 'cyan'
+    ? 'text-cyan-300 hover:text-cyan-200'
+    : 'text-emerald-300 hover:text-emerald-200'
+  return (
+    <a
+      href={`${base}/tx/${tx}`}
+      target="_blank"
+      rel="noreferrer"
+      className={`inline-flex items-center gap-1 font-mono text-[10px] hover:underline ${color}`}
+    >
+      {tx.slice(0, 8)}...{tx.slice(-4)}
+      <ExternalLink className="h-2.5 w-2.5" />
+    </a>
   )
 }
 

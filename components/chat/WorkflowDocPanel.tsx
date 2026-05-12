@@ -116,60 +116,17 @@ export function WorkflowDocPanel({
         {(plan.length > 0 || erc8183) && (
           <section>
             <SectionHeading icon={<Hexagon className="h-3.5 w-3.5" />}>
-              Execution Trace
+              ERC-8183 Trail
             </SectionHeading>
-            <div className="space-y-2 text-xs">
-              <TraceRow label="Plan" done={plan.length > 0} />
-              <TraceRow
-                label="Dispatch agents"
-                done={dispatchStats.total > 0 && dispatchStats.completed + dispatchStats.failed >= dispatchStats.total}
-                active={dispatchStats.running > 0}
-                detail={`${dispatchStats.completed} completed, ${dispatchStats.failed} failed`}
-              />
-              <TraceRow label="Compose report" done={!!finalReport} />
-              <TraceRow label="Settle ERC-8183" done={!!erc8183?.completeTx} active={status === 'settling' || (!!erc8183?.submitTx && !erc8183?.completeTx)} />
-              <TraceRow label="Reputation cache" done={!!reputationTx || !!erc8183?.completeTx} active={status === 'settling' && !!erc8183?.completeTx} />
-            </div>
-            {(dispatches.length > 0 || erc8183 || reputationTx) && (
-              <div className="mt-3 space-y-3 border border-white/10 bg-black/15 p-3">
-                {dispatches.length > 0 && (
-                  <div>
-                    <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">Agent signatures</p>
-                    <div className="space-y-1.5">
-                      {dispatches.map((d) => (
-                        <TxRow
-                          key={d.planId}
-                          label={d.label}
-                          tx={d.tx}
-                          muted={d.status !== 'completed'}
-                          detail={d.skill}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {erc8183 && (
-                  <div>
-                    <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">ERC-8183 signatures</p>
-                    <div className="space-y-1.5">
-                      <MetaRow label="Job" value={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
-                      {erc8183.budgetUsdc && <MetaRow label="Budget" value={`${erc8183.budgetUsdc} USDC`} />}
-                      <TxRow label="Create job" tx={erc8183.createTx} />
-                      <TxRow label="Set budget" tx={erc8183.setBudgetTx} />
-                      <TxRow label="Approve USDC" tx={erc8183.approveTx} />
-                      <TxRow label="Fund escrow" tx={erc8183.fundTx} />
-                      <TxRow label="Submit deliverable" tx={erc8183.submitTx} />
-                      <TxRow label="Complete job" tx={erc8183.completeTx} />
-                      {erc8183.deliverableHash && <HashRow label="Deliverable" hash={erc8183.deliverableHash} />}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-white/45">Reputation</p>
-                  <TxRow label="Increment score" tx={reputationTx} muted={!reputationTx && !erc8183?.completeTx} />
-                </div>
-              </div>
-            )}
+            <UnifiedTrail
+              planCount={plan.length}
+              dispatchStats={dispatchStats}
+              dispatches={dispatches}
+              hasReport={!!finalReport}
+              status={status}
+              erc8183={erc8183}
+              reputationTx={reputationTx}
+            />
           </section>
         )}
 
@@ -205,25 +162,142 @@ export function WorkflowDocPanel({
   )
 }
 
-function TraceRow({
+type TrailState = 'idle' | 'active' | 'done' | 'failed'
+
+function UnifiedTrail({
+  planCount,
+  dispatchStats,
+  dispatches,
+  hasReport,
+  status,
+  erc8183,
+  reputationTx,
+}: {
+  planCount: number
+  dispatchStats: { running: number; completed: number; failed: number; total: number }
+  dispatches: Array<{
+    planId: string
+    label: string
+    skill: string
+    status: 'pending' | 'running' | 'completed' | 'failed'
+    tx: string | null
+  }>
+  hasReport: boolean
+  status: string
+  erc8183?: Erc8183Trail | null
+  reputationTx: string | null
+}) {
+  const agentDone =
+    dispatchStats.total > 0 &&
+    dispatchStats.completed + dispatchStats.failed >= dispatchStats.total
+  const agentState: TrailState = dispatchStats.failed > 0
+    ? 'failed'
+    : agentDone
+      ? 'done'
+      : dispatchStats.running > 0 || planCount > 0
+        ? 'active'
+        : 'idle'
+  const reportState: TrailState = hasReport
+    ? 'done'
+    : agentDone || status === 'streaming' || status === 'submitted'
+      ? 'active'
+      : 'idle'
+  const settleState: TrailState = erc8183?.completeTx
+    ? 'done'
+    : erc8183?.submitTx || (erc8183?.fundTx && hasReport)
+      ? 'active'
+      : 'idle'
+  const reputationState: TrailState = reputationTx
+    ? 'done'
+    : erc8183?.completeTx
+      ? 'active'
+      : 'idle'
+
+  return (
+    <div className="space-y-3 border border-emerald-400/20 bg-black/20 p-3 text-xs">
+      <div className="grid grid-cols-2 gap-2">
+        <TrailRow label="Plan" state={planCount > 0 ? 'done' : 'active'} detail={planCount ? `${planCount} steps` : 'planning'} />
+        <TrailRow
+          label="Agents"
+          state={agentState}
+          detail={`${dispatchStats.completed}/${dispatchStats.total || dispatches.length || 0} done`}
+        />
+        <TrailRow label="Report" state={reportState} detail={hasReport ? 'ready' : 'compose'} />
+        <TrailRow label="Settle" state={settleState} detail={erc8183?.jobId ? `#${erc8183.jobId}` : 'pending'} />
+        <TrailRow label="Reputation" state={reputationState} detail={reputationTx ? 'cached' : 'pending'} />
+      </div>
+
+      {dispatches.length > 0 && (
+        <div className="space-y-1.5 border-t border-white/10 pt-3">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Agent proofs</p>
+          {dispatches.map((d) => (
+            <TrailTxRow
+              key={d.planId}
+              label={d.label}
+              detail={d.skill}
+              tx={d.tx}
+              state={d.status === 'completed' ? 'done' : d.status === 'failed' ? 'failed' : d.status === 'running' ? 'active' : 'idle'}
+            />
+          ))}
+        </div>
+      )}
+
+      {erc8183 && (
+        <div className="space-y-1.5 border-t border-white/10 pt-3">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Settlement signatures</p>
+          <MetaRow label="Job" value={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
+          {erc8183.budgetUsdc && <MetaRow label="Budget" value={`${erc8183.budgetUsdc} USDC`} />}
+          <TrailTxRow label="Create job" tx={erc8183.createTx} state={erc8183.jobId ? 'done' : erc8183.createTx ? 'active' : 'idle'} />
+          <TrailTxRow label="Set budget" tx={erc8183.setBudgetTx} state={erc8183.setBudgetTx ? 'done' : erc8183.jobId ? 'active' : 'idle'} />
+          <TrailTxRow label="Approve USDC" tx={erc8183.approveTx} state={erc8183.approveTx ? 'done' : erc8183.setBudgetTx ? 'active' : 'idle'} />
+          <TrailTxRow label="Fund escrow" tx={erc8183.fundTx} state={erc8183.fundTx ? 'done' : erc8183.approveTx ? 'active' : 'idle'} />
+          <TrailTxRow label="Submit deliverable" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : hasReport && erc8183.fundTx ? 'active' : 'idle'} />
+          <TrailTxRow label="Complete job" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
+          {erc8183.deliverableHash && <HashRow label="Deliverable" hash={erc8183.deliverableHash} />}
+        </div>
+      )}
+
+      <div className="space-y-1.5 border-t border-white/10 pt-3">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Reputation</p>
+        <TrailTxRow label="Increment score" tx={reputationTx} state={reputationState} />
+      </div>
+    </div>
+  )
+}
+
+function TrailRow({
   label,
-  done,
-  active,
+  state,
   detail,
 }: {
   label: string
-  done: boolean
-  active?: boolean
+  state: TrailState
   detail?: string
 }) {
   return (
     <div className="flex items-center gap-2 border border-white/10 bg-black/15 px-2.5 py-2">
       <span
         className={`h-2 w-2 rounded-full ${
-          done ? 'bg-emerald-300' : active ? 'animate-pulse bg-[var(--giga-accent)]' : 'bg-white/20'
+          state === 'done'
+            ? 'bg-emerald-300'
+            : state === 'active'
+              ? 'animate-pulse bg-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'bg-red-300'
+                : 'bg-white/20'
         }`}
       />
-      <span className={done ? 'text-white/85' : active ? 'text-[var(--giga-accent)]' : 'text-white/45'}>
+      <span
+        className={
+          state === 'done'
+            ? 'text-white/85'
+            : state === 'active'
+              ? 'text-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'text-red-200'
+                : 'text-white/45'
+        }
+      >
         {label}
       </span>
       {detail && <span className="ml-auto font-mono text-[10px] text-white/35">{detail}</span>}
@@ -231,22 +305,43 @@ function TraceRow({
   )
 }
 
-function TxRow({
+function TrailTxRow({
   label,
   tx,
   detail,
-  muted,
+  state,
 }: {
   label: string
   tx?: string | null
   detail?: string
-  muted?: boolean
+  state: TrailState
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className={muted ? 'min-w-0 flex-1 truncate text-white/35' : 'min-w-0 flex-1 truncate text-white/65'}>
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+          state === 'done'
+            ? 'bg-emerald-300'
+            : state === 'active'
+              ? 'animate-pulse bg-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'bg-red-300'
+                : 'bg-white/20'
+        }`}
+      />
+      <span
+        className={`min-w-0 flex-1 truncate ${
+          state === 'done'
+            ? 'text-white/75'
+            : state === 'active'
+              ? 'text-[var(--giga-accent)]'
+              : state === 'failed'
+                ? 'text-red-200'
+                : 'text-white/35'
+        }`}
+      >
         {label}
-        {detail && <span className="ml-1 font-mono text-[10px] text-purple-300/55">→ {detail}</span>}
+        {detail && <span className="ml-1 font-mono text-[10px] text-purple-300/55">-&gt; {detail}</span>}
       </span>
       {tx && tx !== '0x0' ? (
         <a
