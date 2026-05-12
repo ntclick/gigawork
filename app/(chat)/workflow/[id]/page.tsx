@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useParams } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 
 import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
@@ -36,8 +36,10 @@ export default function WorkflowPage() {
   const id = params?.id ?? ''
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const autoSentRef = useRef(false)
+  const autoEscrowRef = useRef<string | null>(null)
   const startRef = useRef<number | undefined>(undefined)
   const escrow = useEscrowPost()
+  const postEscrow = escrow.post
 
   const { messages, sendMessage, setMessages, status } = useChat({
     transport: new DefaultChatTransport({ api: `/api/workflow/${id}/stream` }),
@@ -145,6 +147,40 @@ export default function WorkflowPage() {
     ? truncate(snapshot.workflow.prompt, 40)
     : `Workflow ${id.slice(0, 8)}`
 
+  const runEscrowFunding = useCallback(async () => {
+    try {
+      await postEscrow(id)
+      const fresh = (await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) =>
+        r.json(),
+      )) as Snapshot
+      setSnapshot(fresh)
+      if (fresh.messages.length > 0) setMessages(fresh.messages)
+      autoSentRef.current = false
+      if (!fresh.isFinished && fresh.workflow.prompt) {
+        sendMessage({ text: fresh.workflow.prompt })
+        autoSentRef.current = true
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      if (/still pending|pending on Arc|not mined yet/i.test(message)) {
+        toast.warning('Escrow tx pending', message)
+      } else {
+        toast.error('Escrow funding required', message)
+      }
+      const fresh = (await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) =>
+        r.json(),
+      )) as Snapshot
+      setSnapshot(fresh)
+    }
+  }, [id, postEscrow, sendMessage, setMessages])
+
+  useEffect(() => {
+    if (!needsEscrow || !snapshot || escrow.step !== 'idle') return
+    if (autoEscrowRef.current === id) return
+    autoEscrowRef.current = id
+    void runEscrowFunding()
+  }, [escrow.step, id, needsEscrow, runEscrowFunding, snapshot])
+
   return (
     <>
       {/* Top header — always visible */}
@@ -212,28 +248,7 @@ export default function WorkflowPage() {
                 step={escrow.step}
                 error={escrow.error}
                 txHashes={escrow.txHashes}
-                onContinue={async () => {
-                  try {
-                    await escrow.post(id)
-                    const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) => r.json()) as Snapshot
-                    setSnapshot(fresh)
-                    if (fresh.messages.length > 0) setMessages(fresh.messages)
-                    autoSentRef.current = false
-                    if (!fresh.isFinished && fresh.workflow.prompt) {
-                      sendMessage({ text: fresh.workflow.prompt })
-                      autoSentRef.current = true
-                    }
-                  } catch (e) {
-                    const message = e instanceof Error ? e.message : String(e)
-                    if (/still pending|pending on Arc|not mined yet/i.test(message)) {
-                      toast.warning('Escrow tx pending', message)
-                    } else {
-                      toast.error('Escrow funding required', message)
-                    }
-                    const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) => r.json()) as Snapshot
-                    setSnapshot(fresh)
-                  }
-                }}
+                onContinue={runEscrowFunding}
               />
             )}
           </div>
