@@ -274,6 +274,7 @@ function WorkflowEscrowOverlay({
   const createTx = txHashes.create ?? erc8183?.createTx ?? undefined
   const approveTx = txHashes.approve ?? erc8183?.approveTx ?? undefined
   const fundTx = txHashes.fund ?? erc8183?.fundTx ?? undefined
+  const pendingError = !!error && /still pending|pending on Arc|not mined yet|not visible/i.test(error)
   const current =
     step === 'posting-create'
       ? 'Waiting for createJob confirmation, then provider setBudget'
@@ -312,7 +313,13 @@ function WorkflowEscrowOverlay({
         </div>
 
         {error && (
-          <div className="mt-4 border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+          <div
+            className={`mt-4 border p-3 text-sm ${
+              pendingError
+                ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-100'
+                : 'border-red-400/30 bg-red-500/10 text-red-200'
+            }`}
+          >
             {error}
           </div>
         )}

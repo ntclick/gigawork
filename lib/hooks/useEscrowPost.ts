@@ -8,9 +8,9 @@
  *   idle
  *   → preparing       : POST /prepare to fetch createJob + approve calldata
  *   → signing-create  : Privy popup #1 — user signs createJob
- *   → signing-approve : Privy popup #2 — user signs USDC.approve
  *   → posting-create  : POST /post-create, server admin signs setBudget +
  *                       returns fund calldata once createJob is confirmed
+ *   → signing-approve : Privy popup #2 — user signs USDC.approve
  *   → signing-fund    : Privy popup #3 — user signs fund(jobId)
  *   → confirming      : POST /confirm to verify both tx hashes
  *   → done | error
@@ -124,6 +124,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
           /* tolerate */
         }
         const provider = await wallet.getEthereumProvider()
+        const currentChain = await provider.request({ method: 'eth_chainId' }).catch(() => null)
+        if (typeof currentChain === 'string' && Number.parseInt(currentChain, 16) !== ARC_CHAIN_ID) {
+          throw new Error(`Wallet is on chain ${Number.parseInt(currentChain, 16)}, expected Arc Testnet ${ARC_CHAIN_ID}`)
+        }
         const walletClient = createWalletClient({ transport: custom(provider) })
         const userAddr = wallet.address as `0x${string}`
 
@@ -143,12 +147,30 @@ export function useEscrowPost(): UseEscrowPostReturn {
           await trackEscrowTx(workflowId, { createJobTxHash: createTx })
         }
 
-        // ── 3. user signs approve immediately ───────────────────
-        // Approve only depends on spender + amount, not on the jobId, so do
-        // it before waiting for createJob confirmation. This prevents the UX
-        // from getting stuck after a single createJob signature when RPC
-        // confirmation is slow.
-        let approveTx = prep.approveTx as Hex | undefined
+        // ── 3. backend provider signs setBudget after createJob lands ──
+        setStep('posting-create')
+        const postRes = await fetch('/api/workflow/escrow/post-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workflowId, createJobTxHash: createTx, budget: prep.budget, createTxFresh }),
+        })
+        const post = (await postRes.json().catch(() => ({}))) as {
+          ok?: boolean
+          jobId?: string
+          setBudgetTx?: Hex
+          approveTx?: Hex
+          fund?: { data: string }
+          error?: string
+          detail?: string
+          hint?: string
+          txHash?: string
+        }
+        if (!postRes.ok || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
+          throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postRes.status}`, post.hint, post.txHash))
+        }
+
+        // ── 4. user signs approve after setBudget is ready ───────
+        let approveTx = (prep.approveTx ?? post.approveTx) as Hex | undefined
         if (!approveTx) {
           setStep('signing-approve')
           approveTx = (await walletClient.sendTransaction({
@@ -158,44 +180,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
             chain: null,
           })) as Hex
           setTxHashes((s) => ({ ...s, approve: approveTx }))
-          await trackEscrowTx(workflowId, { createJobTxHash: createTx, approveTxHash: approveTx })
-        }
-
-        // ── 4. backend admin signs setBudget (with retry for slow confirms) ──
-        setStep('posting-create')
-        let post: {
-          ok?: boolean
-          jobId?: string
-          setBudgetTx?: Hex
-          fund?: { data: string }
-          error?: string
-          detail?: string
-          hint?: string
-          txHash?: string
-        } = {}
-        let postOk = false
-        for (let attempt = 0; attempt < 3; attempt++) {
-          if (attempt > 0) {
-            // Wait 5s before retry — give Arc testnet time to confirm
-            await new Promise((r) => setTimeout(r, 5_000))
-          }
-          const postRes = await fetch('/api/workflow/escrow/post-create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workflowId, createJobTxHash: createTx, approveTxHash: approveTx, createTxFresh, budget: prep.budget }),
-          })
-          post = (await postRes.json().catch(() => ({}))) as typeof post
-          if (postRes.ok && post.jobId && post.setBudgetTx && post.fund?.data) {
-            postOk = true
-            break
-          }
-          // Only retry on timeout errors
-          const isTimeout = /timed out|pending/i.test(post.detail || post.error || '')
-          if (!isTimeout) break
-          console.warn(`[escrow] post-create attempt ${attempt + 1}/3 timed out, retrying…`)
-        }
-        if (!postOk) {
-          throw new Error(normalizeEscrowError(post.detail || post.error || 'post-create failed', post.hint, post.txHash))
+          await trackEscrowTx(workflowId, { approveTxHash: approveTx })
         }
 
         // ── 5. user signs fund ─────────────────────────────────
