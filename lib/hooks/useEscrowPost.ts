@@ -21,10 +21,12 @@
  */
 import { useWallets } from '@privy-io/react-auth'
 import { useCallback, useState } from 'react'
-import { createWalletClient, custom, defineChain, parseAbi, type Hex } from 'viem'
+import { createWalletClient, custom, defineChain, type Hex } from 'viem'
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002')
 const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
+const POST_CREATE_POLL_ATTEMPTS = 24
+const POST_CREATE_POLL_INTERVAL_MS = 2_500
 
 const arcTestnet = defineChain({
   id: ARC_CHAIN_ID,
@@ -39,15 +41,6 @@ const arcTestnet = defineChain({
   },
   testnet: true,
 })
-
-const agenticCommerceAbi = parseAbi([
-  'function createJob(address provider,address evaluator,uint256 expiredAt,string description,address hook) returns (uint256)',
-  'function fund(uint256 jobId, bytes optParams)',
-])
-
-const erc20Abi = parseAbi([
-  'function approve(address spender, uint256 amount) returns (bool)',
-])
 
 export type EscrowStep =
   | 'idle'
@@ -75,6 +68,20 @@ export interface UseEscrowPostReturn {
   txHashes: Partial<Record<'create' | 'approve' | 'fund', Hex>>
   reset: () => void
   post: (workflowId: string) => Promise<void>
+}
+
+type PostCreateResponse = {
+  ok?: boolean
+  jobId?: string
+  setBudgetTx?: Hex
+  approveTx?: Hex
+  fund?: { data: string }
+  error?: string
+  detail?: string
+  hint?: string
+  txHash?: string
+  recoverable?: boolean
+  resetCreateTx?: boolean
 }
 
 export function useEscrowPost(): UseEscrowPostReturn {
@@ -144,7 +151,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
           return
         }
         if (
-          (!prep.already && (!prep.provider || !prep.evaluator || !prep.expiredAt || !prep.description || !prep.hook)) ||
+          (!prep.already && (!prep.createJob || !prep.provider || !prep.evaluator || !prep.expiredAt || !prep.description || !prep.hook)) ||
           !prep.approve ||
           !prep.budget ||
           !prep.contract ||
@@ -172,18 +179,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let createTxFresh = false
         if (!createTx) {
           setStep('signing-create')
-          createTx = (await walletClient.writeContract({
+          createTx = (await walletClient.sendTransaction({
             account: userAddr,
-            address: prep.contract as `0x${string}`,
-            abi: agenticCommerceAbi,
-            functionName: 'createJob',
-            args: [
-              prep.provider as `0x${string}`,
-              prep.evaluator as `0x${string}`,
-              BigInt(prep.expiredAt!),
-              prep.description!,
-              prep.hook as `0x${string}`,
-            ],
+            to: prep.createJob!.to as `0x${string}`,
+            data: prep.createJob!.data as Hex,
             chain: arcTestnet,
           })) as Hex
           createTxFresh = true
@@ -193,43 +192,44 @@ export function useEscrowPost(): UseEscrowPostReturn {
 
         // ── 3. backend provider signs setBudget after createJob lands ──
         setStep('posting-create')
-        const postRes = await fetch('/api/workflow/escrow/post-create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workflowId, createJobTxHash: createTx, budget: prep.budget, createTxFresh }),
-        })
-        const post = (await postRes.json().catch(() => ({}))) as {
-          ok?: boolean
-          jobId?: string
-          setBudgetTx?: Hex
-          approveTx?: Hex
-          fund?: { data: string }
-          error?: string
-          detail?: string
-          hint?: string
-          txHash?: string
-          recoverable?: boolean
-          resetCreateTx?: boolean
+        let postStatus = 0
+        let postOk = false
+        let post: PostCreateResponse = {}
+        for (let poll = 0; poll < POST_CREATE_POLL_ATTEMPTS; poll++) {
+          const postRes = await fetch('/api/workflow/escrow/post-create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflowId, createJobTxHash: createTx, budget: prep.budget, createTxFresh }),
+          })
+          postStatus = postRes.status
+          postOk = postRes.ok
+          post = (await postRes.json().catch(() => ({}))) as PostCreateResponse
+
+          if (post.error !== 'create_tx_pending') break
+          if (poll < POST_CREATE_POLL_ATTEMPTS - 1) {
+            await delay(POST_CREATE_POLL_INTERVAL_MS)
+          }
+        }
+        if (post.error === 'create_tx_pending') {
+          throw new Error(normalizeEscrowError(post.detail || 'Create job transaction is still pending confirmation', post.hint, post.txHash))
         }
         if (post.error === 'create_tx_not_found' && post.resetCreateTx) {
           setTxHashes({})
           setStep('idle')
           if (attempt === 0) continue
         }
-        if (!postRes.ok || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
-          throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postRes.status}`, post.hint, post.txHash))
+        if (!postOk || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
+          throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postStatus}`, post.hint, post.txHash))
         }
 
         // ── 4. user signs approve after setBudget is ready ───────
         let approveTx = (prep.approveTx ?? post.approveTx) as Hex | undefined
         if (!approveTx) {
           setStep('signing-approve')
-          approveTx = (await walletClient.writeContract({
+          approveTx = (await walletClient.sendTransaction({
             account: userAddr,
-            address: prep.usdcContract as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'approve',
-            args: [prep.contract as `0x${string}`, BigInt(prep.budget)],
+            to: prep.approve.to as `0x${string}`,
+            data: prep.approve.data as Hex,
             chain: arcTestnet,
           })) as Hex
           setTxHashes((s) => ({ ...s, approve: approveTx }))
@@ -240,12 +240,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let fundTx = prep.fundTx as Hex | undefined
         if (!fundTx) {
           setStep('signing-fund')
-          fundTx = (await walletClient.writeContract({
+          fundTx = (await walletClient.sendTransaction({
             account: userAddr,
-            address: prep.contract as `0x${string}`,
-            abi: agenticCommerceAbi,
-            functionName: 'fund',
-            args: [BigInt(post.jobId!), '0x'],
+            to: prep.contract as `0x${string}`,
+            data: post.fund.data as Hex,
             chain: arcTestnet,
           })) as Hex
           setTxHashes((s) => ({ ...s, fund: fundTx }))
@@ -333,4 +331,8 @@ function normalizeEscrowError(detail: string, hint?: string, txHash?: string) {
     return `${hint ?? 'Transaction is still pending.'}${target}`
   }
   return hint ? `${detail}. ${hint}` : detail
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

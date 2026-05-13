@@ -113,7 +113,7 @@ export async function POST(req: Request) {
             error: 'create_tx_pending',
             detail: 'Create job transaction is still pending confirmation.',
             txHash: parsed.data.createJobTxHash,
-            hint: 'Create job is visible on Arc but not mined yet. Keep this workflow open and press Continue funding again in a few seconds.',
+            hint: 'Create job is visible on Arc but not mined yet. Keep this workflow open; funding will continue automatically.',
           },
           { status: 202 },
         )
@@ -138,7 +138,7 @@ export async function POST(req: Request) {
             resetCreateTx: true,
             detail: 'Create job transaction is no longer visible on Arc RPC.',
             txHash: parsed.data.createJobTxHash,
-            hint: 'The wallet returned a hash, but Arc RPC cannot find it. The stale hashes were cleared; press Continue funding to sign again.',
+            hint: 'The wallet returned a hash, but Arc RPC cannot find it. The stale hashes were cleared so the wallet can sign a fresh createJob transaction.',
           },
           { status: 200 },
         )
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
           error: 'create_tx_pending',
           detail: 'Create job transaction is still pending confirmation.',
           txHash: parsed.data.createJobTxHash,
-          hint: 'Create job is pending on Arc. Keep this workflow open and press Continue funding again in a few seconds.',
+          hint: 'Create job is pending on Arc. Keep this workflow open; funding will continue automatically.',
         },
         { status: 202 },
       )
