@@ -17,6 +17,7 @@ const Body = z.object({
   createJobTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   approveTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
   createTxFresh: z.boolean().optional(),
+  dropMissingTx: z.boolean().optional(),
   budget: z.string().regex(/^\d+$/), // wei string
 })
 
@@ -119,7 +120,7 @@ export async function POST(req: Request) {
         )
       }
 
-      if (!parsed.data.createTxFresh) {
+      if (!parsed.data.createTxFresh || parsed.data.dropMissingTx) {
         await db
           .update(workflows)
           .set({
@@ -150,7 +151,8 @@ export async function POST(req: Request) {
           error: 'create_tx_pending',
           detail: 'Create job transaction is still pending confirmation.',
           txHash: parsed.data.createJobTxHash,
-          hint: 'Create job is pending on Arc. Keep this workflow open; funding will continue automatically.',
+          txVisible: false,
+          hint: 'Create job is not visible on Arc RPC yet. Funding will retry briefly, then request a fresh signature if the hash never propagates.',
         },
         { status: 202 },
       )

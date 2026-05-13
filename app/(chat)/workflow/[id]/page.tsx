@@ -148,6 +148,7 @@ export default function WorkflowPage() {
   const needsEscrow =
     !busy &&
     !!snapshot &&
+    !snapshot.messages.some((m) => m.role === 'assistant') &&
     (snapshot.workflow.status === 'awaiting_fund' ||
       snapshot.workflow.status === 'funding')
   const title = snapshot?.workflow.prompt

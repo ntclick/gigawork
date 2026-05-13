@@ -183,23 +183,14 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
   if (!adminAccount) {
     throw new Error('admin wallet not configured (ADMIN_PRIVATE_KEY missing)')
   }
-  let hash: Hex | null = null
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    hash = await sendAdminTransaction({ to, data })
-    const visible = await waitForTxVisibility(hash, 8_000)
-    if (visible) break
-    if (attempt === 2) {
-      throw new Error(`tx ${hash} was signed but not visible on RPC mempool`)
-    }
-    console.warn(`[adminSend] tx ${hash} not visible yet, rebroadcasting (attempt ${attempt + 1}/2)`)
-  }
+  const hash = await sendAdminTransaction({ to, data })
   if (!hash) throw new Error('failed to broadcast admin transaction')
 
   const receipt = await pollingClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
     timeout: 180_000,
-    pollingInterval: 3_000,
+    pollingInterval: 1_500, // Speed up polling from 3s to 1.5s
   })
   if (receipt.status !== 'success') {
     throw new Error(`tx ${hash} reverted`)

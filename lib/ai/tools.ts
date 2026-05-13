@@ -594,10 +594,22 @@ export function buildBrainTools(ctx: BrainContext) {
       raw_json: z.record(z.string(), z.unknown()).default({}),
     }),
     execute: async ({ summary_markdown, raw_json }) => {
-      // Guardrail: refuse to finalize if no dispatchSkill ran yet. Kimi
-      // sometimes plans → finalizes directly with a "data unavailable"
-      // excuse, skipping the actual research step. We force at least one
-      // dispatch to have happened by checking the messages table.
+      // Ensure all nodes are terminal before allowing a report.
+      const allNodes = await db
+        .select({ id: nodes.id, status: nodes.status })
+        .from(nodes)
+        .where(eq(nodes.workflowId, workflowId))
+
+      const pending = allNodes.filter((n) => n.status === 'pending' || n.status === 'running')
+      if (pending.length > 0) {
+        return {
+          ok: false,
+          error: 'workflow_not_terminal',
+          message: `There are ${pending.length} nodes still pending or running. You MUST wait for all dispatchSkill calls to return before calling finalizeReport.`,
+          pending_nodes: pending.map((p) => p.id),
+        }
+      }
+
       const dispatchMsgs = await db
         .select({ id: messages.id, toolPayload: messages.toolPayload })
         .from(messages)
@@ -609,27 +621,17 @@ export function buildBrainTools(ctx: BrainContext) {
         )
 
       if (dispatchMsgs.length === 0) {
-        // Surface the actual planned nodes so Kimi knows exactly what to dispatch.
-        const planned = await db
-          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn })
-          .from(nodes)
-          .where(eq(nodes.workflowId, workflowId))
-          .limit(20)
         return {
           ok: false,
           error: 'must_dispatch_first',
           message:
-            'You called planWorkflow but never called dispatchSkill. STOP planning and start dispatching. For EACH planned node below, call dispatchSkill(node_id, skill_name, input). Run depth-0 nodes first, then their dependents. After all skills run, THEN call finalizeReport.',
-          planned_nodes: planned,
-          example_call:
-            'dispatchSkill({ node_id: "<uuid from planned_nodes>", skill_name: "polymarket-pulse", input: { query: "Iran warship", limit: 5 } })',
+            'You never called dispatchSkill. After all skills run, THEN call finalizeReport.',
+          planned_nodes: allNodes,
         }
       }
 
       // Auto-enrich: collect all dispatch outputs from the messages
-      // table and merge into raw_json. The brain often passes an empty
-      // object or only partial data — this ensures the deterministic
-      // report builder always has real upstream outputs to work with.
+      // table and merge into raw_json.
       const enriched = { ...raw_json }
       for (const msg of dispatchMsgs) {
         const payload = msg.toolPayload as Record<string, unknown> | null

@@ -24,15 +24,20 @@ import { useCallback, useState } from 'react'
 import { createWalletClient, custom, defineChain, type Hex } from 'viem'
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002')
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
+const ARC_RPC_URLS = [
+  'https://rpc.testnet.arc.network',
+  process.env.NEXT_PUBLIC_ARC_RPC,
+  'https://rpc.drpc.testnet.arc.network',
+].filter((url, index, arr): url is string => !!url && arr.indexOf(url) === index)
 const POST_CREATE_POLL_ATTEMPTS = 24
 const POST_CREATE_POLL_INTERVAL_MS = 2_500
+const POST_CREATE_RESET_MISSING_AFTER_POLLS = 6
 
 const arcTestnet = defineChain({
   id: ARC_CHAIN_ID,
   name: 'Arc Testnet',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [ARC_RPC] } },
+  rpcUrls: { default: { http: ARC_RPC_URLS } },
   blockExplorers: {
     default: {
       name: 'ArcScan',
@@ -82,6 +87,7 @@ type PostCreateResponse = {
   txHash?: string
   recoverable?: boolean
   resetCreateTx?: boolean
+  txVisible?: boolean
 }
 
 export function useEscrowPost(): UseEscrowPostReturn {
@@ -112,7 +118,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
       }
 
       try {
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
         // ── 1. prepare ──────────────────────────────────────────
         setStep('preparing')
         const prepRes = await fetch('/api/workflow/escrow/prepare', {
@@ -200,10 +206,11 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let postOk = false
         let post: PostCreateResponse = {}
         for (let poll = 0; poll < POST_CREATE_POLL_ATTEMPTS; poll++) {
+          const dropMissingTx = createTxFresh && poll >= POST_CREATE_RESET_MISSING_AFTER_POLLS
           const postRes = await fetch('/api/workflow/escrow/post-create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workflowId, createJobTxHash: createTx, budget: prep.budget, createTxFresh }),
+            body: JSON.stringify({ workflowId, createJobTxHash: createTx, budget: prep.budget, createTxFresh, dropMissingTx }),
           })
           postStatus = postRes.status
           postOk = postRes.ok
@@ -220,7 +227,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
         if (post.error === 'create_tx_not_found' && post.resetCreateTx) {
           setTxHashes({})
           setStep('idle')
-          if (attempt === 0) continue
+          if (attempt < 2) continue
         }
         if (!postOk || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
           throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postStatus}`, post.hint, post.txHash))

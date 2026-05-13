@@ -18,6 +18,22 @@ export async function publishFinalReport({
   rawJson?: Record<string, unknown>
   toolName: 'finalizeReport' | 'auto_finalize'
 }): Promise<{ ok: true } | { ok: false; error: string; message: string }> {
+  // Final safety check: ensure all nodes are terminal.
+  const allNodes = await db
+    .select({ status: nodes.status })
+    .from(nodes)
+    .where(eq(nodes.workflowId, workflowId))
+
+  if (allNodes.length > 0) {
+    const pending = allNodes.filter((n) => n.status === 'pending' || n.status === 'running')
+    if (pending.length > 0) {
+      return {
+        ok: false,
+        error: 'workflow_not_terminal',
+        message: `Final report cannot be published because ${pending.length} nodes are still running.`,
+      }
+    }
+  }
   const existingFinal = await db
     .select({ id: messages.id })
     .from(messages)
@@ -28,7 +44,21 @@ export async function publishFinalReport({
       ),
     )
     .limit(1)
-  if (existingFinal.length > 0) {
+
+  const [wf] = await db
+    .select({ status: workflows.status, erc8183CompleteTx: workflows.erc8183CompleteTx })
+    .from(workflows)
+    .where(eq(workflows.id, workflowId))
+    .limit(1)
+
+  // Only return early if the workflow is already completed.
+  // If it's settlement_failed, we want to allow retrying settlement.
+  if (existingFinal.length > 0 && wf?.status === 'completed') {
+    return { ok: true }
+  }
+
+  // If already have a complete on-chain tx, we can just mark completed and return.
+  if (wf?.erc8183CompleteTx && existingFinal.length > 0) {
     await db.update(workflows).set({ status: 'completed' }).where(eq(workflows.id, workflowId))
     return { ok: true }
   }
