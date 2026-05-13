@@ -69,27 +69,16 @@ export async function publishFinalReport({
     .where(eq(workflows.id, workflowId))
 
   if (ERC8183_ENABLED) {
+    // Settlement is best-effort — if it fails (e.g. job was never funded,
+    // or RPC times out) we still save the report and mark completed.
+    // The settlement trail in the UI will show the failure reason.
     const settled = await settleWorkflowJob(workflowId, finalMarkdown)
-    if (!settled) {
-      await db.insert(messages).values({
-        workflowId,
-        role: 'brain',
-        content: 'ERC-8183 settlement did not complete, so the final report was not published.',
-        toolName: 'stream_error',
-        toolPayload: { error: 'settlement_incomplete' },
-      })
-      await db
-        .update(workflows)
-        .set({ status: 'settlement_failed' })
-        .where(eq(workflows.id, workflowId))
-      return {
-        ok: false,
-        error: 'settlement_incomplete',
-        message: 'ERC-8183 submit/complete must finish before the final report is published.',
-      }
+    if (settled) {
+      await cacheReputation(workflowId, userId)
+    } else {
+      // Record why settlement was skipped but do NOT block the report.
+      console.warn('[publishFinalReport] settlement skipped — still publishing report')
     }
-
-    await cacheReputation(workflowId, userId)
   }
 
   await db.insert(messages).values({
@@ -115,9 +104,27 @@ async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
     .limit(1)
 
   if (wf?.erc8183CompleteTx) return true
-  if (!wf?.erc8183JobId || !wf.erc8183FundTx) {
-    console.warn('[publishFinalReport] missing funded ERC-8183 job')
+  if (!wf?.erc8183JobId) {
+    // No job was ever created — skip settlement.
+    console.warn('[publishFinalReport] no ERC-8183 jobId — skipping settlement')
     return false
+  }
+  if (!wf.erc8183FundTx) {
+    // Job created but never funded. Check on-chain status.
+    // If it somehow got funded on-chain but DB missed the tx, settle anyway.
+    try {
+      const { readJobStatus } = await import('@/lib/chain/agenticCommerce')
+      const onChainStatus = await readJobStatus(BigInt(wf.erc8183JobId))
+      if (onChainStatus !== 1) {
+        // 1 = Funded. Job is not in a settleable state.
+        console.warn(`[publishFinalReport] job ${wf.erc8183JobId} not funded on-chain (status=${onChainStatus}), skipping settlement`)
+        return false
+      }
+      console.warn(`[publishFinalReport] job ${wf.erc8183JobId} funded on-chain but DB missed fundTx — proceeding to settle`)
+    } catch {
+      console.warn('[publishFinalReport] could not check on-chain job status — skipping settlement')
+      return false
+    }
   }
 
   try {

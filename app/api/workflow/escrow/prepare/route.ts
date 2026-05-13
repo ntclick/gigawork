@@ -75,10 +75,8 @@ export async function POST(req: Request) {
     }
 
     if (wf.erc8183JobId || wf.erc8183CreateTx) {
-      // Idempotent resume after partial completion. This may be:
-      // - create tx pending: createTx exists but jobId is still null
-      // - setBudget done: jobId exists but fundTx is still null
-      // - funded: fundTx exists and the workflow can run
+      // Idempotent resume. Include createJob calldata so the hook can resume
+      // funding when erc8183FundTx is still null (user never completed funding).
       return NextResponse.json({
         ok: true,
         already: true,
@@ -101,6 +99,8 @@ export async function POST(req: Request) {
         setBudgetTx: wf.erc8183SetBudgetTx,
         approveTx: wf.erc8183ApproveTx ?? (bundle.approvalRequired ? null : '0x0'),
         fundTx: wf.erc8183FundTx,
+        // Always include createJob so hook can restart from signing-create if needed
+        createJob: { to: bundle.createJob.to, data: bundle.createJob.data },
         approve: bundle.approve ? { to: bundle.approve.to, data: bundle.approve.data } : null,
       })
     }

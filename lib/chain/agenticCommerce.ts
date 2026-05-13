@@ -324,7 +324,7 @@ export async function settleJob(args: {
   }
 }
 
-async function readJobStatus(jobId: bigint) {
+export async function readJobStatus(jobId: bigint) {
   const job = await publicClient.readContract({
     address: AGENTIC_COMMERCE,
     abi: agenticCommerceAbi,
