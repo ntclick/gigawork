@@ -162,6 +162,6 @@ export async function GET(_req: Request, ctx: RouteCtx) {
         : null,
     },
     messages: out,
-    isFinished: wf.status === 'completed' || wf.status === 'failed' || wf.status === 'refused',
+    isFinished: ['completed', 'failed', 'refused', 'settlement_failed', 'settling'].includes(wf.status ?? ''),
   })
 }

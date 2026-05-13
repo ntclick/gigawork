@@ -122,13 +122,17 @@ export default function WorkflowPage() {
     }
   }, [id, status, setMessages, messages.length])
 
-  // Auto-send only when this workflow has never streamed
+  // Auto-send only when this workflow has never streamed.
+  // Includes retry logic for race condition where DB status is still
+  // 'funding' when the page mounts (confirm endpoint may still be writing).
+  const autoSendPollRef = useRef(0)
   useEffect(() => {
     if (autoSentRef.current || !snapshot) return
     const hasAssistant = snapshot.messages.some((m) => m.role === 'assistant')
     const hasPlan = snapshotHasPlan(snapshot)
     const waitingForEscrow =
       snapshot.workflow.status === 'awaiting_fund' || snapshot.workflow.status === 'funding'
+
     if (
       snapshot.workflow.status === 'planning' &&
       !snapshot.isFinished &&
@@ -138,10 +142,28 @@ export default function WorkflowPage() {
       snapshot.workflow.prompt
     ) {
       autoSentRef.current = true
+      autoSendPollRef.current = 0
       startRef.current = Date.now()
       sendMessage({ text: snapshot.workflow.prompt })
+      return
     }
-  }, [snapshot, sendMessage])
+
+    // Race condition recovery: if status is still 'funding' but we navigated
+    // here right after escrow completed, poll a few times for 'planning'.
+    if (waitingForEscrow && !hasAssistant && !hasPlan && autoSendPollRef.current < 6) {
+      autoSendPollRef.current += 1
+      const timer = setTimeout(() => {
+        fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
+          .then((r) => r.json())
+          .then((j: Snapshot) => {
+            setSnapshot(j)
+            if (j.messages.length > 0 && messages.length === 0) setMessages(j.messages)
+          })
+          .catch(() => {})
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [snapshot, sendMessage, id, setMessages, messages.length])
 
   const busy = status === 'streaming' || status === 'submitted'
   const displayStatus = busy ? status : snapshot?.workflow.status ?? status
