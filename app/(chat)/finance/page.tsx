@@ -655,6 +655,13 @@ function EscrowRowCard({ row }: { row: EscrowRow }) {
 }
 
 function TxChip({ label, tx }: { label: string; tx: string | null }) {
+  if (tx === '0x0') {
+    return (
+      <span className="border border-white/10 px-1.5 py-0.5 font-mono text-white/35">
+        {label}: allowance
+      </span>
+    )
+  }
   if (!tx) {
     return (
       <span className="border border-white/10 px-1.5 py-0.5 text-white/30">

@@ -33,6 +33,7 @@ const AGENTIC_COMMERCE = (process.env.AGENTIC_COMMERCE_ADDRESS ??
 const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as `0x${string}`
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')
+const MAX_UINT256 = (1n << 256n) - 1n
 
 export const ERC8183_ENABLED = process.env.ERC8183_ENABLED === '1'
 
@@ -256,8 +257,7 @@ export async function openAndFundJob(args: {
   })
 
   if (allowance < budget) {
-    const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
-    const approveData = encodeApprove(AGENTIC_COMMERCE, maxUint256)
+    const approveData = encodeApprove(AGENTIC_COMMERCE, MAX_UINT256)
     const approve = await adminSend(USDC_ADDRESS, approveData)
     approveHash = approve.hash
   }
@@ -470,16 +470,20 @@ export interface PreparedClientTx {
 }
 
 export interface PreparedClientTxBundle {
-  // 3 tx the user signs in order: createJob → approve → fund.
+  // User signs createJob, optionally approve, then fund.
   // setBudget runs server-side AFTER createJob confirms (provider role).
   createJob: PreparedClientTx
-  approve: PreparedClientTx
+  approve: PreparedClientTx | null
+  approvalRequired: boolean
+  approvalAmount: string
+  allowance: string
   // Echoed back so the confirm endpoint can re-derive without trusting client
   budget: string         // wei (uint256 string)
   budgetUsdc: string     // human (e.g. "0.05")
   expiredAt: string      // unix seconds
   description: string
   contract: `0x${string}`
+  usdcContract: `0x${string}`
   provider: `0x${string}`
   evaluator: `0x${string}`
   hook: `0x${string}`
@@ -519,6 +523,13 @@ export async function prepareOpenAndFund(args: {
   const expiredAt = BigInt(Math.floor(Date.now() / 1000) + (args.expirySeconds ?? 24 * 3600))
   const budget = parseUnits(args.budgetUsdc ?? '0.05', USDC_DECIMALS)
   const hook = '0x0000000000000000000000000000000000000000'
+  const allowance = await publicClient.readContract({
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [getAddress(args.clientAddress), AGENTIC_COMMERCE],
+  })
+  const approvalRequired = allowance < budget
 
   return {
     createJob: {
@@ -526,16 +537,22 @@ export async function prepareOpenAndFund(args: {
       data: encodeCreateJob(me, me, expiredAt, args.description),
       description: 'Create ERC-8183 job (open state)',
     },
-    approve: {
-      to: USDC_ADDRESS,
-      data: encodeApprove(AGENTIC_COMMERCE, budget),
-      description: `Approve ${args.budgetUsdc ?? '0.05'} USDC for escrow`,
-    },
+    approve: approvalRequired
+      ? {
+          to: USDC_ADDRESS,
+          data: encodeApprove(AGENTIC_COMMERCE, MAX_UINT256),
+          description: 'Approve ERC-8183 escrow spending',
+        }
+      : null,
+    approvalRequired,
+    approvalAmount: MAX_UINT256.toString(),
+    allowance: allowance.toString(),
     budget: budget.toString(),
     budgetUsdc: args.budgetUsdc ?? '0.05',
     expiredAt: expiredAt.toString(),
     description: args.description,
     contract: AGENTIC_COMMERCE,
+    usdcContract: USDC_ADDRESS,
     provider: me,
     evaluator: me,
     hook,
@@ -601,23 +618,72 @@ export async function verifyApproveAndFund(args: {
   expectedJobId: bigint
 }): Promise<void> {
   const expected = args.expectedClient.toLowerCase()
+  const job = await publicClient.readContract({
+    address: AGENTIC_COMMERCE,
+    abi: agenticCommerceAbi,
+    functionName: 'getJob',
+    args: [args.expectedJobId],
+  })
 
-  for (const [label, hash] of [
-    ['approve', args.approveTxHash],
-    ['fund', args.fundTxHash],
-  ] as const) {
-    const receipt = await pollingClient.waitForTransactionReceipt({
-      hash,
-      confirmations: 1,
-      timeout: 180_000,
-      pollingInterval: 3_000,
+  if (args.approveTxHash !== '0x0') {
+    const approveTx = await verifyUserTx({
+      label: 'approve',
+      hash: args.approveTxHash,
+      expectedFrom: expected,
+      expectedClient: args.expectedClient,
     })
-    if (receipt.status !== 'success') {
-      throw new Error(`${label} tx ${hash} reverted`)
+    if (approveTx.to?.toLowerCase() !== USDC_ADDRESS.toLowerCase()) {
+      throw new Error(`approve tx target mismatch: ${approveTx.to} != ${USDC_ADDRESS}`)
     }
-    const tx = await publicClient.getTransaction({ hash })
-    if (tx.from.toLowerCase() !== expected) {
-      throw new Error(`${label} tx signer mismatch: ${tx.from} != ${args.expectedClient}`)
+    const approveCall = decodeFunctionData({ abi: erc20Abi, data: approveTx.input })
+    if (approveCall.functionName !== 'approve') {
+      throw new Error(`approve tx function mismatch: ${approveCall.functionName}`)
+    }
+    const [spender, amount] = approveCall.args
+    if (spender.toLowerCase() !== AGENTIC_COMMERCE.toLowerCase()) {
+      throw new Error(`approve spender mismatch: ${spender} != ${AGENTIC_COMMERCE}`)
+    }
+    if (amount < job.budget) {
+      throw new Error(`approve amount ${amount} below job budget ${job.budget}`)
     }
   }
+
+  const fundTx = await verifyUserTx({
+    label: 'fund',
+    hash: args.fundTxHash,
+    expectedFrom: expected,
+    expectedClient: args.expectedClient,
+  })
+  if (fundTx.to?.toLowerCase() !== AGENTIC_COMMERCE.toLowerCase()) {
+    throw new Error(`fund tx target mismatch: ${fundTx.to} != ${AGENTIC_COMMERCE}`)
+  }
+  const fundCall = decodeFunctionData({ abi: agenticCommerceAbi, data: fundTx.input })
+  if (fundCall.functionName !== 'fund') {
+    throw new Error(`fund tx function mismatch: ${fundCall.functionName}`)
+  }
+  if (fundCall.args[0] !== args.expectedJobId) {
+    throw new Error(`fund jobId mismatch: ${fundCall.args[0]} != ${args.expectedJobId}`)
+  }
+}
+
+async function verifyUserTx(args: {
+  label: string
+  hash: Hex
+  expectedFrom: string
+  expectedClient: `0x${string}`
+}) {
+  const receipt = await pollingClient.waitForTransactionReceipt({
+    hash: args.hash,
+    confirmations: 1,
+    timeout: 180_000,
+    pollingInterval: 3_000,
+  })
+  if (receipt.status !== 'success') {
+    throw new Error(`${args.label} tx ${args.hash} reverted`)
+  }
+  const tx = await publicClient.getTransaction({ hash: args.hash })
+  if (tx.from.toLowerCase() !== args.expectedFrom) {
+    throw new Error(`${args.label} tx signer mismatch: ${tx.from} != ${args.expectedClient}`)
+  }
+  return tx
 }

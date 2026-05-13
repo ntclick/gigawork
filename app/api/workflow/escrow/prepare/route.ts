@@ -85,9 +85,12 @@ export async function POST(req: Request) {
         workflowId: wf.id,
         chainId: arcTestnet.id,
         contract: bundle.contract,
-        usdcContract: bundle.approve.to,
+        usdcContract: bundle.usdcContract,
         budget: bundle.budget,
         budgetUsdc: bundle.budgetUsdc,
+        allowance: bundle.allowance,
+        approvalRequired: bundle.approvalRequired,
+        approvalAmount: bundle.approvalAmount,
         expiredAt: bundle.expiredAt,
         description: bundle.description,
         provider: bundle.provider,
@@ -96,9 +99,9 @@ export async function POST(req: Request) {
         jobId: wf.erc8183JobId,
         createTx: wf.erc8183CreateTx,
         setBudgetTx: wf.erc8183SetBudgetTx,
-        approveTx: wf.erc8183ApproveTx,
+        approveTx: wf.erc8183ApproveTx ?? (bundle.approvalRequired ? null : '0x0'),
         fundTx: wf.erc8183FundTx,
-        approve: { to: bundle.approve.to, data: bundle.approve.data },
+        approve: bundle.approve ? { to: bundle.approve.to, data: bundle.approve.data } : null,
       })
     }
 
@@ -107,17 +110,21 @@ export async function POST(req: Request) {
       workflowId: wf.id,
       chainId: arcTestnet.id,
       contract: bundle.contract,
-      usdcContract: bundle.approve.to,
+      usdcContract: bundle.usdcContract,
       budget: bundle.budget,
       budgetUsdc: bundle.budgetUsdc,
+      allowance: bundle.allowance,
+      approvalRequired: bundle.approvalRequired,
+      approvalAmount: bundle.approvalAmount,
       expiredAt: bundle.expiredAt,
       description: bundle.description,
       provider: bundle.provider,
       evaluator: bundle.evaluator,
       hook: bundle.hook,
-      // 2 calldata blobs for the user to sign:
+      // Client calldata. Approve is null when existing allowance is enough.
       createJob: { to: bundle.createJob.to, data: bundle.createJob.data },
-      approve: { to: bundle.approve.to, data: bundle.approve.data },
+      approveTx: bundle.approvalRequired ? undefined : '0x0',
+      approve: bundle.approve ? { to: bundle.approve.to, data: bundle.approve.data } : null,
       // fund calldata returned later via /post-create once jobId is known
     })
   } catch (err) {

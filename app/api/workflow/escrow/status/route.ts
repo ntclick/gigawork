@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
 
 async function probeTx(hash: string | null): Promise<TxProbe> {
   if (!hash || hash === '0x0') {
-    return { hash, state: 'missing', blockNumber: null }
+    return { hash, state: hash === '0x0' ? 'confirmed' : 'missing', blockNumber: null }
   }
 
   const txHash = hash as `0x${string}`

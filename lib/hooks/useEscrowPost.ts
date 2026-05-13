@@ -136,7 +136,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
           evaluator?: string
           hook?: string
           createJob?: { to: string; data: string }
-          approve?: { to: string; data: string }
+          approve?: { to: string; data: string } | null
+          approvalRequired?: boolean
+          approvalAmount?: string
+          allowance?: string
           error?: string
           detail?: string
         }
@@ -150,9 +153,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
           setStep('done')
           return
         }
+        const approvalAlreadySatisfied = prep.approveTx === '0x0' || prep.approvalRequired === false
         if (
           (!prep.already && (!prep.createJob || !prep.provider || !prep.evaluator || !prep.expiredAt || !prep.description || !prep.hook)) ||
-          !prep.approve ||
+          (!prep.approve && !approvalAlreadySatisfied) ||
           !prep.budget ||
           !prep.contract ||
           !prep.usdcContract
@@ -225,6 +229,9 @@ export function useEscrowPost(): UseEscrowPostReturn {
         // ── 4. user signs approve after setBudget is ready ───────
         let approveTx = (prep.approveTx ?? post.approveTx) as Hex | undefined
         if (!approveTx) {
+          if (!prep.approve) {
+            throw new Error('prepare returned no approve calldata')
+          }
           setStep('signing-approve')
           approveTx = (await walletClient.sendTransaction({
             account: userAddr,

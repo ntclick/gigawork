@@ -7,10 +7,12 @@ import { ERC8183_USER_CLIENT, verifyApproveAndFund } from '@/lib/chain/agenticCo
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
 
+const TxHash = z.string().regex(/^0x[a-fA-F0-9]{64}$/)
+
 const Body = z.object({
   workflowId: z.string().uuid(),
-  approveTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-  fundTxHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  approveTxHash: z.union([TxHash, z.literal('0x0')]),
+  fundTxHash: TxHash,
 })
 
 /**

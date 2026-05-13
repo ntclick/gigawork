@@ -785,6 +785,14 @@ function CanvasProofRow({
 
 function CanvasTxRow({ label, tx, active }: { label: string; tx: string | null; active?: boolean }) {
   const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+  if (tx === '0x0') {
+    return (
+      <div className="flex items-center justify-between">
+        <span className="text-white/55">{label}</span>
+        <span className="font-mono text-[10px] text-white/35">allowance ok</span>
+      </div>
+    )
+  }
   if (!tx) {
     return (
       <div className="flex items-center justify-between">
