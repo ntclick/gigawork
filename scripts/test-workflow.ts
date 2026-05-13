@@ -9,7 +9,8 @@
  */
 import { config as loadEnv } from 'dotenv'
 import type { UIMessage } from 'ai'
-loadEnv({ path: '.env' })
+loadEnv({ path: '.env.local', override: true })
+loadEnv({ path: '.env' }) // fallback for shared vars
 
 const ADMIN_WALLET = '0xafe6dd950dc2cf561e8daba1725e0e6840f70549'
 const CLIENT_TOKEN_ID = '2917'

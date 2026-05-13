@@ -284,6 +284,28 @@ export default function WorkflowPage() {
                 error={escrow.error}
                 txHashes={escrow.txHashes}
                 onContinue={runEscrowFunding}
+                onBypass={async () => {
+                  const res = await fetch('/api/workflow/escrow/bypass', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workflowId: id }),
+                  })
+                  if (!res.ok) {
+                    const body = await res.json().catch(() => ({})) as { error?: string }
+                    toast.error('Bypass failed', body.error ?? `${res.status}`)
+                    return
+                  }
+                  escrow.reset()
+                  // Refresh snapshot — status should now be 'planning'
+                  const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then(r => r.json()) as Snapshot
+                  setSnapshot(fresh)
+                  if (fresh.messages.length > 0) setMessages(fresh.messages)
+                  // Trigger Hermes
+                  if (fresh.workflow.status === 'planning' && fresh.workflow.prompt && !snapshotHasPlan(fresh)) {
+                    autoSentRef.current = true
+                    sendMessage({ text: fresh.workflow.prompt })
+                  }
+                }}
               />
             )}
           </div>
@@ -313,14 +335,17 @@ function WorkflowEscrowOverlay({
   error,
   txHashes,
   onContinue,
+  onBypass,
 }: {
   erc8183: Erc8183Trail | null
   step: ReturnType<typeof useEscrowPost>['step']
   error: string | null
   txHashes: ReturnType<typeof useEscrowPost>['txHashes']
   onContinue: () => Promise<void>
+  onBypass: () => Promise<void>
 }) {
   const [running, setRunning] = useState(false)
+  const [bypassing, setBypassing] = useState(false)
   const createTx = txHashes.create ?? erc8183?.createTx ?? undefined
   const approveTx = txHashes.approve ?? erc8183?.approveTx ?? undefined
   const fundTx = txHashes.fund ?? erc8183?.fundTx ?? undefined
@@ -376,7 +401,7 @@ function WorkflowEscrowOverlay({
 
         <button
           type="button"
-          disabled={running}
+          disabled={running || bypassing}
           onClick={async () => {
             setRunning(true)
             try {
@@ -389,6 +414,24 @@ function WorkflowEscrowOverlay({
         >
           {running ? <span className="gw-spinner h-4 w-4" /> : null}
           {running ? 'Processing escrow...' : 'Continue funding'}
+        </button>
+
+        {/* Skip escrow — lets Hermes run without on-chain job */}
+        <button
+          type="button"
+          disabled={running || bypassing}
+          onClick={async () => {
+            setBypassing(true)
+            try {
+              await onBypass()
+            } finally {
+              setBypassing(false)
+            }
+          }}
+          className="mt-2 inline-flex w-full items-center justify-center gap-2 border border-white/10 bg-transparent px-4 py-2.5 font-pixel-body text-sm text-white/60 transition hover:border-white/25 hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {bypassing ? <span className="gw-spinner h-3 w-3" /> : null}
+          {bypassing ? 'Starting Hermes...' : 'Skip escrow — run without blockchain'}
         </button>
       </div>
     </div>
