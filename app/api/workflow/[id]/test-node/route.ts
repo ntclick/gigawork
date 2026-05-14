@@ -5,7 +5,6 @@ import { db } from '@/lib/db/client'
 import { nodes, users, workflows } from '@/lib/db/schema'
 import { getCurrentUser } from '@/lib/auth/session'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
-import { signDispatchTx } from '@/lib/chain/dispatch'
 
 /**
  * POST /api/workflow/[id]/test-node
@@ -88,43 +87,11 @@ export async function POST(
   try {
     const output = (await callSkillEndpoint(skill, inputCopy)) as Record<string, unknown>
 
-    // Best-effort on-chain dispatch attestation for ERC-8183
-    let identityTokenId: string | null = null
-    const [u] = await db
-      .select({ tid: users.identityTokenId })
-      .from(users)
-      .where(eq(users.id, me.id))
-      .limit(1)
-    identityTokenId = u?.tid ?? null
-
-    const manifest = (skill.manifest ?? {}) as Record<string, unknown>
-    const cost = Math.max(0, Math.round((manifest.cost_credits as number) ?? 5))
-
-    const dispatchTx = await signDispatchTx({
-      workflowId,
-      nodeId,
-      skillName,
-      cost,
-      identityTokenId,
-    })
-
     return NextResponse.json({
       ok: true,
       node_id: nodeId,
       skill_name: skillName,
       output,
-      dispatch_tx: dispatchTx?.txHash ?? null,
-      // ERC-8183 attestation metadata
-      erc8183: {
-        skill: skillName,
-        node: nodeId,
-        workflow: workflowId,
-        dispatch_tx: dispatchTx?.txHash ?? null,
-        identity_token: identityTokenId,
-        timestamp: new Date().toISOString(),
-        chain: 'arc-testnet',
-        chain_id: 5042002,
-      },
     })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)

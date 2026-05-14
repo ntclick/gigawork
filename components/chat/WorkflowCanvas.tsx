@@ -253,7 +253,6 @@ export function WorkflowCanvas({
       status: det?.status ?? 'pending',
       input: det?.input,
       output: det?.output,
-      dispatchTx: det?.dispatchTx ?? null,
       startedAt: det?.startedAt ?? null,
       finishedAt: det?.finishedAt ?? null,
     })
@@ -398,7 +397,6 @@ interface DispatchDetail {
   status: DispatchState
   input?: unknown
   output?: unknown
-  dispatchTx?: string | null
   startedAt?: number | null
   finishedAt?: number | null
 }
@@ -434,11 +432,10 @@ function buildFromMessages(messages: UIMessage[]): {
           try { det.input = JSON.parse(input.input_json) } catch { det.input = input.input_json }
         }
         if (part.state === 'output-available') {
-          const out = part.output as { ok?: boolean; output?: unknown; error?: string; dispatch_tx?: string | null } | undefined
+          const out = part.output as { ok?: boolean; output?: unknown; error?: string } | undefined
           const failed = out?.ok === false
           det.status = failed ? 'failed' : 'completed'
           det.output = failed ? out?.error : out?.output
-          det.dispatchTx = out?.dispatch_tx ?? null
           det.finishedAt = Date.now()
           dispatchStatus.set(planId, det.status)
         } else if (part.state === 'input-streaming' || part.state === 'input-available') {
@@ -669,7 +666,7 @@ function buildCanvasTrail(
       return {
         id: node.id,
         label: String((node.data as PixelNodeData).label ?? node.id),
-        tx: detail?.dispatchTx ?? null,
+        tx: null,
         state,
       }
     }),

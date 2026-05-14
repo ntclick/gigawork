@@ -2,11 +2,11 @@
 
 /**
  * NodeDetailSheet — bottom-slide or side drawer pixel panel showing one workflow node's
- * input/output JSON + ERC-8183 dispatch tx + agent link. 
+ * input/output JSON + agent link.
  * Includes n8n-style tabs: Output (test log), Input (edit JSON), Settings (metadata).
  */
 import Link from 'next/link'
-import { ChevronDown, ExternalLink, Play, RotateCw, Settings, TerminalSquare, FileJson, X, FlaskConical, Loader2 } from 'lucide-react'
+import { ChevronDown, Play, RotateCw, Settings, TerminalSquare, FileJson, X, FlaskConical, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { useSkills } from '@/lib/hooks/useSkills'
@@ -20,7 +20,6 @@ export interface NodeDetail {
   status: 'pending' | 'running' | 'completed' | 'failed'
   input?: unknown
   output?: unknown
-  dispatchTx?: string | null
   startedAt?: number | null
   finishedAt?: number | null
 }
@@ -87,7 +86,6 @@ function NodeDetailSheetInner({
     status: 'idle' | 'running' | 'done' | 'error'
     data?: any
     error?: string
-    erc8183?: any
   }>({ status: 'idle' })
 
   // Reset form when detail changes
@@ -133,7 +131,6 @@ function NodeDetailSheetInner({
       setTestResult({
         status: 'done',
         data: data.output,
-        erc8183: data.erc8183,
       })
     } catch (e) {
       setTestResult({
@@ -213,16 +210,6 @@ function NodeDetailSheetInner({
           >
             {detail.skill}
           </Link>
-          {detail.dispatchTx && (
-            <a
-              href={`${EXPLORER}/tx/${detail.dispatchTx}`}
-              target="_blank"
-              rel="noreferrer"
-              className="ml-auto inline-flex items-center gap-1 border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/20"
-            >
-              ERC-8183 tx <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
         </div>
 
         {/* Tabs */}
@@ -270,29 +257,6 @@ function NodeDetailSheetInner({
               {testResult.status === 'error' && (
                 <div className="border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
                   <span className="font-bold">Test Failed:</span> {testResult.error}
-                </div>
-              )}
-
-              {testResult.erc8183 && (
-                <div className="border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
-                  <div className="mb-2 flex items-center gap-1.5 font-bold text-emerald-400">
-                    <FlaskConical className="h-3.5 w-3.5" /> ERC-8183 Attestation
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-emerald-200/70">
-                    <div>Chain: {testResult.erc8183.chain}</div>
-                    <div>Agent NFT: {testResult.erc8183.identity_token ?? 'none'}</div>
-                    <div className="col-span-2">
-                      Tx:{' '}
-                      <a
-                        href={`${EXPLORER}/tx/${testResult.erc8183.dispatch_tx}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-emerald-400 underline hover:text-emerald-300"
-                      >
-                        {testResult.erc8183.dispatch_tx}
-                      </a>
-                    </div>
-                  </div>
                 </div>
               )}
 

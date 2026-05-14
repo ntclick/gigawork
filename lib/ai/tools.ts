@@ -2,7 +2,6 @@ import { tool } from 'ai'
 import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { signDispatchTx } from '@/lib/chain/dispatch'
 import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
@@ -169,7 +168,7 @@ function summarizeFinalEntry(key: string, value: unknown): string {
   }
   if (lines.length === 2) {
     for (const [field, fieldValue] of Object.entries(record).slice(0, 5)) {
-      if (!['generated_at', 'dispatch_tx'].includes(field)) lines.push(`- ${field}: ${compactFinalValue(fieldValue)}`)
+      if (field !== 'generated_at') lines.push(`- ${field}: ${compactFinalValue(fieldValue)}`)
     }
   }
   return lines.join('\n')
@@ -400,7 +399,6 @@ export function buildBrainTools(ctx: BrainContext) {
           node_id,
           skill_name,
           output,
-          dispatch_tx: typeof output.dispatch_tx === 'string' ? output.dispatch_tx : null,
         }
       }
       if (nodeRow.status === 'running') {
@@ -410,7 +408,6 @@ export function buildBrainTools(ctx: BrainContext) {
           node_id,
           skill_name,
           output: nodeRow.output ?? null,
-          dispatch_tx: null,
         }
       }
 
@@ -432,7 +429,6 @@ export function buildBrainTools(ctx: BrainContext) {
           node_id,
           skill_name,
           output,
-          dispatch_tx: typeof output.dispatch_tx === 'string' ? output.dispatch_tx : null,
         }
       }
 
@@ -504,30 +500,9 @@ export function buildBrainTools(ctx: BrainContext) {
       try {
         const output = (await callSkillEndpoint(skill, input)) as Record<string, unknown>
 
-        // Best-effort on-chain receipt for ERC-8183 verification. Records
-        // a self-tx with dispatch envelope encoded as calldata so any
-        // observer can prove this dispatch happened. Falls back to null
-        // when admin wallet is missing (dev) or RPC errors out.
-        let identityTokenId: string | null = null
-        if (userId) {
-          const [u] = await db
-            .select({ id: users.identityTokenId })
-            .from(users)
-            .where(eq(users.id, userId))
-            .limit(1)
-          identityTokenId = u?.id ?? null
-        }
-        const dispatchTx = await signDispatchTx({
-          workflowId,
-          nodeId: node_id,
-          skillName: skill_name,
-          cost,
-          identityTokenId,
-        })
-
         await db
           .update(nodes)
-          .set({ status: 'completed', output: { ...output, dispatch_tx: dispatchTx?.txHash ?? null } })
+          .set({ status: 'completed', output })
           .where(eq(nodes.id, node_id))
 
         // Redact sensitive fields before persisting to message log.
@@ -551,7 +526,6 @@ export function buildBrainTools(ctx: BrainContext) {
             skill_name,
             input: recordedInput,
             output,
-            dispatch_tx: dispatchTx?.txHash ?? null,
           },
           content: null,
         })
@@ -563,7 +537,6 @@ export function buildBrainTools(ctx: BrainContext) {
           node_id,
           skill_name,
           output,
-          dispatch_tx: dispatchTx?.txHash ?? null,
         }
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err)

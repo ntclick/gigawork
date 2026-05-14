@@ -23,7 +23,7 @@
  * Gated by env `ERC8183_ENABLED=1`. When disabled, helpers no-op and
  * return `null` so the existing dispatch envelope path still runs.
  */
-import { decodeEventLog, decodeFunctionData, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex } from 'viem'
+import { decodeEventLog, decodeFunctionData, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex, encodeFunctionData } from 'viem'
 
 import { adminAccount, pollingClient, publicClient, sendAdminTransaction } from './client'
 
@@ -334,48 +334,9 @@ export async function readJobStatus(jobId: bigint) {
   return Number(job.status)
 }
 
-async function findExistingSettlementTxs(jobId: bigint): Promise<{
-  submitTx: Hex | null
-  completeTx: Hex | null
-  deliverableHash: Hex | null
-} | null> {
-  const latest = await publicClient.getBlockNumber()
-  const from = latest > 5_000n ? latest - 5_000n : 0n
-  let submitTx: Hex | null = null
-  let completeTx: Hex | null = null
-  let deliverableHash: Hex | null = null
-
-  for (let blockNumber = latest; blockNumber >= from; blockNumber--) {
-    const block = await publicClient.getBlock({ blockNumber, includeTransactions: true })
-    for (const tx of block.transactions) {
-      if (tx.to?.toLowerCase() !== AGENTIC_COMMERCE.toLowerCase()) continue
-      try {
-        const decoded = decodeFunctionData({ abi: agenticCommerceAbi, data: tx.input })
-        if (decoded.functionName !== 'submit' && decoded.functionName !== 'complete') continue
-        if (decoded.args[0] !== jobId) continue
-        if (decoded.functionName === 'submit') {
-          submitTx = tx.hash
-          deliverableHash = decoded.args[1]
-        }
-        if (decoded.functionName === 'complete') completeTx = tx.hash
-      } catch {
-        /* not an ERC-8183 settlement call */
-      }
-    }
-    if (submitTx && completeTx && deliverableHash) break
-    if (blockNumber === 0n) break
-  }
-
-  return submitTx || completeTx || deliverableHash
-    ? { submitTx, completeTx, deliverableHash }
-    : null
-}
-
 // ─── Calldata encoders ────────────────────────────────────────────────
 // We use viem's encodeFunctionData via a thin wrapper so the ABI lives
 // in one place and TypeScript checks the args.
-
-import { encodeFunctionData } from 'viem'
 
 function encodeCreateJob(provider: `0x${string}`, evaluator: `0x${string}`, expiredAt: bigint, description: string): Hex {
   return encodeFunctionData({

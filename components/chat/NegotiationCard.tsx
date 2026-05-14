@@ -1,6 +1,4 @@
-import { CheckCircle2, ExternalLink, Loader2, Send, XCircle, Zap } from 'lucide-react'
-
-const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+import { CheckCircle2, Loader2, Send, XCircle, Zap } from 'lucide-react'
 
 type State = 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
 
@@ -14,13 +12,12 @@ export function NegotiationCard({
   state: State
   skillName?: string
   input?: Record<string, unknown>
-  output?: { ok?: boolean; output?: unknown; error?: string; dispatch_tx?: string | null }
+  output?: { ok?: boolean; output?: unknown; error?: string }
   errorText?: string
 }) {
   const running = state === 'input-streaming' || state === 'input-available'
   const failed = state === 'output-error' || (output && output.ok === false)
   const done = !running && !failed && state === 'output-available'
-  const txHash = output?.dispatch_tx ?? null
 
   const tone = failed
     ? 'border-red-400/30 bg-gradient-to-br from-red-500/8 to-red-500/[0.02]'
@@ -56,20 +53,8 @@ export function NegotiationCard({
             </span>
           )}
         </span>
-        {done && !txHash && (
+        {done && (
           <Zap className="ml-auto h-3 w-3 text-emerald-300/70" />
-        )}
-        {txHash && (
-          <a
-            href={`${EXPLORER}/tx/${txHash}`}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-400/[0.06] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan-200 transition hover:bg-cyan-400/15"
-            title={`Xem giao dịch ERC-8183 trên ArcScan · ${txHash}`}
-          >
-            <ExternalLink className="h-2.5 w-2.5" />
-            8183 tx
-          </a>
         )}
       </div>
 

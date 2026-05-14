@@ -529,13 +529,12 @@ function extract(messages: UIMessage[], workflowStatus: string) {
           tx: null,
         }
         if (part.state === 'output-available') {
-          const out = part.output as { ok?: boolean; dispatch_tx?: string | null } | undefined
+          const out = part.output as { ok?: boolean } | undefined
           if (out?.ok === false) {
             current.status = 'failed'
           } else {
             current.status = 'completed'
           }
-          current.tx = out?.dispatch_tx ?? current.tx
         } else if (part.state === 'input-streaming' || part.state === 'input-available') {
           current.status = 'running'
         }

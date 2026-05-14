@@ -129,7 +129,7 @@ function buildDeterministicReport(data: Record<string, unknown>, note?: string):
     }
     if (used === 0) {
       for (const [field, fieldValue] of Object.entries(record).slice(0, 6)) {
-        if (['generated_at', 'dispatch_tx'].includes(field)) continue
+        if (field === 'generated_at') continue
         lines.push(`- ${field}: ${compactValue(fieldValue)}`)
       }
     }
