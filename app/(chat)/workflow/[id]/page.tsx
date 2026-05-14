@@ -209,14 +209,18 @@ export default function WorkflowPage() {
     }
   }, [id, postEscrow, sendMessage, setMessages])
 
-  // No auto-fire: the WorkflowEscrowOverlay renders a "Continue funding"
-  // button. User clicks it explicitly to start the 3-sig Privy flow. Two
-  // bad things happened with auto-fire: (1) home page and workflow page
-  // could both call escrow.post() and race on the same wallet, (2) Privy
-  // popups appeared before the user even saw the workflow page, which felt
-  // like the app "auto-cancelled" when the wallet returned chain-mismatch
-  // or session errors during navigation.
-  void autoEscrowRef
+  // Auto-fire: when the page settles and escrow is still needed, kick off
+  // the funding flow automatically. Guard with autoEscrowRef so we only
+  // fire once per workflow id. A 600ms delay lets the page render and the
+  // Privy session hydrate before the first popup appears.
+  useEffect(() => {
+    if (!needsEscrow || escrow.step !== 'idle' || autoEscrowRef.current === id) return
+    autoEscrowRef.current = id
+    const timer = setTimeout(() => {
+      runEscrowFunding().catch(() => {})
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [needsEscrow, escrow.step, id, runEscrowFunding])
 
   return (
     <>
@@ -401,22 +405,31 @@ function WorkflowEscrowOverlay({
           </div>
         )}
 
-        <button
-          type="button"
-          disabled={running || bypassing}
-          onClick={async () => {
-            setRunning(true)
-            try {
-              await onContinue()
-            } finally {
-              setRunning(false)
-            }
-          }}
-          className="mt-5 inline-flex w-full items-center justify-center gap-2 bg-[var(--giga-accent)] px-4 py-3 font-pixel-body text-lg text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {running ? <span className="gw-spinner h-4 w-4" /> : null}
-          {running ? 'Processing escrow...' : 'Continue funding'}
-        </button>
+        {/* Only show manual trigger when idle+error (auto-retry) or error state */}
+        {(step === 'error' || (step === 'idle' && !!error)) && (
+          <button
+            type="button"
+            disabled={running || bypassing}
+            onClick={async () => {
+              setRunning(true)
+              try {
+                await onContinue()
+              } finally {
+                setRunning(false)
+              }
+            }}
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 bg-[var(--giga-accent)] px-4 py-3 font-pixel-body text-lg text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {running ? <span className="gw-spinner h-4 w-4" /> : null}
+            {running ? 'Processing escrow...' : 'Retry funding'}
+          </button>
+        )}
+        {(step === 'preparing' || step === 'signing-create' || step === 'posting-create' || step === 'signing-approve' || step === 'signing-fund' || step === 'confirming') && (
+          <div className="mt-5 inline-flex w-full items-center justify-center gap-2 border border-[var(--giga-accent)]/20 bg-[var(--giga-accent)]/5 px-4 py-3 font-pixel-body text-sm text-[var(--giga-accent)]/80">
+            <span className="gw-spinner h-4 w-4" />
+            Running escrow automatically…
+          </div>
+        )}
 
         {/* Skip escrow — lets Hermes run without on-chain job */}
         <button
