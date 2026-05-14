@@ -19,7 +19,7 @@
  * done. Each step's failure leaves DB in a re-resumable state — next call
  * to post() will pick up where it left off.
  */
-import { useWallets } from '@privy-io/react-auth'
+import { useSendTransaction, useWallets } from '@privy-io/react-auth'
 import { useCallback, useState } from 'react'
 import { createWalletClient, custom, defineChain, type Hex } from 'viem'
 
@@ -29,9 +29,15 @@ const ARC_RPC_URLS = [
   process.env.NEXT_PUBLIC_ARC_RPC,
   'https://rpc.drpc.testnet.arc.network',
 ].filter((url, index, arr): url is string => !!url && arr.indexOf(url) === index)
-const POST_CREATE_POLL_ATTEMPTS = 24
+// Arc Testnet RPC propagation lag: a tx signed via the user's wallet can
+// take 20-40s to appear in the public RPC's mempool view even though the
+// wallet has already broadcast it. The previous threshold of 6 polls (15s)
+// was tripping aggressive "create_tx_not_found" resets that wiped the
+// persisted tx hash and forced the user to re-sign — Privy then often
+// rejected the second popup as rapid back-to-back signs.
+const POST_CREATE_POLL_ATTEMPTS = 36          // 36 * 2.5s = 90s total
 const POST_CREATE_POLL_INTERVAL_MS = 2_500
-const POST_CREATE_RESET_MISSING_AFTER_POLLS = 6
+const POST_CREATE_RESET_MISSING_AFTER_POLLS = 24  // only declare missing after 60s+
 
 const arcTestnet = defineChain({
   id: ARC_CHAIN_ID,
@@ -92,6 +98,7 @@ type PostCreateResponse = {
 
 export function useEscrowPost(): UseEscrowPostReturn {
   const { wallets } = useWallets()
+  const { sendTransaction: privySendTransaction } = useSendTransaction()
   const [step, setStep] = useState<EscrowStep>('idle')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<EscrowResult | null>(null)
@@ -116,9 +123,22 @@ export function useEscrowPost(): UseEscrowPostReturn {
         setError('No wallet connected')
         throw new Error('No wallet connected')
       }
+      console.log('[escrow] wallet meta', {
+        address: wallet.address,
+        walletClientType: (wallet as { walletClientType?: string }).walletClientType,
+        connectorType: (wallet as { connectorType?: string }).connectorType,
+        chainId: (wallet as { chainId?: string }).chainId,
+      })
 
       try {
-        for (let attempt = 0; attempt < 3; attempt++) {
+        // Single attempt. Earlier code retried up to 3 times within the
+        // same post() call when post-create returned create_tx_not_found,
+        // but each retry triggers ANOTHER wallet popup — Privy then
+        // rejects rapid back-to-back signing as "user denied". Single
+        // attempt + a clear error message lets the user retry by clicking
+        // Continue funding again, which goes through prepare's idempotent
+        // resume path (no extra sign needed if createTx is persisted).
+        for (let attempt = 0; attempt < 1; attempt++) {
         // ── 1. prepare ──────────────────────────────────────────
         setStep('preparing')
         const prepRes = await fetch('/api/workflow/escrow/prepare', {
@@ -170,31 +190,63 @@ export function useEscrowPost(): UseEscrowPostReturn {
           throw new Error('prepare returned incomplete bundle')
         }
 
-        // Switch chain once up front. Privy embedded wallets noop if already correct.
-        try {
-          await wallet.switchChain(ARC_CHAIN_ID)
-        } catch {
-          /* tolerate */
+        // Detect wallet kind. Privy embedded wallet (login via email/social,
+        // walletClientType === 'privy') has a known viem-bridge bug where
+        // `walletClient.sendTransaction` through the proxy provider returns
+        // UserRejectedRequestError even when the user clicks Sign (the popup
+        // closes before the SDK relays the result back). The native
+        // `useSendTransaction` hook from @privy-io/react-auth avoids the
+        // proxy entirely and works reliably for embedded wallets.
+        const walletClientType = (wallet as { walletClientType?: string }).walletClientType
+        const isEmbedded = walletClientType === 'privy'
+
+        // Only attempt switchChain for external wallets — embedded wallets
+        // accept chainId per tx via the Privy hook and don't need a separate
+        // switch step.
+        if (!isEmbedded) {
+          try {
+            await wallet.switchChain(ARC_CHAIN_ID)
+          } catch (e) {
+            console.warn('[escrow] switchChain failed (tolerating)', e)
+          }
+          await new Promise((r) => setTimeout(r, 250))
         }
+
         const provider = await wallet.getEthereumProvider()
-        const currentChain = await provider.request({ method: 'eth_chainId' }).catch(() => null)
-        if (typeof currentChain === 'string' && Number.parseInt(currentChain, 16) !== ARC_CHAIN_ID) {
-          throw new Error(`Wallet is on chain ${Number.parseInt(currentChain, 16)}, expected Arc Testnet ${ARC_CHAIN_ID}`)
-        }
-        const walletClient = createWalletClient({ chain: arcTestnet, transport: custom(provider) })
         const userAddr = wallet.address as `0x${string}`
+
+        // Build viem walletClient for the external-wallet path. Embedded
+        // path bypasses this and uses privySendTransaction directly.
+        const walletClient = isEmbedded
+          ? null
+          : createWalletClient({ chain: arcTestnet, transport: custom(provider) })
+
+        // Helper: pick the right sign path per wallet kind.
+        const signTx = async (args: { to: `0x${string}`; data: Hex }): Promise<Hex> => {
+          if (isEmbedded) {
+            const result = await privySendTransaction(
+              { to: args.to, data: args.data, chainId: ARC_CHAIN_ID },
+              { address: userAddr },
+            )
+            return result.hash
+          }
+          return (await walletClient!.sendTransaction({
+            account: userAddr,
+            to: args.to,
+            data: args.data,
+            chain: arcTestnet,
+          })) as Hex
+        }
 
         // ── 2. user signs createJob, or resume existing create tx ─────
         let createTx = prep.createTx as Hex | undefined
         let createTxFresh = false
         if (!createTx) {
           setStep('signing-create')
-          createTx = (await walletClient.sendTransaction({
-            account: userAddr,
+          createTx = await signTx({
             to: prep.createJob!.to as `0x${string}`,
             data: prep.createJob!.data as Hex,
-            chain: arcTestnet,
-          })) as Hex
+          })
           createTxFresh = true
           setTxHashes((s) => ({ ...s, create: createTx }))
           await trackEscrowTx(workflowId, { createJobTxHash: createTx })
@@ -225,9 +277,16 @@ export function useEscrowPost(): UseEscrowPostReturn {
           throw new Error(normalizeEscrowError(post.detail || 'Create job transaction is still pending confirmation', post.hint, post.txHash))
         }
         if (post.error === 'create_tx_not_found' && post.resetCreateTx) {
+          // Do NOT auto-retry-sign within the same post() call. Privy
+          // embedded wallet often rejects rapid back-to-back signing
+          // requests as "user denied" — the user thinks they signed but
+          // sees an error. Surface the error so the user can re-click
+          // Continue funding from a clean state. The persisted createTx
+          // in DB is preserved unless dropMissingTx fired, so resume is
+          // idempotent on the next click.
           setTxHashes({})
           setStep('idle')
-          if (attempt < 2) continue
+          throw new Error(post.detail || 'Create job transaction not visible on Arc RPC. Please retry — the wallet hash will be reused.')
         }
         if (!postOk || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
           throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postStatus}`, post.hint, post.txHash))
@@ -240,12 +299,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
             throw new Error('prepare returned no approve calldata')
           }
           setStep('signing-approve')
-          approveTx = (await walletClient.sendTransaction({
-            account: userAddr,
+          approveTx = await signTx({
             to: prep.approve.to as `0x${string}`,
             data: prep.approve.data as Hex,
-            chain: arcTestnet,
-          })) as Hex
+          })
           setTxHashes((s) => ({ ...s, approve: approveTx }))
           await trackEscrowTx(workflowId, { approveTxHash: approveTx })
         }
@@ -254,12 +311,10 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let fundTx = prep.fundTx as Hex | undefined
         if (!fundTx) {
           setStep('signing-fund')
-          fundTx = (await walletClient.sendTransaction({
-            account: userAddr,
+          fundTx = await signTx({
             to: prep.contract as `0x${string}`,
             data: post.fund.data as Hex,
-            chain: arcTestnet,
-          })) as Hex
+          })
           setTxHashes((s) => ({ ...s, fund: fundTx }))
           await trackEscrowTx(workflowId, { fundTxHash: fundTx })
         }
@@ -301,6 +356,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
         throw new Error('Escrow funding could not recover stale create transaction')
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
+        console.error('[escrow] raw error caught:', e, '\nmessage:', msg, '\nstack:', e instanceof Error ? e.stack : undefined)
         const staleTx = /no longer visible|stale hashes were cleared|sign again/i.test(msg)
         const pendingTx = /still pending|pending on Arc|not mined yet/i.test(msg)
         setStep(pendingTx ? 'posting-create' : staleTx ? 'idle' : 'error')
@@ -317,7 +373,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
         }
       }
     },
-    [wallets],
+    [wallets, privySendTransaction],
   )
 
   return { step, error, result, txHashes, reset, post }

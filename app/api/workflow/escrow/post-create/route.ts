@@ -120,7 +120,16 @@ export async function POST(req: Request) {
         )
       }
 
-      if (!parsed.data.createTxFresh || parsed.data.dropMissingTx) {
+      // Only declare the tx genuinely missing when the frontend explicitly
+      // opted-in via dropMissingTx (set true only after a long poll window
+      // of NOT seeing the tx — currently 60s). Otherwise keep returning
+      // pending so the frontend can keep polling.
+      //
+      // Arc Testnet RPC propagation lag is the common cause: tx is signed
+      // and accepted by the wallet's RPC but the public RPC's view lags
+      // 20-40s. Resetting too early forced the user to re-sign and Privy
+      // often rejected the back-to-back popup as "user denied".
+      if (parsed.data.dropMissingTx) {
         await db
           .update(workflows)
           .set({
@@ -137,9 +146,9 @@ export async function POST(req: Request) {
             error: 'create_tx_not_found',
             recoverable: true,
             resetCreateTx: true,
-            detail: 'Create job transaction is no longer visible on Arc RPC.',
+            detail: 'Create job transaction is no longer visible on Arc RPC after 60s.',
             txHash: parsed.data.createJobTxHash,
-            hint: 'The wallet returned a hash, but Arc RPC cannot find it. The stale hashes were cleared so the wallet can sign a fresh createJob transaction.',
+            hint: 'The wallet returned a hash, but Arc RPC never indexed it. The stale hashes were cleared so the wallet can sign a fresh createJob transaction.',
           },
           { status: 200 },
         )
@@ -152,7 +161,7 @@ export async function POST(req: Request) {
           detail: 'Create job transaction is still pending confirmation.',
           txHash: parsed.data.createJobTxHash,
           txVisible: false,
-          hint: 'Create job is not visible on Arc RPC yet. Funding will retry briefly, then request a fresh signature if the hash never propagates.',
+          hint: 'Create job is not visible on Arc RPC yet. Funding will keep polling.',
         },
         { status: 202 },
       )
