@@ -209,12 +209,14 @@ export default function WorkflowPage() {
     }
   }, [id, postEscrow, sendMessage, setMessages])
 
-  useEffect(() => {
-    if (!needsEscrow || !snapshot || escrow.step !== 'idle') return
-    if (autoEscrowRef.current === id) return
-    autoEscrowRef.current = id
-    void runEscrowFunding()
-  }, [escrow.step, id, needsEscrow, runEscrowFunding, snapshot])
+  // No auto-fire: the WorkflowEscrowOverlay renders a "Continue funding"
+  // button. User clicks it explicitly to start the 3-sig Privy flow. Two
+  // bad things happened with auto-fire: (1) home page and workflow page
+  // could both call escrow.post() and race on the same wallet, (2) Privy
+  // popups appeared before the user even saw the workflow page, which felt
+  // like the app "auto-cancelled" when the wallet returned chain-mismatch
+  // or session errors during navigation.
+  void autoEscrowRef
 
   return (
     <>

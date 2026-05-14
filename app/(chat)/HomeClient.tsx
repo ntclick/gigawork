@@ -11,7 +11,6 @@ import { TemplateCard } from '@/components/home/TemplateCard'
 import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { MainHeader } from '@/components/shell/MainHeader'
-import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
 import {
   parseSlottedPrompt,
   serializeSlottedPrompt,
@@ -20,18 +19,6 @@ import {
 import { WORKFLOW_TEMPLATES } from '@/lib/workflowTemplates'
 
 type Me = { id: string; wallet: string; credits: number; identity?: { hasIdentity: boolean } }
-
-function escrowLabel(step: ReturnType<typeof useEscrowPost>['step']): string {
-  switch (step) {
-    case 'preparing':       return 'Preparing escrow...'
-    case 'signing-create':  return 'Sign create...'
-    case 'posting-create':  return 'Set budget...'
-    case 'signing-approve': return 'Sign approve...'
-    case 'signing-fund':    return 'Sign fund...'
-    case 'confirming':      return 'Confirming...'
-    default:                return 'Opening workflow...'
-  }
-}
 
 const CATEGORIES = [
   { key: 'all', label: 'All', icon: '⚡' },
@@ -57,7 +44,6 @@ export function HomeClient() {
   // to raw mode (user clicks "edit raw" or types into textarea) clears segments.
   const [segments, setSegments] = useState<Segment[] | null>(null)
   const [promptFocused, setPromptFocused] = useState(false)
-  const escrow = useEscrowPost()
 
   useEffect(() => {
     const refresh = () =>
@@ -95,19 +81,11 @@ export function HomeClient() {
         body: JSON.stringify({ prompt: v }),
       })
       if (!r.ok) throw new Error(await r.text())
-      const { id, escrow: escrowMode } = (await r.json()) as {
-        id: string
-        escrow?: 'user-client' | 'admin' | 'off'
-      }
-
-      if (escrowMode === 'user-client') {
-        try {
-          await escrow.post(id)
-        } catch (e) {
-          console.warn('[home] escrow auto-fund failed', e instanceof Error ? e.message : String(e))
-        }
-      }
-
+      const { id } = (await r.json()) as { id: string }
+      // Navigate immediately. The workflow page owns the escrow flow — it
+      // detects awaiting_fund/funding status and shows an explicit Continue
+      // funding overlay. Keeping escrow logic in one place avoids the home
+      // page racing with workflow page on Privy popups.
       router.push(`/workflow/${id}`)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'failed to start')
@@ -291,7 +269,7 @@ export function HomeClient() {
                         {submitting ? (
                           <>
                             <span className="gw-spinner h-3.5 w-3.5" />
-                            {escrowLabel(escrow.step)}
+                            Opening workflow...
                           </>
                         ) : !me?.identity?.hasIdentity ? (
                           <>

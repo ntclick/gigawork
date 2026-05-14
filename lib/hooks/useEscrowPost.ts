@@ -305,7 +305,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
         const pendingTx = /still pending|pending on Arc|not mined yet/i.test(msg)
         setStep(pendingTx ? 'posting-create' : staleTx ? 'idle' : 'error')
         if (staleTx) setTxHashes({})
-        if (/user rejected|denied|cancelled/i.test(msg)) {
+        if (isUserRejection(e)) {
           setError('Bạn đã huỷ ký giao dịch')
           throw new Error('Bạn đã huỷ ký giao dịch')
         } else if (/insufficient.*funds|insufficient.*balance/i.test(msg)) {
@@ -349,4 +349,26 @@ function normalizeEscrowError(detail: string, hint?: string, txHash?: string) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Detect real user-rejection from wallet errors. Privy / viem wrap errors so we
+ * walk `cause` chain checking EIP-1193 code 4001 + the viem error class name.
+ * Only fall back to message regex with very specific phrases — a loose pattern
+ * like `/rejected/i` matches RPC errors, chain mismatch, and Privy session
+ * issues and would mis-label non-cancel failures as user cancel.
+ */
+function isUserRejection(err: unknown): boolean {
+  let cur: unknown = err
+  for (let depth = 0; depth < 6 && cur; depth++) {
+    const e = cur as { code?: unknown; name?: string; shortMessage?: string; message?: string; cause?: unknown }
+    if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true
+    if (e.name === 'UserRejectedRequestError') return true
+    const msg = `${e.shortMessage ?? ''} ${e.message ?? ''}`
+    if (/User rejected the request|User denied (transaction|message) signature|action_rejected/i.test(msg)) {
+      return true
+    }
+    cur = e.cause
+  }
+  return false
 }
