@@ -234,7 +234,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
             account: userAddr,
             to: args.to,
             data: args.data,
-            chain: arcTestnet,
+            chain: null,
           })) as Hex
         }
 
