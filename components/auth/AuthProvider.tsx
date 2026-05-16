@@ -24,8 +24,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           accentColor: '#22d3ee',
           showWalletLoginFirst: true,
         },
+        // No embedded wallet creation, ever. The user's connected
+        // external wallet (OKX/MetaMask/…) is the canonical wallet —
+        // we never want Privy to mint a custodial embedded wallet
+        // that shadows the user's real wallet in the pill.
+        // If the user logs in via email only and never links a wallet,
+        // the WalletPill prompts them to "Link external wallet" before
+        // any signing can happen.
         embeddedWallets: {
-          ethereum: { createOnLogin: 'users-without-wallets' },
+          ethereum: { createOnLogin: 'off' },
         },
         // Force Coinbase Wallet to EOA mode. Smart Wallet hard-codes a chain
         // allowlist that doesn't include Arc Testnet (5042002), spamming a
