@@ -169,14 +169,10 @@ export default function WorkflowPage() {
 
   const busy = status === 'streaming' || status === 'submitted'
   const displayStatus = busy ? status : snapshot?.workflow?.status ?? status
-  // Hide the funding overlay as soon as the fund tx hash is persisted
-  // on the workflow row OR the client-side escrow flow reports done —
-  // even if the server hasn't yet flipped status to 'planning'. The
-  // 'funding' status used to linger when /confirm failed to advance
-  // the row but the on-chain fund tx had already landed (track writes
-  // the hash optimistically). Without this guard the overlay would
-  // sit on the page with all 4 green check marks demanding the user
-  // click "Continue funding" again.
+  // Treat the workflow as funded as soon as the fund tx hash is
+  // persisted on the row OR the client-side escrow flow reports done.
+  // Used to gate any escrow-retry UI surface from showing for an
+  // already-paid job whose status flip lagged.
   const fundLanded =
     !!snapshot?.workflow?.erc8183?.fundTx || escrow.step === 'done'
   const needsEscrow =
@@ -333,10 +329,10 @@ export default function WorkflowPage() {
   }, [snapshot, id])
 
   // Auto-fire disabled — popups were jumping on the user before the
-  // Privy wallets[] had hydrated and before the user had even seen the
-  // page. The funding overlay below still renders when needsEscrow is
-  // true; the user clicks the explicit "Continue funding" button to
-  // open the wallet popup on their schedule.
+  // Privy wallets[] had hydrated. The modal overlay was removed (the
+  // ERC-8183 Trail in WorkflowDocPanel + the small retry strip below
+  // are enough); funding now happens via prepare/confirm auto-resume
+  // on mount, with the retry strip as a manual fallback on error.
   void autoEscrowRef // ref kept so existing reset logic compiles
 
   return (
