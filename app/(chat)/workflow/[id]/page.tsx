@@ -258,13 +258,15 @@ export default function WorkflowPage() {
       })
   }, [snapshot, id, validate])
 
-  // Auto-resume confirm when the row is stuck at status='funding' with
-  // erc8183.fundTx already persisted. Happens when the user closed the
-  // page (or refreshed) AFTER signing fund but BEFORE useEscrowPost
-  // step 6 (/confirm) ran. /confirm is idempotent — it re-verifies
-  // approve+fund tx and flips status to 'planning', which unblocks
-  // Hermes orchestrator + downstream submit/complete/reputation tx.
-  // No wallet popup involved.
+  // Auto-resume when the row is stuck at status='funding' with fundTx
+  // already persisted. Two-stage recovery:
+  //   1. POST /prepare → server reads getJob(jobId).status on chain
+  //      and flips status to 'planning' if the job is Funded
+  //      (authoritative, no signer checks). This is the c7badf8 path.
+  //   2. Fall back to POST /confirm if /prepare didn't advance (legacy
+  //      path; required if on-chain status read fails).
+  // Refetch snapshot after either succeeds so the funding overlay
+  // disappears and the Hermes auto-send effect runs.
   const resumeConfirmRef = useRef<string | null>(null)
   useEffect(() => {
     if (
@@ -276,35 +278,58 @@ export default function WorkflowPage() {
       return
     }
     resumeConfirmRef.current = id
-    const approveTx = snapshot.workflow.erc8183.approveTx ?? '0x0'
-    fetch('/api/workflow/escrow/confirm', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        workflowId: id,
-        approveTxHash: approveTx,
-        fundTxHash: snapshot.workflow.erc8183.fundTx,
-      }),
-    })
-      .then(async (r) => {
+
+    const refreshSnapshot = async () => {
+      const fresh = await fetch(`/api/workflow/${id}/messages`, {
+        cache: 'no-store',
+      })
+      if (fresh.ok) setSnapshot(await fresh.json())
+    }
+
+    ;(async () => {
+      try {
+        // Stage 1: /prepare auto-advances based on on-chain job status.
+        await fetch('/api/workflow/escrow/prepare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workflowId: id }),
+        })
+        await refreshSnapshot()
+
+        // Re-read latest after refresh. We can't trust closure snapshot.
+        const probe = await fetch(`/api/workflow/${id}/messages`, {
+          cache: 'no-store',
+        })
+        if (!probe.ok) return
+        const latest = (await probe.json()) as Snapshot
+        if (latest.workflow?.status !== 'funding') return
+
+        // Stage 2: still funding → try /confirm with persisted hashes.
+        const approveTx = latest.workflow.erc8183?.approveTx ?? '0x0'
+        const fundTx = latest.workflow.erc8183?.fundTx
+        if (!fundTx) return
+        const r = await fetch('/api/workflow/escrow/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflowId: id,
+            approveTxHash: approveTx,
+            fundTxHash: fundTx,
+          }),
+        })
         if (!r.ok) {
           const data = await r.json().catch(() => ({}))
           console.warn('[escrow] auto-resume confirm failed', data)
           return
         }
-        // Pull fresh snapshot so the UI flips out of 'funding' overlay
-        // and Hermes auto-start (status='planning') runs.
-        const fresh = await fetch(`/api/workflow/${id}/messages`, {
-          cache: 'no-store',
-        })
-        if (fresh.ok) setSnapshot(await fresh.json())
-      })
-      .catch((e) =>
+        await refreshSnapshot()
+      } catch (e) {
         console.warn(
-          '[escrow] auto-resume confirm errored',
+          '[escrow] auto-resume errored',
           e instanceof Error ? e.message : e,
-        ),
-      )
+        )
+      }
+    })()
   }, [snapshot, id])
 
   // Auto-fire disabled — popups were jumping on the user before the
