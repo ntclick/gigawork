@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { type UIMessage } from 'ai'
 
 import { streamBrain } from '@/lib/ai/brain'
@@ -7,6 +7,8 @@ import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, workflows } from '@/lib/db/schema'
+
+const STALE_RUNNING_MS = 3 * 60 * 1000
 
 export const maxDuration = 120
 
@@ -41,8 +43,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
     })
   }
 
-  const hasStarted = wf.status !== 'planning'
-  if (hasStarted) {
+  if (wf.status !== 'planning' && wf.status !== 'running') {
     return new Response(
       JSON.stringify({
         error: 'workflow_already_started',
@@ -54,6 +55,33 @@ export async function POST(req: Request, ctx: RouteCtx) {
         headers: { 'Content-Type': 'application/json' },
       },
     )
+  }
+
+  if (wf.status === 'running') {
+    const [latest] = await db
+      .select({ createdAt: messages.createdAt })
+      .from(messages)
+      .where(eq(messages.workflowId, id))
+      .orderBy(desc(messages.createdAt))
+      .limit(1)
+    const lastActivity = latest?.createdAt?.getTime() ?? wf.createdAt.getTime()
+    if (Date.now() - lastActivity < STALE_RUNNING_MS) {
+      return new Response(
+        JSON.stringify({
+          error: 'workflow_already_started',
+          status: wf.status,
+          message: 'Hermes is actively working on this workflow.',
+        }),
+        { status: 409, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    console.log(
+      `[stream] recovering stale workflow ${id} (running for ${Math.round((Date.now() - lastActivity) / 1000)}s with no activity)`,
+    )
+    await db
+      .update(workflows)
+      .set({ status: 'planning' })
+      .where(eq(workflows.id, id))
   }
 
   const claimed = await db

@@ -135,14 +135,16 @@ export default function WorkflowPage() {
     const waitingForEscrow =
       snapshot.workflow?.status === 'awaiting_fund' || snapshot.workflow?.status === 'funding'
 
-    if (
-      snapshot.workflow?.status === 'planning' &&
+    const canAutoSend =
+      (snapshot.workflow?.status === 'planning' ||
+        (snapshot.workflow?.status === 'running' && !hasAssistant && !hasPlan)) &&
       !snapshot.isFinished &&
       !waitingForEscrow &&
       !hasAssistant &&
       !hasPlan &&
       snapshot.workflow.prompt
-    ) {
+
+    if (canAutoSend) {
       autoSentRef.current = true
       autoSendPollRef.current = 0
       startRef.current = Date.now()
