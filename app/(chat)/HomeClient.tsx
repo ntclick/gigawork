@@ -6,6 +6,7 @@ import { ArrowUp, Coins, Zap } from 'lucide-react'
 import { usePrivy } from '@privy-io/react-auth'
 
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
+import { readMeCache } from '@/lib/identityCache'
 
 import { IdentityGate } from '@/components/auth/IdentityGate'
 import { EditablePrompt } from '@/components/home/EditablePrompt'
@@ -47,7 +48,20 @@ export function HomeClient() {
     const ex = searchParams?.get('expand')
     return ex && WORKFLOW_TEMPLATES.some((t) => t.id === ex) ? ex : null
   })
-  const [me, setMe] = useState<Me | null>(null)
+  // Seed `me` from cache so credit pill + Run/Mint button label render
+  // synchronously on mount — no flash of "Mint to Run" for users who
+  // already minted in a prior session.
+  const initialAddr = wallet?.address?.toLowerCase() ?? null
+  const [me, setMe] = useState<Me | null>(() => {
+    const cached = readMeCache(initialAddr)
+    if (!cached) return null
+    return {
+      id: cached.id,
+      wallet: cached.wallet,
+      credits: cached.credits,
+      identity: cached.identity ?? undefined,
+    }
+  })
   const [activeCategory, setActiveCategory] = useState<string>('all')
   // Slotted prompt mode: when a slot-aware template is loaded, segments !== null
   // and we render <EditablePrompt> instead of the raw <textarea>. Switching back
@@ -56,15 +70,23 @@ export function HomeClient() {
   const [promptFocused, setPromptFocused] = useState(false)
 
   useEffect(() => {
+    // Only WalletPill writes the canonical cache (it has the full
+    // identity payload with tokenId + txHash). HomeClient is a consumer.
     const refresh = () =>
       fetch('/api/me', { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : null))
-        .then((j) => j && setMe(j))
+        .then((j: Me | null) => j && setMe(j))
         .catch(() => {})
     refresh()
     const onBust = () => refresh()
     window.addEventListener('gw:credits-changed', onBust)
-    return () => window.removeEventListener('gw:credits-changed', onBust)
+    window.addEventListener('gw:session-ready', onBust)
+    window.addEventListener('gw:identity-changed', onBust)
+    return () => {
+      window.removeEventListener('gw:credits-changed', onBust)
+      window.removeEventListener('gw:session-ready', onBust)
+      window.removeEventListener('gw:identity-changed', onBust)
+    }
   }, [])
 
   const filteredTemplates = useMemo(

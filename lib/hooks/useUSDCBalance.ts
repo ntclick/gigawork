@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import { createPublicClient, http, type Address } from 'viem'
 
 import { arcTestnet as arcChain } from '@/lib/chain/arcTestnet'
+import { readUSDCCache, writeUSDCCache } from '@/lib/identityCache'
 
 const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
 const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
@@ -44,8 +45,13 @@ export interface USDCBalanceState {
 }
 
 export function useUSDCBalance(address?: string | null): USDCBalanceState {
-  const [raw, setRaw] = useState<bigint>(BigInt(0))
-  const [loading, setLoading] = useState(true)
+  // Seed from localStorage so the pill shows last-known balance instantly
+  // on mount — eliminates the "0 USDC" flash while balanceOf RPC roundtrips.
+  const [raw, setRaw] = useState<bigint>(() => {
+    const cached = readUSDCCache(address)
+    return cached ? BigInt(cached.raw) : BigInt(0)
+  })
+  const [loading, setLoading] = useState(!readUSDCCache(address))
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const refetch = () => setTick((t) => t + 1)
@@ -56,8 +62,11 @@ export function useUSDCBalance(address?: string | null): USDCBalanceState {
       setLoading(false)
       return
     }
+    // Hydrate from cache when address changes (account flip in extension).
+    const cached = readUSDCCache(address)
+    if (cached) setRaw(BigInt(cached.raw))
     let cancelled = false
-    setLoading(true)
+    setLoading(!cached)
     setError(null)
     client
       .readContract({
@@ -69,6 +78,7 @@ export function useUSDCBalance(address?: string | null): USDCBalanceState {
       .then((v) => {
         if (cancelled) return
         setRaw(v as bigint)
+        writeUSDCCache(address, v as bigint)
       })
       .catch((e) => {
         if (cancelled) return

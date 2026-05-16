@@ -21,7 +21,11 @@ import {
 
 import { useTopup, type TopupStep } from '@/lib/hooks/useTopup'
 import { useUSDCBalance } from '@/lib/hooks/useUSDCBalance'
-import { clearIdentityCache } from '@/lib/identityCache'
+import {
+  clearIdentityCache,
+  readMeCache,
+  writeMeCache,
+} from '@/lib/identityCache'
 
 type Me = {
   id: string
@@ -50,14 +54,36 @@ export function WalletPill() {
   const { login } = useLogin()
   const { logout } = useLogout()
 
-  const [me, setMe] = useState<Me | null>(null)
+  // Seed `me` from localStorage so credits + token id render instantly on
+  // mount, no /api/me waterfall. We still refresh in the background.
+  const initialAddr = wallet?.address?.toLowerCase() ?? null
+  const [me, setMe] = useState<Me | null>(() => {
+    const cached = readMeCache(initialAddr)
+    if (!cached) return null
+    return {
+      id: cached.id,
+      wallet: cached.wallet,
+      credits: cached.credits,
+      identity: cached.identity ?? undefined,
+    }
+  })
   const [open, setOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const refresh = async () => {
     try {
       const r = await fetch('/api/me', { cache: 'no-store' })
-      if (r.ok) setMe(await r.json())
+      if (!r.ok) return
+      const j = (await r.json()) as Me
+      setMe(j)
+      if (j.wallet) {
+        writeMeCache(j.wallet.toLowerCase(), {
+          id: j.id,
+          wallet: j.wallet,
+          credits: j.credits,
+          identity: j.identity ?? null,
+        })
+      }
     } catch {
       /* ignore */
     }
@@ -98,6 +124,9 @@ export function WalletPill() {
       })
         .then(() => {
           refresh()
+          // Tell IdentityGate the cookie is hot and it can hit /api/me NOW
+          // — eliminates the 401-then-retry-up-to-3.5s race on first login.
+          window.dispatchEvent(new CustomEvent('gw:session-ready'))
           // Notify IdentityGate / other consumers that the active wallet
           // (and therefore the resolved user + NFT) has changed. Without
           // this, IdentityGate keeps showing the previous wallet's mint

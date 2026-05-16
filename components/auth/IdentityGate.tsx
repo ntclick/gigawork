@@ -77,13 +77,18 @@ export function IdentityGate({
   }
 
   // Re-run /api/me on credit/identity changes after we have an identity row.
+  //   - gw:session-ready  fires once WalletPill's /api/auth/login POST
+  //     resolves; we kick a /api/me fetch immediately so the NFT badge
+  //     shows the moment the cookie is hot (no 401-retry wait).
   useEffect(() => {
     const onBust = () => refresh(walletAddr)
     window.addEventListener('gw:credits-changed', onBust)
     window.addEventListener('gw:identity-changed', onBust)
+    window.addEventListener('gw:session-ready', onBust)
     return () => {
       window.removeEventListener('gw:credits-changed', onBust)
       window.removeEventListener('gw:identity-changed', onBust)
+      window.removeEventListener('gw:session-ready', onBust)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletAddr])

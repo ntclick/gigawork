@@ -22,6 +22,8 @@
  */
 
 const PREFIX = 'gw:identity:'
+const ME_PREFIX = 'gw:me:'
+const USDC_PREFIX = 'gw:usdc:'
 
 export type CachedIdentity = {
   hasIdentity: boolean
@@ -35,6 +37,70 @@ export type CachedIdentity = {
 
 function keyFor(wallet: string): string {
   return `${PREFIX}${wallet.toLowerCase()}`
+}
+
+function meKey(wallet: string): string {
+  return `${ME_PREFIX}${wallet.toLowerCase()}`
+}
+
+function usdcKey(wallet: string): string {
+  return `${USDC_PREFIX}${wallet.toLowerCase()}`
+}
+
+export type CachedMe = {
+  id: string
+  wallet: string
+  credits: number
+  identity?: { hasIdentity: boolean; tokenId: string | null; txHash: string | null } | null
+  cachedAt: number
+}
+
+export type CachedUSDC = {
+  /** Raw bigint as decimal string — JSON can't carry bigints. */
+  raw: string
+  cachedAt: number
+}
+
+export function readMeCache(wallet: string | null | undefined): CachedMe | null {
+  if (!wallet || typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(meKey(wallet))
+    if (!raw) return null
+    return JSON.parse(raw) as CachedMe
+  } catch {
+    return null
+  }
+}
+
+export function writeMeCache(wallet: string, value: Omit<CachedMe, 'cachedAt'>): void {
+  if (typeof window === 'undefined') return
+  try {
+    const entry: CachedMe = { ...value, cachedAt: Date.now() }
+    window.localStorage.setItem(meKey(wallet), JSON.stringify(entry))
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readUSDCCache(wallet: string | null | undefined): CachedUSDC | null {
+  if (!wallet || typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(usdcKey(wallet))
+    if (!raw) return null
+    return JSON.parse(raw) as CachedUSDC
+  } catch {
+    return null
+  }
+}
+
+export function writeUSDCCache(wallet: string, raw: bigint): void {
+  if (typeof window === 'undefined') return
+  try {
+    const entry: CachedUSDC = { raw: raw.toString(), cachedAt: Date.now() }
+    window.localStorage.setItem(usdcKey(wallet), JSON.stringify(entry))
+  } catch {
+    /* ignore */
+  }
 }
 
 export function readIdentityCache(wallet: string | null | undefined): CachedIdentity | null {
@@ -68,12 +134,19 @@ export function clearIdentityCache(wallet?: string | null): void {
   try {
     if (wallet) {
       window.localStorage.removeItem(keyFor(wallet))
+      window.localStorage.removeItem(meKey(wallet))
+      window.localStorage.removeItem(usdcKey(wallet))
       return
     }
     const toRemove: string[] = []
     for (let i = 0; i < window.localStorage.length; i++) {
       const k = window.localStorage.key(i)
-      if (k && k.startsWith(PREFIX)) toRemove.push(k)
+      if (
+        k &&
+        (k.startsWith(PREFIX) || k.startsWith(ME_PREFIX) || k.startsWith(USDC_PREFIX))
+      ) {
+        toRemove.push(k)
+      }
     }
     for (const k of toRemove) window.localStorage.removeItem(k)
   } catch {
