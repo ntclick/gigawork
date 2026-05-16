@@ -3,7 +3,11 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
-import { ERC8183_USER_CLIENT, prepareOpenAndFund } from '@/lib/chain/agenticCommerce'
+import {
+  ERC8183_USER_CLIENT,
+  prepareOpenAndFund,
+  readJobStatus,
+} from '@/lib/chain/agenticCommerce'
 import { arcTestnet } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
@@ -72,6 +76,41 @@ export async function POST(req: Request) {
         { error: 'admin_unconfigured', detail: 'ADMIN_PRIVATE_KEY missing on server' },
         { status: 503 },
       )
+    }
+
+    // Server-side auto-advance: if the row has a fundTx persisted AND
+    // the on-chain job is in Funded state but the row is still stuck
+    // at status='funding', flip it to 'planning' here. This is the
+    // catch-all for the case where /confirm never ran (page refresh
+    // between fund tx broadcast and step 6) or threw transiently.
+    // We trust on-chain status — `getJob(jobId).status === 1` means
+    // the budget is escrowed, the user has paid, Hermes can run.
+    if (
+      wf.erc8183JobId &&
+      wf.erc8183FundTx &&
+      wf.status === 'funding'
+    ) {
+      try {
+        const onChainStatus = await readJobStatus(BigInt(wf.erc8183JobId))
+        if (onChainStatus === 1) {
+          await db
+            .update(workflows)
+            .set({
+              status: 'planning',
+              erc8183BudgetUsdc: wf.erc8183BudgetUsdc ?? ERC8183_BUDGET,
+            })
+            .where(eq(workflows.id, wf.id))
+          wf.status = 'planning'
+          console.log(
+            `[escrow/prepare] auto-advanced workflow ${wf.id} funding → planning (on-chain job ${wf.erc8183JobId} is Funded)`,
+          )
+        }
+      } catch (e) {
+        console.warn(
+          '[escrow/prepare] readJobStatus failed during auto-advance',
+          e instanceof Error ? e.message : e,
+        )
+      }
     }
 
     if (wf.erc8183JobId || wf.erc8183CreateTx) {
