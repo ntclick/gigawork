@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, workflows } from '@/lib/db/schema'
 import { listSkills } from '@/lib/skills/registry'
-import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
+import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { HERMES_SYSTEM_PROMPT } from './prompts'
 import { buildBrainTools } from './tools'
 
@@ -196,7 +196,7 @@ export async function streamBrain(opts: {
           toolName: 'stream_error',
           toolPayload: { error: msg, stack },
         })
-        await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
+        await failWorkflow(opts.workflowId, opts.userId)
       } catch (dbErr) {
         console.error('[brain.onError] failed to persist', dbErr)
       }
@@ -230,13 +230,13 @@ export async function streamBrain(opts: {
               nodeCount,
             },
           })
-          await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
+          await failWorkflow(opts.workflowId, opts.userId)
           return
         }
 
         if (cleanText.length > 0 && !alreadyFinalized) {
           if (!nodeStats.allTerminal) {
-            await persistIncompleteWorkflow(opts.workflowId, {
+            await persistIncompleteWorkflow(opts.workflowId, opts.userId, {
               finishReason,
               source: 'streamText.onFinish',
               cleanText: cleanText.slice(0, 1000),
@@ -269,7 +269,7 @@ export async function streamBrain(opts: {
         }
 
         if (!alreadyFinalized && finishReason !== 'tool-calls') {
-          await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, opts.workflowId))
+          await failWorkflow(opts.workflowId, opts.userId)
         }
       } catch (e) {
         console.error('[brain.onFinish] failed to persist final state', e)
@@ -359,7 +359,11 @@ function findTextField(value: unknown, fieldNames: string[]): string | null {
   return null
 }
 
-async function persistIncompleteWorkflow(workflowId: string, payload: Record<string, unknown>) {
+async function persistIncompleteWorkflow(
+  workflowId: string,
+  userId: string | null,
+  payload: Record<string, unknown>,
+) {
   await db.insert(messages).values({
     workflowId,
     role: 'brain',
@@ -367,5 +371,5 @@ async function persistIncompleteWorkflow(workflowId: string, payload: Record<str
     toolName: 'stream_error',
     toolPayload: { error: 'workflow_not_terminal', ...payload },
   })
-  await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, workflowId))
+  await failWorkflow(workflowId, userId)
 }

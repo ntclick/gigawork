@@ -189,7 +189,7 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
   const receipt = await pollingClient.waitForTransactionReceipt({
     hash,
     confirmations: 1,
-    timeout: 180_000,
+    timeout: 90_000,
     pollingInterval: 1_500, // Speed up polling from 3s to 1.5s
   })
   if (receipt.status !== 'success') {
@@ -536,8 +536,8 @@ export async function setBudgetByAdmin(args: {
   const receipt = await pollingClient.waitForTransactionReceipt({
     hash: args.createJobTxHash,
     confirmations: 1,
-    timeout: 180_000,
-    pollingInterval: 3_000,
+    timeout: 90_000,
+    pollingInterval: 1_000,
   })
   if (receipt.status !== 'success') {
     throw new Error(`createJob tx ${args.createJobTxHash} reverted`)
@@ -627,8 +627,8 @@ async function verifyUserTx(args: {
   const receipt = await pollingClient.waitForTransactionReceipt({
     hash: args.hash,
     confirmations: 1,
-    timeout: 180_000,
-    pollingInterval: 3_000,
+    timeout: 90_000,
+    pollingInterval: 1_000,
   })
   if (receipt.status !== 'success') {
     throw new Error(`${args.label} tx ${args.hash} reverted`)

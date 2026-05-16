@@ -36,8 +36,19 @@ if (!ADMIN_PK) throw new Error('ADMIN_PRIVATE_KEY missing')
 const REGISTRY = (process.env.IDENTITY_REGISTRY_ADDRESS ??
   '0x8004A818BFB912233c491871b3d84c89A494BD9e') as `0x${string}`
 
-const TARGET_OWNER = (process.env.AGENT_OWNER_WALLET ??
-  '0x4c77584f57d385e0f2996bd4ff178c93dff034c0').toLowerCase() as `0x${string}`
+// DEPRECATED: do NOT run this script. It transfers skill agent NFTs away
+// from admin, breaking the ValidationRegistry / ReputationRegistry
+// background-attest flow (which requires admin to own the agent NFT to
+// call validationRequest without a popup). If you absolutely must move
+// them, set AGENT_OWNER_WALLET explicitly — no default hardcoded.
+const TARGET_OWNER = process.env.AGENT_OWNER_WALLET?.toLowerCase() as
+  | `0x${string}`
+  | undefined
+if (!TARGET_OWNER) {
+  throw new Error(
+    'transfer-agents.ts is deprecated. To force-run, set AGENT_OWNER_WALLET env explicitly.',
+  )
+}
 
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
@@ -133,7 +144,7 @@ async function main() {
         address: REGISTRY,
         abi: erc721Abi,
         functionName: 'transferFrom',
-        args: [adminAccount.address, TARGET_OWNER, tokenId],
+        args: [adminAccount.address, TARGET_OWNER!, tokenId],
       })
       console.log(`  → ${tag}  tx=${hash} … chờ receipt`)
       const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 })

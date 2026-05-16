@@ -11,6 +11,7 @@ import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { AppRail } from '@/components/shell/AppRail'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
+import { useValidationAttest } from '@/lib/hooks/useValidationAttest'
 import { toast } from '@/components/ui/toast'
 
 type Erc8183Trail = {
@@ -40,6 +41,7 @@ export default function WorkflowPage() {
   const startRef = useRef<number | undefined>(undefined)
   const escrow = useEscrowPost()
   const postEscrow = escrow.post
+  const validate = useValidationAttest()
 
   const { messages, sendMessage, setMessages, status } = useChat({
     transport: new DefaultChatTransport({ api: `/api/workflow/${id}/stream` }),
@@ -51,7 +53,7 @@ export default function WorkflowPage() {
       // new tx hashes for the ERC-8183 trail panel without forcing a reload.
       setTimeout(() => {
         fetch(`/api/workflow/${id}/messages`)
-          .then((r) => r.json())
+          .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
           .then((j: Snapshot) => setSnapshot(j))
           .catch(() => {})
       }, 2500)
@@ -108,7 +110,7 @@ export default function WorkflowPage() {
     if (!id || status === 'streaming' || status === 'submitted') return
     let cancelled = false
     fetch(`/api/workflow/${id}/messages`)
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
       .then((j: Snapshot) => {
         if (cancelled) return
         setSnapshot(j)
@@ -131,10 +133,10 @@ export default function WorkflowPage() {
     const hasAssistant = snapshot.messages.some((m) => m.role === 'assistant')
     const hasPlan = snapshotHasPlan(snapshot)
     const waitingForEscrow =
-      snapshot.workflow.status === 'awaiting_fund' || snapshot.workflow.status === 'funding'
+      snapshot.workflow?.status === 'awaiting_fund' || snapshot.workflow?.status === 'funding'
 
     if (
-      snapshot.workflow.status === 'planning' &&
+      snapshot.workflow?.status === 'planning' &&
       !snapshot.isFinished &&
       !waitingForEscrow &&
       !hasAssistant &&
@@ -154,7 +156,7 @@ export default function WorkflowPage() {
       autoSendPollRef.current += 1
       const timer = setTimeout(() => {
         fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
-          .then((r) => r.json())
+          .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
           .then((j: Snapshot) => {
             setSnapshot(j)
             if (j.messages.length > 0 && messages.length === 0) setMessages(j.messages)
@@ -166,27 +168,27 @@ export default function WorkflowPage() {
   }, [snapshot, sendMessage, id, setMessages, messages.length])
 
   const busy = status === 'streaming' || status === 'submitted'
-  const displayStatus = busy ? status : snapshot?.workflow.status ?? status
+  const displayStatus = busy ? status : snapshot?.workflow?.status ?? status
   const needsEscrow =
     !busy &&
     !!snapshot &&
     !snapshot.messages.some((m) => m.role === 'assistant') &&
-    (snapshot.workflow.status === 'awaiting_fund' ||
-      snapshot.workflow.status === 'funding')
-  const title = snapshot?.workflow.prompt
+    (snapshot.workflow?.status === 'awaiting_fund' ||
+      snapshot.workflow?.status === 'funding')
+  const title = snapshot?.workflow?.prompt
     ? truncate(snapshot.workflow.prompt, 40)
     : `Workflow ${id.slice(0, 8)}`
 
   const runEscrowFunding = useCallback(async () => {
     try {
       await postEscrow(id)
-      const fresh = (await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) =>
-        r.json(),
-      )) as Snapshot
+      const res = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
+      if (!res.ok) throw new Error(`messages API ${res.status}`)
+      const fresh = (await res.json()) as Snapshot
       setSnapshot(fresh)
       if (fresh.messages.length > 0) setMessages(fresh.messages)
       const shouldStartHermes =
-        fresh.workflow.status === 'planning' &&
+        fresh.workflow?.status === 'planning' &&
         !fresh.isFinished &&
         !snapshotHasPlan(fresh) &&
         fresh.workflow.prompt
@@ -197,17 +199,53 @@ export default function WorkflowPage() {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
+      if (/huỷ ký|user rejected|denied/i.test(message)) {
+        // User-cancel is expected behavior — show a softer message and
+        // skip the snapshot reload (state didn't change on-chain).
+        toast.warning('Bạn đã huỷ ký', 'Click "Retry" để mở lại popup ký.')
+        return
+      }
       if (/still pending|pending on Arc|not mined yet/i.test(message)) {
         toast.warning('Escrow tx pending', message)
       } else {
         toast.error('Escrow funding required', message)
       }
-      const fresh = (await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then((r) =>
-        r.json(),
-      )) as Snapshot
+      const errRes = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
+      if (!errRes.ok) return
+      const fresh = (await errRes.json()) as Snapshot
       setSnapshot(fresh)
     }
   }, [id, postEscrow, sendMessage, setMessages])
+
+  // When the page mounts on a completed workflow, do two things in
+  // background:
+  //   1. Run validation reconciliation — picks up any
+  //      `validationRequest` the user signed in a previous session
+  //      that's still missing the admin's `validationResponse`.
+  //   2. Probe /prepare to count how many proofs the user still owes
+  //      a popup for. Drives the visibility of the "Sign Proofs" strip
+  //      so users whose wallet doesn't own any skill agents (the common
+  //      case — skills are platform-managed) never see the CTA.
+  //
+  // Both are fire-and-forget + idempotent. Server-side validation is
+  // the source of truth; UI is a hint.
+  const reconcileRanRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      !snapshot ||
+      snapshot.workflow?.status !== 'completed' ||
+      reconcileRanRef.current === id
+    ) {
+      return
+    }
+    reconcileRanRef.current = id
+    fetch(`/api/workflow/${id}/validation/reconcile`, { method: 'POST' })
+      .then(() => validate.probe(id))
+      .catch(() => {
+        // Even if reconcile errors, probe directly to drive the strip.
+        validate.probe(id).catch(() => {})
+      })
+  }, [snapshot, id, validate])
 
   // Auto-fire: when the page settles and escrow is still needed, kick off
   // the funding flow automatically. Guard with autoEscrowRef so we only
@@ -261,7 +299,7 @@ export default function WorkflowPage() {
               messages={messages}
               status={displayStatus}
               workflowId={id}
-              erc8183={snapshot?.workflow.erc8183 ?? null}
+              erc8183={snapshot?.workflow?.erc8183 ?? null}
               onEditNode={(req) => {
                 if (busy) {
                   toast.warning('Hermes is running', 'Wait for the current step to finish before editing.')
@@ -283,37 +321,67 @@ export default function WorkflowPage() {
                 <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
               </div>
             )}
-            {needsEscrow && (
-              <WorkflowEscrowOverlay
-                erc8183={snapshot.workflow.erc8183 ?? null}
-                step={escrow.step}
-                error={escrow.error}
-                txHashes={escrow.txHashes}
-                onContinue={runEscrowFunding}
-                onBypass={async () => {
-                  const res = await fetch('/api/workflow/escrow/bypass', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ workflowId: id }),
-                  })
-                  if (!res.ok) {
-                    const body = await res.json().catch(() => ({})) as { error?: string }
-                    toast.error('Bypass failed', body.error ?? `${res.status}`)
-                    return
-                  }
-                  escrow.reset()
-                  // Refresh snapshot — status should now be 'planning'
-                  const fresh = await fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' }).then(r => r.json()) as Snapshot
-                  setSnapshot(fresh)
-                  if (fresh.messages.length > 0) setMessages(fresh.messages)
-                  // Trigger Hermes
-                  if (fresh.workflow.status === 'planning' && fresh.workflow.prompt && !snapshotHasPlan(fresh)) {
-                    autoSentRef.current = true
-                    sendMessage({ text: fresh.workflow.prompt })
-                  }
-                }}
-              />
+            {/* Compact retry strip — shown when escrow is in error/idle
+                with an error message. Auto-fire only runs once per workflow
+                so we need this for the user-cancel + transient-failure
+                cases (user rejects popup, RPC blip, etc.). The right-side
+                ERC-8183 Trail panel still shows full progress. */}
+            {needsEscrow && (escrow.step === 'error' || (escrow.step === 'idle' && !!escrow.error)) && (
+              <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
+                <span className="text-[var(--giga-accent)]">Escrow not funded</span>
+                <span className="text-white/40">·</span>
+                <span className="truncate text-white/60">{escrow.error ?? 'Sign required'}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    escrow.reset()
+                    autoEscrowRef.current = null // allow auto-fire to re-run
+                    runEscrowFunding().catch(() => {})
+                  }}
+                  className="ml-1 inline-flex items-center bg-[var(--giga-accent)] px-2 py-1 font-pixel-body text-[10px] uppercase text-black transition hover:bg-yellow-300"
+                >
+                  Retry
+                </button>
+              </div>
             )}
+            {/* Agent Proofs CTA — shown only once the workflow is fully
+                settled. Validation requires user-side popups (ownership-
+                gated), so we make it an explicit click instead of auto-
+                firing. After all agents are attested, the strip auto-
+                hides. */}
+            {!busy &&
+              snapshot?.workflow?.status === 'completed' &&
+              validate.step !== 'done' &&
+              validate.pendingCount > 0 && (
+                <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2 border border-cyan-400/30 bg-[#12101f]/95 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
+                  <span className="text-cyan-300">Agent Proofs</span>
+                  <span className="text-white/40">·</span>
+                  <span className="text-white/60">
+                    {validate.step === 'preparing' && 'Preparing…'}
+                    {validate.step === 'signing' && 'Sign in wallet…'}
+                    {validate.step === 'responding' && 'Server attesting…'}
+                    {validate.step === 'error' && (validate.error ?? 'Failed')}
+                    {validate.step === 'idle' &&
+                      'Sign on-chain proof for each skill agent (ERC-8004)'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={
+                      validate.step === 'preparing' ||
+                      validate.step === 'signing' ||
+                      validate.step === 'responding'
+                    }
+                    onClick={() => validate.attest(id).catch(() => {})}
+                    className="ml-1 inline-flex items-center bg-cyan-400 px-2 py-1 font-pixel-body text-[10px] uppercase text-black transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {validate.step === 'idle' && 'Sign proofs'}
+                    {validate.step !== 'idle' &&
+                      validate.step !== 'error' &&
+                      `${validate.items.filter((i) => i.status === 'done').length}/${validate.items.length}`}
+                    {validate.step === 'error' && 'Retry'}
+                  </button>
+                </div>
+              )}
           </div>
 
           {/* Bottom prompt bar */}
@@ -323,165 +391,13 @@ export default function WorkflowPage() {
         {/* RIGHT DOC PANEL */}
         <WorkflowDocPanel
           title={title}
-          prompt={snapshot?.workflow.prompt}
+          prompt={snapshot?.workflow?.prompt}
           messages={messages}
           status={displayStatus}
-          erc8183={snapshot?.workflow.erc8183 ?? null}
+          erc8183={snapshot?.workflow?.erc8183 ?? null}
         />
       </div>
     </>
-  )
-}
-
-const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
-
-function WorkflowEscrowOverlay({
-  erc8183,
-  step,
-  error,
-  txHashes,
-  onContinue,
-  onBypass,
-}: {
-  erc8183: Erc8183Trail | null
-  step: ReturnType<typeof useEscrowPost>['step']
-  error: string | null
-  txHashes: ReturnType<typeof useEscrowPost>['txHashes']
-  onContinue: () => Promise<void>
-  onBypass: () => Promise<void>
-}) {
-  const [running, setRunning] = useState(false)
-  const [bypassing, setBypassing] = useState(false)
-  const createTx = txHashes.create ?? erc8183?.createTx ?? undefined
-  const approveTx = txHashes.approve ?? erc8183?.approveTx ?? undefined
-  const fundTx = txHashes.fund ?? erc8183?.fundTx ?? undefined
-  const pendingError = !!error && /still pending|pending on Arc|not mined yet|not visible/i.test(error)
-  const current =
-    step === 'posting-create'
-      ? 'Waiting for createJob confirmation, then provider setBudget'
-      : step === 'signing-approve'
-        ? 'Approve USDC spend in wallet'
-        : step === 'signing-fund'
-          ? 'Sign fund escrow in wallet'
-          : step === 'confirming'
-            ? 'Waiting for fund confirmation'
-            : step === 'error'
-              ? 'Funding needs attention'
-              : 'ERC-8183 funding required before agents run'
-
-  return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg border border-[var(--giga-accent)]/40 bg-[#12101f] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="font-pixel-body text-xl uppercase text-white">Fund ERC-8183 escrow</h2>
-            <p className="mt-1 text-sm text-white/55">
-              Agents will start only after create, approve, and fund are confirmed.
-            </p>
-          </div>
-          <span className="font-mono text-[10px] uppercase text-[var(--giga-accent)]">{step}</span>
-        </div>
-
-        <div className="mb-4 border border-cyan-400/20 bg-cyan-400/[0.04] p-3 text-sm text-cyan-100">
-          {current}
-        </div>
-
-        <div className="space-y-2 text-sm">
-          <EscrowStepRow label="Create job" tx={createTx} done={!!erc8183?.jobId} active={(!!createTx && !erc8183?.jobId) || step === 'posting-create'} note={createTx && !erc8183?.jobId ? 'submitted' : undefined} />
-          <EscrowStepRow label="Set budget" tx={erc8183?.setBudgetTx ?? undefined} done={!!erc8183?.setBudgetTx} />
-          <EscrowStepRow label="Approve USDC" tx={approveTx === '0x0' ? undefined : approveTx} done={!!fundTx || step === 'done'} active={(!!approveTx && !fundTx) || step === 'signing-approve' || step === 'confirming'} note={approveTx === '0x0' ? 'allowance ok' : approveTx && !fundTx ? 'submitted' : undefined} />
-          <EscrowStepRow label="Fund escrow" tx={fundTx} done={!!fundTx} active={step === 'signing-fund' || step === 'confirming'} note={fundTx && step !== 'done' ? 'submitted' : undefined} />
-        </div>
-
-        {error && (
-          <div
-            className={`mt-4 border p-3 text-sm ${
-              pendingError
-                ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-100'
-                : 'border-red-400/30 bg-red-500/10 text-red-200'
-            }`}
-          >
-            {error}
-          </div>
-        )}
-
-        {/* Only show manual trigger when idle+error (auto-retry) or error state */}
-        {(step === 'error' || (step === 'idle' && !!error)) && (
-          <button
-            type="button"
-            disabled={running || bypassing}
-            onClick={async () => {
-              setRunning(true)
-              try {
-                await onContinue()
-              } finally {
-                setRunning(false)
-              }
-            }}
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 bg-[var(--giga-accent)] px-4 py-3 font-pixel-body text-lg text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {running ? <span className="gw-spinner h-4 w-4" /> : null}
-            {running ? 'Processing escrow...' : 'Retry funding'}
-          </button>
-        )}
-        {(step === 'preparing' || step === 'signing-create' || step === 'posting-create' || step === 'signing-approve' || step === 'signing-fund' || step === 'confirming') && (
-          <div className="mt-5 inline-flex w-full items-center justify-center gap-2 border border-[var(--giga-accent)]/20 bg-[var(--giga-accent)]/5 px-4 py-3 font-pixel-body text-sm text-[var(--giga-accent)]/80">
-            <span className="gw-spinner h-4 w-4" />
-            Running escrow automatically…
-          </div>
-        )}
-
-        {/* Skip escrow — lets Hermes run without on-chain job */}
-        <button
-          type="button"
-          disabled={running || bypassing}
-          onClick={async () => {
-            setBypassing(true)
-            try {
-              await onBypass()
-            } finally {
-              setBypassing(false)
-            }
-          }}
-          className="mt-2 inline-flex w-full items-center justify-center gap-2 border border-white/10 bg-transparent px-4 py-2.5 font-pixel-body text-sm text-white/60 transition hover:border-white/25 hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {bypassing ? <span className="gw-spinner h-3 w-3" /> : null}
-          {bypassing ? 'Starting Hermes...' : 'Skip escrow — run without blockchain'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function EscrowStepRow({
-  label,
-  tx,
-  done,
-  active,
-  note,
-}: {
-  label: string
-  tx?: string
-  done?: boolean
-  active?: boolean
-  note?: string
-}) {
-  return (
-    <div className="flex items-center gap-2 border border-white/10 bg-black/20 px-3 py-2">
-      <span className={`h-2 w-2 rounded-full ${done ? 'bg-emerald-300' : active ? 'animate-pulse bg-[var(--giga-accent)]' : 'bg-white/20'}`} />
-      <span className={done ? 'text-white/85' : active ? 'text-[var(--giga-accent)]' : 'text-white/45'}>{label}</span>
-      <span className="ml-auto font-mono text-[10px]">
-        {tx ? (
-          <a href={`${EXPLORER}/tx/${tx}`} target="_blank" rel="noreferrer" className="text-cyan-300 hover:text-cyan-200 hover:underline">
-            {tx.slice(0, 8)}...{tx.slice(-4)}
-          </a>
-        ) : note ? (
-          <span className="text-white/35">{note}</span>
-        ) : (
-          <span className="text-white/25">pending</span>
-        )}
-      </span>
-    </div>
   )
 }
 

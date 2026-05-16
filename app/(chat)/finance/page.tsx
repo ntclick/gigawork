@@ -974,9 +974,9 @@ function SwapTab() {
 // ════════════════════════════════════════════════════════════════
 // BRIDGE TAB — Sepolia → Arc Testnet via App-Kit CCTP (v1 pattern)
 // ════════════════════════════════════════════════════════════════
-const ALCHEMY_KEY = 'oppYpzscO7hdTG6hopypG6Opn3Xp7lR_'
+const ALCHEMY_KEY = 'cxzxMQobCJKW1pAWWsPPW'
 const BRIDGE_SOURCES = [
-  { value: 'Arc_Testnet', label: 'Arc Testnet', rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/oppYpzscO7hdTG6hopypG6Opn3Xp7lR_', usdc: '0x3600000000000000000000000000000000000000' },
+  { value: 'Arc_Testnet', label: 'Arc Testnet', rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/cxzxMQobCJKW1pAWWsPPW', usdc: '0x3600000000000000000000000000000000000000' },
   { value: 'Ethereum_Sepolia', label: 'ETH Sepolia', rpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`, usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' },
   { value: 'Base_Sepolia', label: 'Base Sepolia', rpcUrl: `https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`, usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' },
 ]

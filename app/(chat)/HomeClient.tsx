@@ -3,6 +3,9 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowUp, Coins, Zap } from 'lucide-react'
+import { usePrivy } from '@privy-io/react-auth'
+
+import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 
 import { IdentityGate } from '@/components/auth/IdentityGate'
 import { EditablePrompt } from '@/components/home/EditablePrompt'
@@ -30,6 +33,13 @@ const CATEGORIES = [
 export function HomeClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // Source the active wallet from the same hooks WalletPill + useEscrowPost use.
+  // We sync the cookie inline before POST /api/workflow so the workflow row's
+  // userId is bound to the wallet that will sign escrow tx — eliminates the
+  // race where WalletPill hadn't synced yet at submit time, which caused
+  // workflows to belong to stale users and "createJob signer mismatch" later.
+  const { user: privyUser, authenticated } = usePrivy()
+  const wallet = useActiveWallet()
   const [prompt, setPrompt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -75,6 +85,30 @@ export function HomeClient() {
     setSubmitting(true)
     setErr(null)
     try {
+      // Pre-sync: make sure the server's session cookie matches the wallet
+      // that will sign tx in useEscrowPost (wallets[0]). Without this, the
+      // workflow row gets created under the wallet that was in the cookie
+      // BEFORE the user switched accounts in their extension — server then
+      // throws "createJob signer mismatch" because user.wallet (cookie) ≠
+      // tx.from (active signer). Awaiting this also guarantees the cookie
+      // is set before /api/workflow reads it.
+      const activeWallet = wallet?.address?.toLowerCase() ?? null
+      const privyId = privyUser?.id ?? null
+      if (authenticated && activeWallet) {
+        try {
+          await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              wallet: activeWallet,
+              ...(privyId ? { privyId } : {}),
+            }),
+          })
+        } catch (e) {
+          console.warn('[home] pre-submit auth sync failed', e)
+        }
+      }
+
       const r = await fetch('/api/workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

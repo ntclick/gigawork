@@ -139,9 +139,12 @@ function buildMetadata(skillName: string, manifest: Manifest, endpoint: string) 
       currency: 'USDC',
     },
 
-    // Owner that collects fees (ERC-8183 settlement target)
+    // Owner that collects fees (ERC-8183 settlement target). Default
+    // to admin so the manifest matches on-chain ownership (register()
+    // mints to msg.sender = admin). The old `0x4c7758...` hardcode was
+    // a dev artifact — see scripts/transfer-agents.ts header.
     owner: {
-      wallet: manifest.owner_wallet ?? '0x4c77584f57d385e0f2996bd4ff178c93dff034c0',
+      wallet: manifest.owner_wallet ?? adminAccount.address.toLowerCase(),
       platform: 'GigaWork',
     },
 

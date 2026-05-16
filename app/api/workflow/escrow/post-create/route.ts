@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
+import { createPublicClient, http } from 'viem'
 import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
@@ -8,9 +9,61 @@ import {
   encodeFundForJob,
   setBudgetByAdmin,
 } from '@/lib/chain/agenticCommerce'
-import { pollingClient } from '@/lib/chain/client'
+import { arcTestnet, pollingClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
+
+// Arc Testnet public RPC propagation is uneven — a tx broadcast through
+// one node can take 30-90s to appear on another. Rotate through the same
+// public RPCs that viem's built-in arcTestnet chain uses (plus drpc and
+// the ARC_RPC_URL/NEXT_PUBLIC_ARC_RPC env overrides for Alchemy) so a
+// single laggy node doesn't trigger a false-positive "tx missing" reset.
+// Matches the load-balanced pattern in scripts/onchain/full-flow-8183.ts.
+const ARC_FALLBACK_RPCS = [
+  'https://rpc.testnet.arc.network',
+  'https://rpc.quicknode.testnet.arc.network',
+  'https://rpc.blockdaemon.testnet.arc.network',
+  'https://rpc.drpc.testnet.arc.network',
+  process.env.ARC_RPC_URL,
+  process.env.NEXT_PUBLIC_ARC_RPC,
+].filter((url, i, arr): url is string => !!url && arr.indexOf(url) === i)
+
+const fallbackClients = ARC_FALLBACK_RPCS.map((url) =>
+  createPublicClient({ chain: arcTestnet, transport: http(url, { batch: false }) }),
+)
+
+async function getReceiptWithFallback(hash: `0x${string}`) {
+  try {
+    return await pollingClient.getTransactionReceipt({ hash })
+  } catch (primaryErr) {
+    for (const client of fallbackClients) {
+      try {
+        return await client.getTransactionReceipt({ hash })
+      } catch {
+        continue
+      }
+    }
+    throw primaryErr
+  }
+}
+
+async function getTransactionWithFallback(hash: `0x${string}`) {
+  try {
+    const tx = await pollingClient.getTransaction({ hash })
+    if (tx) return tx
+  } catch {
+    // fall through to fallbacks
+  }
+  for (const client of fallbackClients) {
+    try {
+      const tx = await client.getTransaction({ hash })
+      if (tx) return tx
+    } catch {
+      continue
+    }
+  }
+  return null
+}
 
 const Body = z.object({
   workflowId: z.string().uuid(),
@@ -99,13 +152,13 @@ export async function POST(req: Request) {
 
     let createReceipt
     try {
-      createReceipt = await pollingClient.getTransactionReceipt({
-        hash: parsed.data.createJobTxHash as `0x${string}`,
-      })
+      createReceipt = await getReceiptWithFallback(
+        parsed.data.createJobTxHash as `0x${string}`,
+      )
     } catch {
-      const pendingTx = await pollingClient
-        .getTransaction({ hash: parsed.data.createJobTxHash as `0x${string}` })
-        .catch(() => null)
+      const pendingTx = await getTransactionWithFallback(
+        parsed.data.createJobTxHash as `0x${string}`,
+      )
 
       if (pendingTx) {
         return NextResponse.json(

@@ -3,10 +3,12 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
+import { failWorkflow } from '@/lib/ai/finalizeWorkflow'
 import { ERC8183_ENABLED, ERC8183_USER_CLIENT, openAndFundJob } from '@/lib/chain/agenticCommerce'
+import { checkOnChainIdentity, verifyTokenOwnership } from '@/lib/chain/identity'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
-import { messages, workflows } from '@/lib/db/schema'
+import { messages, users, workflows, type User } from '@/lib/db/schema'
 
 const ERC8183_BUDGET = process.env.ERC8183_BUDGET_USDC ?? '0.05'
 
@@ -78,7 +80,7 @@ async function handlePost(req: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 })
   }
 
-  let user
+  let user: User
   try {
     user = await getCurrentUser()
   } catch (e) {
@@ -90,6 +92,52 @@ async function handlePost(req: Request) {
       { error: 'db_unavailable', stage: 'auth', ...errorPayload(e) },
       { status: 503 },
     )
+  }
+
+  // Verify cached identityTokenId actually belongs to the current
+  // user wallet on chain. The DB cache can lag when the user switches
+  // wallets (the previous wallet's NFT stays in the row) — letting a
+  // stale token through here would allow workflow creation against a
+  // wallet that doesn't actually own the identity, which the ERC-8183
+  // contract would reject later anyway. Clearing here keeps the
+  // identity gate honest. See /api/me for the same pattern.
+  if (user.identityTokenId) {
+    const stillOwns = await verifyTokenOwnership(user.identityTokenId, user.wallet)
+    if (!stillOwns) {
+      const [cleared] = await withDbRetry(
+        () =>
+          db
+            .update(users)
+            .set({ identityTokenId: null, identityTxHash: null, identityMintedAt: null })
+            .where(eq(users.id, user.id))
+            .returning(),
+        { label: 'workflow:identity-clear-stale' },
+      )
+      if (cleared) user = cleared
+    }
+  }
+
+  if (!user.identityTokenId) {
+    // DB cache is empty — fall back to on-chain check. The user may have
+    // minted the NFT in a previous session, or just switched to a wallet
+    // that already owns one (eg minted from a different frontend). This
+    // is the same auto-sync logic /api/me runs, so the workflow gate
+    // doesn't reject a legit user just because their DB cache hasn't
+    // been hydrated yet. Persist the tokenId we find so subsequent
+    // requests hit the fast DB path.
+    const onChainTokenId = await checkOnChainIdentity(user.wallet)
+    if (onChainTokenId) {
+      const [updated] = await withDbRetry(
+        () =>
+          db
+            .update(users)
+            .set({ identityTokenId: onChainTokenId })
+            .where(eq(users.id, user.id))
+            .returning(),
+        { label: 'workflow:identity-sync' },
+      )
+      if (updated) user = updated
+    }
   }
 
   if (!user.identityTokenId) {
@@ -171,7 +219,7 @@ async function handlePost(req: Request) {
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         console.warn('[workflow] ERC-8183 open+fund failed', message)
-        await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, wf.id))
+        await failWorkflow(wf.id, user.id)
         return NextResponse.json(
           { error: 'escrow_fund_failed', message },
           { status: 503 },

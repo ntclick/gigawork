@@ -2,6 +2,14 @@ import { pgTable, uuid, text, jsonb, timestamp, integer } from 'drizzle-orm/pg-c
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
+  // Privy DID is the stable account identifier across wallet switches.
+  // Nullable for backward-compat with legacy rows created pre-Privy; the
+  // first /api/auth/login call attaches it. Once set, multiple OKX wallets
+  // can share one user row by mapping to the same privy_id.
+  privyId: text('privy_id').unique(),
+  // Current active wallet for this Privy account. Updates whenever the
+  // user switches accounts in their external wallet (OKX, MetaMask, …)
+  // and re-authenticates — see getOrCreateUserByPrivy() in service.ts.
   wallet: text('wallet').notNull().unique(),
   credits: integer('credits').default(0).notNull(),
   identityTokenId: text('identity_token_id'),

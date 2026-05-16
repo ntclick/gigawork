@@ -5,7 +5,9 @@ import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { publicClient } from '@/lib/chain/client'
+import { invalidateOnChainIdentityCache } from '@/lib/chain/identity'
 import { prefundUserWallet } from '@/lib/credits/postMintHooks'
+import { grantSignupBonus } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 
@@ -29,8 +31,10 @@ const abi = parseAbi([
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) {
+    console.log('[identity/confirm] bad body', parsed.error.message)
     return NextResponse.json({ error: parsed.error.message }, { status: 400 })
   }
+  console.log('[identity/confirm] tx', parsed.data.txHash)
 
   let user
   try {
@@ -71,11 +75,13 @@ export async function POST(req: Request) {
   }
 
   if (receipt.status !== 'success') {
-    return NextResponse.json({ error: 'tx_reverted' }, { status: 400 })
+    console.log('[identity/confirm] tx_reverted', parsed.data.txHash)
+    return NextResponse.json({ error: 'tx_reverted', txHash: parsed.data.txHash }, { status: 400 })
   }
 
   const tx = await publicClient.getTransaction({ hash: parsed.data.txHash as `0x${string}` })
   if (tx.from.toLowerCase() !== user.wallet.toLowerCase()) {
+    console.log('[identity/confirm] wrong_signer', { expected: user.wallet, got: tx.from, txHash: parsed.data.txHash })
     return NextResponse.json(
       {
         error: 'wrong_signer',
@@ -161,6 +167,20 @@ export async function POST(req: Request) {
       identityMintedAt: new Date(),
     })
     .where(eq(users.id, user.id))
+
+  // Invalidate the on-chain cache for this wallet so the next /api/me
+  // sees the fresh tokenId immediately (cache TTL is 30s otherwise).
+  invalidateOnChainIdentityCache(user.wallet)
+
+  // Award the signup bonus — idempotent (no-op if user already has
+  // signup_grant in their ledger). This is the ONLY place new credits
+  // come from on the mint path: auth resolution stays pure, so wallet
+  // flipping can't compound credits.
+  try {
+    await grantSignupBonus(user.id)
+  } catch (e) {
+    console.warn('[identity/confirm] signup grant failed', e instanceof Error ? e.message : e)
+  }
 
   // Post-mint side effects (gated by PREFUND_AFTER_MINT=1). Failure here is
   // logged + swallowed — the mint is already on-chain, the user just won't

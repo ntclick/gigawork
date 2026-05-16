@@ -23,7 +23,23 @@ const db = drizzle(sql, { schema: { skills } })
  * provision the listed API keys, replace the handler in
  * `app/api/skills/[name]/route.ts` with real calls. Schema stays unchanged.
  */
-const OWNER_WALLET = '0x4c77584f57d385e0f2996bd4ff178c93dff034c0'
+// Skill metadata.owner_wallet — defaults to the platform admin so on-chain
+// `ownerOf` matches `register()` msg.sender (admin) and background
+// reputation/validation flows can attest without user popups. Override
+// via SKILL_OWNER_WALLET env if you intentionally want a different owner.
+// (The old hardcoded test wallet 0x4c7758... was REMOVED — it was a
+// dev artifact that left skill NFTs stranded in a wallet nobody has
+// the key for.)
+function deriveAdminAddress(): string {
+  const pk = process.env.ADMIN_PRIVATE_KEY
+  if (!pk) return '0x0000000000000000000000000000000000000000'
+  // Lazy import to keep this file lightweight outside of seeding context
+  const { privateKeyToAccount } = require('viem/accounts')
+  return privateKeyToAccount(pk).address.toLowerCase()
+}
+const OWNER_WALLET = (
+  process.env.SKILL_OWNER_WALLET ?? deriveAdminAddress()
+).toLowerCase()
 const COST_CREDITS = 8 // 0.08 USDC
 
 const SEED = [

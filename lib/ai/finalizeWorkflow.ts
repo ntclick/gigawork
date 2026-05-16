@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 
 import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
 import { incrementReputationBatch } from '@/lib/chain/reputation'
+import { attestWorkflowCompletion } from '@/lib/chain/validation'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
 
@@ -149,6 +150,97 @@ async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
   }
 }
 
+/**
+ * Mark a workflow `failed` AND fire negative ERC-8004 reputation feedback
+ * for the user + every skill that ran. Idempotent: callers may invoke
+ * this from multiple error paths (brain.onError, onFinish without
+ * tool-calls, persistIncompleteWorkflow) — the DB update is harmless on
+ * a row already failed, and the reputation tx is gated on whether we've
+ * already recorded a `reputationUpdate` message for this workflow.
+ */
+export async function failWorkflow(
+  workflowId: string,
+  userId: string | null,
+): Promise<void> {
+  await db
+    .update(workflows)
+    .set({ status: 'failed' })
+    .where(eq(workflows.id, workflowId))
+
+  const existing = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.workflowId, workflowId),
+        eq(messages.toolName, 'reputationUpdate'),
+      ),
+    )
+    .limit(1)
+  if (existing.length > 0) return // already recorded — don't double-tax
+
+  try {
+    const completedRows = await db
+      .select({ agentTokenId: skills.agentTokenId })
+      .from(nodes)
+      .innerJoin(skills, eq(nodes.skillId, skills.id))
+      .where(eq(nodes.workflowId, workflowId))
+
+    const [u] = userId
+      ? await db
+          .select({ identityTokenId: users.identityTokenId })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1)
+      : []
+
+    const tokenIds = [
+      ...new Set(
+        [
+          ...completedRows.map((r) => r.agentTokenId),
+          u?.identityTokenId,
+        ].filter(Boolean),
+      ),
+    ] as string[]
+
+    if (tokenIds.length === 0) {
+      await db.insert(messages).values({
+        workflowId,
+        role: 'system',
+        toolName: 'reputationUpdate',
+        toolPayload: {
+          tx: null,
+          tokenIds: [],
+          status: 'skipped',
+          outcome: 'failed',
+          reason: 'No on-chain identity tokens to penalise.',
+        },
+        content: null,
+      })
+      return
+    }
+
+    const repTx = await incrementReputationBatch(tokenIds, 'failed')
+    await db.insert(messages).values({
+      workflowId,
+      role: 'system',
+      toolName: 'reputationUpdate',
+      toolPayload: {
+        tx: repTx,
+        tokenIds,
+        outcome: 'failed',
+        status: repTx ? 'recorded' : 'skipped',
+      },
+      content: null,
+    })
+  } catch (e) {
+    console.warn(
+      '[failWorkflow] negative reputation failed (non-fatal)',
+      e instanceof Error ? e.message : e,
+    )
+  }
+}
+
 async function cacheReputation(workflowId: string, userId: string | null) {
   try {
     // Count completed skills (with or without on-chain agentTokenId)
@@ -242,6 +334,52 @@ async function cacheReputation(workflowId: string, userId: string | null) {
       toolPayload: { tx: repTx, tokenIds },
       content: null,
     })
+
+    // ── ERC-8004 ValidationRegistry attestation ("Agent Proofs") ───
+    // Runs AFTER reputation so a failure here doesn't roll back the
+    // reputation tx. Best-effort: validation registry is ownership-
+    // gated, and any token not owned by the admin signer is skipped
+    // with a reason. We record per-agent request/response tx hashes
+    // so the trail UI can render "proof recorded" vs "owner-mismatch
+    // skipped" instead of a generic "pending".
+    try {
+      const attestations = await attestWorkflowCompletion(workflowId, tokenIds)
+      const recordedTx =
+        attestations.find((a) => a.responseTx)?.responseTx ?? null
+      await db.insert(messages).values({
+        workflowId,
+        role: 'system',
+        toolName: 'validationAttest',
+        toolPayload: {
+          tx: recordedTx,
+          attestations: attestations.map((a) => ({
+            agentId: a.agentId,
+            requestTx: a.requestTx,
+            responseTx: a.responseTx,
+            requestHash: a.requestHash,
+            passed: a.passed,
+            skipped: a.skipped ?? null,
+          })),
+        },
+        content: null,
+      })
+    } catch (vErr) {
+      console.warn(
+        '[publishFinalReport] validation attestation failed (non-fatal)',
+        vErr instanceof Error ? vErr.message : vErr,
+      )
+      await db.insert(messages).values({
+        workflowId,
+        role: 'system',
+        toolName: 'validationAttest',
+        toolPayload: {
+          tx: null,
+          status: 'error',
+          reason: vErr instanceof Error ? vErr.message : String(vErr),
+        },
+        content: null,
+      })
+    }
   } catch (e) {
     console.warn('[publishFinalReport] reputation update failed (non-fatal)', e instanceof Error ? e.message : e)
     // Record the failure so UI can show error state

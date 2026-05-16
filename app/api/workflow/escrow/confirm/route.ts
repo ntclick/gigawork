@@ -59,7 +59,14 @@ export async function POST(req: Request) {
       { status: 400 },
     )
   }
-  if (wf.erc8183FundTx) {
+  // Idempotency marker: use the workflow's status, NOT the fundTx hash.
+  // /api/workflow/escrow/track writes fundTx into the row before this
+  // confirm endpoint runs (so the trail UI can light up the "Fund escrow"
+  // step optimistically). Bailing on `wf.erc8183FundTx` would short-circuit
+  // here without ever flipping status from 'funding' → 'planning',
+  // permanently stranding the workflow because the frontend's auto-send
+  // gate requires status==='planning' to trigger Hermes.
+  if (wf.status === 'planning' || wf.status === 'completed' || wf.status === 'settling') {
     return NextResponse.json({
       ok: true,
       already: true,

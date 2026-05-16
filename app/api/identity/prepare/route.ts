@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 
+import { eq } from 'drizzle-orm'
+
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { arcTestnet } from '@/lib/chain/client'
-import { prepareMintCalldata } from '@/lib/chain/identity'
+import { checkOnChainIdentity, prepareMintCalldata } from '@/lib/chain/identity'
+import { db } from '@/lib/db/client'
+import { users } from '@/lib/db/schema'
 
 /**
  * POST /api/identity/prepare
@@ -34,6 +38,39 @@ export async function POST() {
       already: true,
       tokenId: user.identityTokenId,
       txHash: user.identityTxHash,
+    })
+  }
+
+  // One NFT per wallet rule: before handing out fresh `register()`
+  // calldata, check the chain. If the wallet already owns ANY
+  // identity NFT, hydrate the DB with the OLDEST one (checkOnChainIdentity
+  // returns the lowest tokenId among everything the wallet owns) and
+  // short-circuit with `already: true`. This:
+  //   - Prevents accidental double-mint when the user clicks Mint
+  //     after a transient DB row reset, or migrates from a different
+  //     frontend that already minted on their behalf.
+  //   - Stabilizes provider/evaluator agent bindings — picking the
+  //     oldest deterministically means /api/me + /api/workflow never
+  //     disagree about which tokenId represents this client.
+  const existingOnChain = await checkOnChainIdentity(user.wallet)
+  if (existingOnChain) {
+    try {
+      await db
+        .update(users)
+        .set({ identityTokenId: existingOnChain })
+        .where(eq(users.id, user.id))
+    } catch (e) {
+      console.warn(
+        '[identity/prepare] failed to persist on-chain tokenId',
+        e instanceof Error ? e.message : e,
+      )
+    }
+    return NextResponse.json({
+      ok: true,
+      already: true,
+      tokenId: existingOnChain,
+      txHash: null,
+      source: 'on-chain',
     })
   }
 

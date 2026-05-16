@@ -185,11 +185,36 @@ export async function getAgentURI(tokenId: string): Promise<string | null> {
 }
 
 /**
- * Check if the given wallet owns any Identity NFT on-chain.
- * Useful for syncing identities minted via external clients (not this frontend).
+ * Check if the given wallet owns any Identity NFT on-chain. When the
+ * wallet holds multiple NFTs (rare but possible — eg legacy mints
+ * before per-wallet de-dup, or transfers), returns the **lowest**
+ * tokenId. Per ERC-721 convention monotonically-increasing token ids
+ * imply lower id = older mint, so this gives the wallet's CANONICAL
+ * identity: the first one ever minted to it.
+ *
+ * Provider/evaluator agents bind to a single tokenId per workflow, so
+ * picking deterministically (oldest) avoids the case where /api/me
+ * returns NFT-A on one request and NFT-B on the next — that flapping
+ * would invalidate the agent ↔ identity binding.
  */
+// In-memory TTL cache for on-chain identity lookups. Without this every
+// /api/me + /api/workflow hit re-queries balanceOf+tokenOfOwnerByIndex
+// (3–6 RPC roundtrips on busy wallets), which is the dominant latency
+// for cold page loads. 30s TTL is short enough that a fresh mint
+// reflects within half a minute without polling-storm churn.
+const onChainCache = new Map<string, { value: string | null; expires: number }>()
+const ON_CHAIN_TTL_MS = 30_000
+
+export function invalidateOnChainIdentityCache(wallet?: string): void {
+  if (!wallet) onChainCache.clear()
+  else onChainCache.delete(wallet.toLowerCase())
+}
+
 export async function checkOnChainIdentity(wallet: string): Promise<string | null> {
   if (!IDENTITY_REGISTRY) return null
+  const key = wallet.toLowerCase()
+  const cached = onChainCache.get(key)
+  if (cached && cached.expires > Date.now()) return cached.value
   try {
     const balance = await publicClient.readContract({
       address: IDENTITY_REGISTRY,
@@ -197,19 +222,77 @@ export async function checkOnChainIdentity(wallet: string): Promise<string | nul
       functionName: 'balanceOf',
       args: [getAddress(wallet)],
     })
-    
-    if (balance > BigInt(0)) {
-      const tokenId = await publicClient.readContract({
-        address: IDENTITY_REGISTRY,
-        abi: identityAbi,
-        functionName: 'tokenOfOwnerByIndex',
-        args: [getAddress(wallet), BigInt(0)],
-      })
-      return tokenId.toString()
+
+    const n = Number(balance)
+    if (n <= 0) {
+      onChainCache.set(key, { value: null, expires: Date.now() + ON_CHAIN_TTL_MS })
+      return null
     }
+
+    // Enumerate every owned token; return the smallest id. Parallel
+    // fetch via Promise.all so big balances don't serialize (was
+    // sequential before — N×RPC roundtrips). Cap at 50 to bound cost
+    // for whale wallets.
+    const max = Math.min(n, 50)
+    const indices = Array.from({ length: max }, (_, i) => BigInt(i))
+    const tokens = await Promise.all(
+      indices.map((i) =>
+        publicClient
+          .readContract({
+            address: IDENTITY_REGISTRY,
+            abi: identityAbi,
+            functionName: 'tokenOfOwnerByIndex',
+            args: [getAddress(wallet), i],
+          })
+          .then((t) => t as bigint)
+          .catch(() => null),
+      ),
+    )
+    let oldest: bigint | null = null
+    for (const t of tokens) {
+      if (t === null) continue
+      if (oldest === null || t < oldest) oldest = t
+    }
+    const value = oldest === null ? null : oldest.toString()
+    onChainCache.set(key, { value, expires: Date.now() + ON_CHAIN_TTL_MS })
+    return value
   } catch (err) {
     console.warn(`[checkOnChainIdentity] failed for ${wallet}:`, err instanceof Error ? err.message : String(err))
   }
   return null
+}
+
+/**
+ * Verify that the given tokenId is currently owned by `wallet` on chain.
+ * Returns true if owner matches, false if the wallet no longer owns it
+ * (sold/transferred) OR the cached tokenId belongs to a different wallet
+ * (the user switched wallets and we still have the old wallet's tokenId
+ * cached in users.identity_token_id).
+ *
+ * Used by /api/me to invalidate stale DB cache so the pill never shows
+ * "TOKEN #X" when the active wallet doesn't actually own X.
+ */
+export async function verifyTokenOwnership(
+  tokenId: string,
+  wallet: string,
+): Promise<boolean> {
+  if (!IDENTITY_REGISTRY) return false
+  try {
+    const owner = await publicClient.readContract({
+      address: IDENTITY_REGISTRY,
+      abi: identityAbi,
+      functionName: 'ownerOf',
+      args: [BigInt(tokenId)],
+    })
+    return owner.toLowerCase() === getAddress(wallet).toLowerCase()
+  } catch (err) {
+    // Token doesn't exist or RPC failure — treat as not-owned so the
+    // caller clears the stale cache. Safer than trusting cached data.
+    console.warn(
+      `[verifyTokenOwnership] ${tokenId}@${wallet} check failed:`,
+      err instanceof Error ? err.message : String(err),
+    )
+    return false
+  }
 }
 

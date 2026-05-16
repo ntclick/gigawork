@@ -19,39 +19,25 @@
  * done. Each step's failure leaves DB in a re-resumable state — next call
  * to post() will pick up where it left off.
  */
-import { useSendTransaction, useWallets } from '@privy-io/react-auth'
+import { usePrivy, useSendTransaction } from '@privy-io/react-auth'
+
+import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { useCallback, useState } from 'react'
-import { createWalletClient, custom, defineChain, type Hex } from 'viem'
+import { createPublicClient, createWalletClient, custom, http, type Hex } from 'viem'
 
-const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002')
-const ARC_RPC_URLS = [
-  'https://rpc.testnet.arc.network',
-  process.env.NEXT_PUBLIC_ARC_RPC,
-  'https://rpc.drpc.testnet.arc.network',
-].filter((url, index, arr): url is string => !!url && arr.indexOf(url) === index)
-// Arc Testnet RPC propagation lag: a tx signed via the user's wallet can
-// take 20-40s to appear in the public RPC's mempool view even though the
-// wallet has already broadcast it. The previous threshold of 6 polls (15s)
-// was tripping aggressive "create_tx_not_found" resets that wiped the
-// persisted tx hash and forced the user to re-sign — Privy then often
-// rejected the second popup as rapid back-to-back signs.
-const POST_CREATE_POLL_ATTEMPTS = 36          // 36 * 2.5s = 90s total
-const POST_CREATE_POLL_INTERVAL_MS = 2_500
-const POST_CREATE_RESET_MISSING_AFTER_POLLS = 24  // only declare missing after 60s+
+// Custom arcTestnet (USDC native gas, NOT ETH) — viem/chains version is
+// wrong about nativeCurrency and breaks external wallet gas estimation.
+// See lib/chain/arcTestnet.ts + AGENTS.md §1.
+import { ARC_CHAIN_ID, arcTestnet } from '@/lib/chain/arcTestnet'
 
-const arcTestnet = defineChain({
-  id: ARC_CHAIN_ID,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: ARC_RPC_URLS } },
-  blockExplorers: {
-    default: {
-      name: 'ArcScan',
-      url: process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app',
-    },
-  },
-  testnet: true,
-})
+const ARC_RPC_URL =
+  process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'
+
+// Server-side post-create polling window. Arc Testnet RPC propagation
+// lag can run 60-90s, so we wait up to 120s before giving up.
+const POST_CREATE_POLL_ATTEMPTS = 80          // 80 * 1.0s = 80s total (faster polls)
+const POST_CREATE_POLL_INTERVAL_MS = 1_000
+const POST_CREATE_RESET_MISSING_AFTER_POLLS = 44  // only declare missing after 110s (8s buffer before total timeout)
 
 export type EscrowStep =
   | 'idle'
@@ -97,7 +83,8 @@ type PostCreateResponse = {
 }
 
 export function useEscrowPost(): UseEscrowPostReturn {
-  const { wallets } = useWallets()
+  const activeWallet = useActiveWallet()
+  const { user: privyUser } = usePrivy()
   const { sendTransaction: privySendTransaction } = useSendTransaction()
   const [step, setStep] = useState<EscrowStep>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -117,7 +104,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
       setResult(null)
       setTxHashes({})
 
-      const wallet = wallets[0]
+      const wallet = activeWallet
       if (!wallet) {
         setStep('error')
         setError('No wallet connected')
@@ -129,6 +116,27 @@ export function useEscrowPost(): UseEscrowPostReturn {
         connectorType: (wallet as { connectorType?: string }).connectorType,
         chainId: (wallet as { chainId?: string }).chainId,
       })
+
+      // Pre-sync cookie to the wallet we're about to sign with. WalletPill
+      // also does this on render, but its useEffect can lag behind a fresh
+      // page mount or a recent account switch — escrow auto-fires 600ms
+      // after mount, which is faster than the typical Privy hydrate cycle.
+      // Sending privyId (stable DID from usePrivy) ensures the server
+      // resolves to the right user row and bumps user.wallet so the
+      // createJob signer check passes. Idempotent: same cookie → no-op.
+      try {
+        const privyId = privyUser?.id
+        await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            wallet: wallet.address.toLowerCase(),
+            ...(privyId ? { privyId } : {}),
+          }),
+        })
+      } catch (e) {
+        console.warn('[escrow] pre-sync auth failed (tolerating)', e)
+      }
 
       try {
         // Single attempt. Earlier code retried up to 3 times within the
@@ -190,19 +198,21 @@ export function useEscrowPost(): UseEscrowPostReturn {
           throw new Error('prepare returned incomplete bundle')
         }
 
-        // Detect wallet kind. Privy embedded wallet (login via email/social,
-        // walletClientType === 'privy') has a known viem-bridge bug where
-        // `walletClient.sendTransaction` through the proxy provider returns
-        // UserRejectedRequestError even when the user clicks Sign (the popup
-        // closes before the SDK relays the result back). The native
-        // `useSendTransaction` hook from @privy-io/react-auth avoids the
-        // proxy entirely and works reliably for embedded wallets.
+        // Per AGENTS.md canonical pattern:
+        //  - Embedded (Privy email/social) → useSendTransaction hook. The
+        //    viem-bridge has a known UserRejectedRequestError bug when
+        //    sending through a custom(provider) transport for embedded
+        //    wallets, so we go through Privy's native hook instead.
+        //  - External (OKX, MetaMask, Rabby…) → viem walletClient with
+        //    custom(provider) transport. Chain is set on the CLIENT, NOT
+        //    on the tx params — passing `chain` into sendTransaction
+        //    triggers a redundant wallet_switchEthereumChain that OKX
+        //    silently fails. Gas/fees are auto-estimated by viem+wallet,
+        //    matching scripts/onchain/full-flow-8183.ts which also passes
+        //    no explicit gas.
         const walletClientType = (wallet as { walletClientType?: string }).walletClientType
         const isEmbedded = walletClientType === 'privy'
 
-        // Only attempt switchChain for external wallets — embedded wallets
-        // accept chainId per tx via the Privy hook and don't need a separate
-        // switch step.
         if (!isEmbedded) {
           try {
             await wallet.switchChain(ARC_CHAIN_ID)
@@ -215,27 +225,69 @@ export function useEscrowPost(): UseEscrowPostReturn {
         const provider = await wallet.getEthereumProvider()
         const userAddr = wallet.address as `0x${string}`
 
-        // Build viem walletClient for the external-wallet path. Embedded
-        // path bypasses this and uses privySendTransaction directly.
-        const walletClient = isEmbedded
+        const externalWalletClient = isEmbedded
           ? null
           : createWalletClient({ chain: arcTestnet, transport: custom(provider) })
 
-        // Helper: pick the right sign path per wallet kind.
+        // PublicClient for explicit gas + fee estimation via Arc RPC.
+        // External wallets on a custom chain with non-ETH native currency
+        // (Arc → USDC) tend to estimate fee = 0 if we don't override.
+        // We fetch maxFeePerGas + maxPriorityFeePerGas from the chain RPC
+        // directly so the tx broadcast carries valid fee params and gets
+        // included instead of stuck-pending. AGENTS.md §4.
+        const estimateClient = createPublicClient({
+          chain: arcTestnet,
+          transport: http(ARC_RPC_URL, { batch: false }),
+        })
+
         const signTx = async (args: { to: `0x${string}`; data: Hex }): Promise<Hex> => {
+          console.log('[escrow] signTx →', { to: args.to, embedded: isEmbedded })
+
+          // Embedded — Privy hook owns build+sign+broadcast.
           if (isEmbedded) {
             const result = await privySendTransaction(
               { to: args.to, data: args.data, chainId: ARC_CHAIN_ID },
               { address: userAddr },
             )
+            console.log('[escrow] signTx ← hash', result.hash)
             return result.hash
           }
-          return (await walletClient!.sendTransaction({
+
+          // External — fetch gas + fees from Arc RPC, then pass tường minh.
+          // NO `chain` in tx params (would trigger wallet_switchEthereumChain).
+          const [gas, fees] = await Promise.all([
+            estimateClient
+              .estimateGas({ account: userAddr, to: args.to, data: args.data })
+              .catch((err) => {
+                console.warn('[escrow] estimateGas failed, using fallback', err)
+                return 500_000n
+              }),
+            estimateClient
+              .estimateFeesPerGas()
+              .catch((err) => {
+                console.warn('[escrow] estimateFeesPerGas failed, wallet will default', err)
+                return null
+              }),
+          ])
+          console.log('[escrow] gas params', {
+            gas: gas.toString(),
+            maxFeePerGas: fees?.maxFeePerGas?.toString(),
+            maxPriorityFeePerGas: fees?.maxPriorityFeePerGas?.toString(),
+          })
+
+          const client = externalWalletClient!
+          const hash = (await client.sendTransaction({
             account: userAddr,
             to: args.to,
             data: args.data,
-            chain: null,
-          })) as Hex
+            gas,
+            ...(fees?.maxFeePerGas ? { maxFeePerGas: fees.maxFeePerGas } : {}),
+            ...(fees?.maxPriorityFeePerGas
+              ? { maxPriorityFeePerGas: fees.maxPriorityFeePerGas }
+              : {}),
+          } as Parameters<typeof client.sendTransaction>[0])) as Hex
+          console.log('[escrow] signTx ← hash', hash)
+          return hash
         }
 
         // ── 2. user signs createJob, or resume existing create tx ─────
@@ -250,6 +302,23 @@ export function useEscrowPost(): UseEscrowPostReturn {
           createTxFresh = true
           setTxHashes((s) => ({ ...s, create: createTx }))
           await trackEscrowTx(workflowId, { createJobTxHash: createTx })
+
+          // Frontend waits for the receipt FIRST — same pattern as the
+          // scripts/onchain reference script. The wallet broadcasts via
+          // its own RPC; if we hand the hash to the server before it's
+          // mined, the server's RPC may not have seen it yet (propagation
+          // lag across nodes). Polling via the same Arc public RPC pool
+          // here means viem keeps retrying until the receipt appears on
+          // any of the load-balanced nodes — the same mechanism that
+          // makes the reference script reliable.
+          try {
+            await waitForCreateReceipt(createTx)
+          } catch (e) {
+            // If the local wait times out, fall through to the server poll
+            // loop anyway — it has its own multi-RPC fallback and a longer
+            // window. Log so we can diagnose stuck-tx vs. propagation lag.
+            console.warn('[escrow] frontend waitForTransactionReceipt failed, falling back to server poll', e)
+          }
         }
 
         // ── 3. backend provider signs setBudget after createJob lands ──
@@ -373,7 +442,7 @@ export function useEscrowPost(): UseEscrowPostReturn {
         }
       }
     },
-    [wallets, privySendTransaction],
+    [activeWallet, privySendTransaction, privyUser?.id],
   )
 
   return { step, error, result, txHashes, reset, post }
@@ -405,6 +474,27 @@ function normalizeEscrowError(detail: string, hint?: string, txHash?: string) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Wait for a tx receipt — exact pattern from scripts/onchain/full-flow-8183.ts:
+ *   const pub = createPublicClient({ chain: arcTestnet, transport: http() })
+ *   const rcpt = await pub.waitForTransactionReceipt({ hash })
+ *
+ * `transport: http()` with no URL uses arcTestnet's default rpcUrls (the
+ * three official Arc public RPCs), which viem load-balances internally.
+ * waitForTransactionReceipt polls until the receipt appears or times out.
+ */
+async function waitForCreateReceipt(hash: Hex): Promise<void> {
+  const pub = createPublicClient({ chain: arcTestnet, transport: http() })
+  const rcpt = await pub.waitForTransactionReceipt({
+    hash,
+    timeout: 60_000,
+    pollingInterval: 1_000,
+  })
+  if (rcpt.status !== 'success') {
+    throw new Error(`createJob tx ${hash} reverted`)
+  }
 }
 
 /**

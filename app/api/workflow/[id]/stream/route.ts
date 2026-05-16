@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { type UIMessage } from 'ai'
 
 import { streamBrain } from '@/lib/ai/brain'
+import { failWorkflow } from '@/lib/ai/finalizeWorkflow'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
@@ -98,7 +99,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
         toolName: 'stream_error',
         toolPayload: { error: msg, stack },
       })
-      await db.update(workflows).set({ status: 'failed' }).where(eq(workflows.id, id))
+      await failWorkflow(id, user.id)
     } catch (dbErr) {
       console.error('[/api/workflow/:id/stream] also failed to persist error', dbErr)
     }

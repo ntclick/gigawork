@@ -12,8 +12,17 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { skills } from '@/lib/db/schema'
 
+import { privateKeyToAccount } from 'viem/accounts'
+
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://gigawork.xyz'
-const OWNER_WALLET = '0x4c77584f57d385e0f2996bd4ff178c93dff034c0'
+// Skill metadata.owner_wallet — derive from ADMIN_PRIVATE_KEY so the
+// off-chain manifest agrees with on-chain `ownerOf(agentTokenId)` after
+// `mint-agents.ts` runs (admin calls register() → mints to msg.sender =
+// admin). The previous hardcoded `0x4c7758...` was a leftover dev
+// wallet — see transfer-agents.ts header for the cleanup story.
+const ADMIN_PK = process.env.ADMIN_PRIVATE_KEY as `0x${string}` | undefined
+const OWNER_WALLET = (process.env.SKILL_OWNER_WALLET ??
+  (ADMIN_PK ? privateKeyToAccount(ADMIN_PK).address : '0x0000000000000000000000000000000000000000')).toLowerCase()
 const COST = 8
 
 type Manifest = Record<string, unknown>

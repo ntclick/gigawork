@@ -16,17 +16,9 @@ import { getCurrentUser, AuthRequiredError } from '@/lib/auth/session'
 export const dynamic = 'force-dynamic'
 
 // ── Arc Testnet chain definition ────────────────────────────────
-const arcTestnet = {
-  id: 1637450,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'] },
-  },
-  blockExplorers: {
-    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
-  },
-} as const
+// Use shared definition (chain id 5042002, USDC native gas).
+// See lib/chain/arcTestnet.ts + AGENTS.md §1.
+import { arcTestnet } from '@/lib/chain/arcTestnet'
 
 // ── Contract addresses on Arc Testnet ───────────────────────────
 const CONTRACTS = {

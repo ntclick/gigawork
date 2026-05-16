@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
-import { checkOnChainIdentity } from '@/lib/chain/identity'
+import { checkOnChainIdentity, verifyTokenOwnership } from '@/lib/chain/identity'
+import { grantSignupBonus } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -11,11 +12,36 @@ export async function GET() {
   try {
     let u = await getCurrentUser()
 
-    // Auto-sync external mints if we don't have a token recorded yet
+    // Two-step identity validation against the user's CURRENT wallet:
+    //
+    //  1. If DB has a cached identityTokenId, verify the wallet still
+    //     owns it on chain. Stale cache is the common bug pattern when
+    //     the user switches wallets — the previous wallet's tokenId
+    //     remains in the row, the pill renders "TOKEN #X" but the
+    //     active wallet doesn't actually own X. We clear in that case.
+    //
+    //  2. If after step 1 there's no cached token (or never was),
+    //     query the chain for any token the wallet owns. If found,
+    //     persist it and award the signup bonus (idempotent — won't
+    //     re-credit on subsequent /api/me calls thanks to the
+    //     signup_grant ledger check inside grantSignupBonus).
+    //
+    // This is the canonical "always check by user's own wallet" rule.
+    if (u.identityTokenId) {
+      const stillOwns = await verifyTokenOwnership(u.identityTokenId, u.wallet)
+      if (!stillOwns) {
+        const [cleared] = await db
+          .update(users)
+          .set({ identityTokenId: null, identityTxHash: null, identityMintedAt: null })
+          .where(eq(users.id, u.id))
+          .returning()
+        if (cleared) u = cleared
+      }
+    }
+
     if (!u.identityTokenId) {
       const onChainTokenId = await checkOnChainIdentity(u.wallet)
       if (onChainTokenId) {
-        // Found one on-chain! Update DB silently
         const [updated] = await db
           .update(users)
           .set({ identityTokenId: onChainTokenId })
@@ -23,6 +49,11 @@ export async function GET() {
           .returning()
         if (updated) {
           u = updated
+          try {
+            u = await grantSignupBonus(u.id)
+          } catch (e) {
+            console.warn('[/api/me] signup grant failed', e instanceof Error ? e.message : e)
+          }
         }
       }
     }

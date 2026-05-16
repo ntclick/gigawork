@@ -1,9 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useLogin, usePrivy, useWallets } from '@privy-io/react-auth'
+import { useEffect, useRef, useState } from 'react'
+import { useLogin, usePrivy } from '@privy-io/react-auth'
+
+import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { BadgeCheck, ExternalLink, Loader2, ShieldCheck, Wallet } from 'lucide-react'
-import { createWalletClient, custom, encodeFunctionData, parseAbi, type Hex } from 'viem'
+import { createWalletClient, custom, type Hex } from 'viem'
+
+import { arcTestnet } from '@/lib/chain/arcTestnet'
+import {
+  clearIdentityCache,
+  readIdentityCache,
+  writeIdentityCache,
+} from '@/lib/identityCache'
 
 type Identity = {
   hasIdentity: boolean
@@ -17,10 +26,6 @@ const IDENTITY_REGISTRY = (process.env.NEXT_PUBLIC_IDENTITY_REGISTRY ??
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 const ARC_CHAIN_ID = 5042002
 
-const identityAbi = parseAbi([
-  'function register(string agentURI) external returns (uint256 agentId)',
-])
-
 export function IdentityGate({
   children,
   mode = 'block',
@@ -31,20 +36,37 @@ export function IdentityGate({
    *  home page where templates should stay browsable while the user mints. */
   mode?: 'block' | 'banner'
 }) {
-  const { ready, authenticated } = usePrivy()
+  const { ready, authenticated, user: privyUser } = usePrivy()
   const { login } = useLogin()
-  const { wallets } = useWallets()
+  const activeWallet = useActiveWallet()
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [checked, setChecked] = useState(false) // true once initial /api/me probe finishes
   const [step, setStep] = useState<'idle' | 'signing' | 'confirming'>('idle')
   const [err, setErr] = useState<string | null>(null)
+  const mintingRef = useRef(false)
 
-  const refresh = async (): Promise<'ok' | 'unauth' | 'error'> => {
+  const walletAddr = activeWallet?.address?.toLowerCase() ?? null
+
+  // Track the wallet we last fetched against, so a swap (OKX account flip,
+  // Privy logout→login with a different wallet) triggers a fresh /api/me
+  // probe instead of trusting the prior wallet's cache.
+  const lastFetchedWalletRef = useRef<string | null>(null)
+
+  const refresh = async (wallet: string | null): Promise<'ok' | 'unauth' | 'error'> => {
     try {
       const r = await fetch('/api/me', { cache: 'no-store' })
       if (r.ok) {
         const j = await r.json()
-        setIdentity(j.identity)
+        const id = j.identity as Identity | null
+        setIdentity(id)
+        if (wallet && id) {
+          writeIdentityCache(wallet, {
+            hasIdentity: id.hasIdentity,
+            tokenId: id.tokenId,
+            txHash: id.txHash,
+            mintedAt: id.mintedAt,
+          })
+        }
         return 'ok'
       }
       if (r.status === 401) return 'unauth'
@@ -56,48 +78,76 @@ export function IdentityGate({
 
   // Re-run /api/me on credit/identity changes after we have an identity row.
   useEffect(() => {
-    const onBust = () => refresh()
+    const onBust = () => refresh(walletAddr)
     window.addEventListener('gw:credits-changed', onBust)
     window.addEventListener('gw:identity-changed', onBust)
     return () => {
       window.removeEventListener('gw:credits-changed', onBust)
       window.removeEventListener('gw:identity-changed', onBust)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletAddr])
 
-  // Initial load — probe /api/me first. In DEV_WALLET mode the server has a
-  // valid session even though Privy `authenticated` is false, so we must check
-  // the real session before falling back to Privy's auth state.
+  // Initial load — cache-first, network fallback.
   //
-  // For production Privy flow: if /api/me returns 401 initially (cookie race
-  // while WalletPill POSTs /api/auth/login), retry up to ~3.5s.
+  // Order:
+  //  1. If we have a cached entry for the active wallet, render it
+  //     synchronously — no spinner, no /api/me roundtrip. We trust the
+  //     cache until the user explicitly logs out, mints, or switches to
+  //     a different wallet (which is keyed separately, so cache misses).
+  //  2. Otherwise hit /api/me. With Privy cookie race, retry up to ~3.5s.
+  //  3. On Privy logout (authenticated flips false AND no session) clear
+  //     ALL cached entries — the next user on this device starts clean.
   useEffect(() => {
     if (!ready) return
+
+    // Privy says logged out → wipe cache + show connect prompt.
+    if (!authenticated && !walletAddr) {
+      clearIdentityCache()
+      setIdentity(null)
+      setChecked(true)
+      lastFetchedWalletRef.current = null
+      return
+    }
+
+    // Cache hit for the current wallet — render instantly.
+    const cached = readIdentityCache(walletAddr)
+    if (cached && lastFetchedWalletRef.current !== walletAddr) {
+      setIdentity({
+        hasIdentity: cached.hasIdentity,
+        tokenId: cached.tokenId,
+        txHash: cached.txHash,
+        mintedAt: cached.mintedAt,
+      })
+      setChecked(true)
+      lastFetchedWalletRef.current = walletAddr
+      return
+    }
+
+    // Already fetched for this wallet on this mount — don't refetch.
+    if (lastFetchedWalletRef.current === walletAddr && checked) return
+
     let cancelled = false
     let attempts = 0
     const tick = async () => {
       if (cancelled) return
-      const res = await refresh()
+      const res = await refresh(walletAddr)
       if (cancelled) return
       if (res === 'ok') {
         setChecked(true)
-        return // DEV_WALLET or real session — identity set
+        lastFetchedWalletRef.current = walletAddr
+        return
       }
-      // No session from server — if Privy also says not authenticated, stop.
       if (!authenticated) {
         setIdentity(null)
         setChecked(true)
         return
       }
-      // Privy says authenticated but /api/me isn't ready yet (cookie race).
       attempts++
       if (attempts < 5) {
         setTimeout(tick, 700)
         return
       }
-      // Gave up after ~3.5s — assume no identity yet so the mint button shows.
-      // The mint button itself will hit /api/identity/mint which is auth-gated,
-      // so a misclassification can't let an unauthenticated user mint.
       setIdentity({ hasIdentity: false, tokenId: null, txHash: null, mintedAt: null })
       setChecked(true)
     }
@@ -105,39 +155,124 @@ export function IdentityGate({
     return () => {
       cancelled = true
     }
-  }, [ready, authenticated])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, authenticated, walletAddr])
 
   const mint = async () => {
+    if (mintingRef.current) return // prevent double-call from rapid clicks
+    mintingRef.current = true
     setErr(null)
     try {
-      const wallet = wallets[0]
+      const wallet = activeWallet
       if (!wallet) throw new Error('No wallet connected')
+
+      // 0. Pre-sync cookie to the wallet that's about to sign. WalletPill
+      //    also POSTs /api/auth/login on render, but its useEffect can
+      //    lag when the user just switched accounts in their extension.
+      //    Without this sync, /api/identity/confirm sees stale cookie
+      //    wallet and throws "wrong_signer: expected from=A, got from=B".
+      try {
+        await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            wallet: wallet.address.toLowerCase(),
+            ...(privyUser?.id ? { privyId: privyUser.id } : {}),
+          }),
+        })
+      } catch (e) {
+        console.warn('[identity-mint] pre-sync auth failed (tolerating)', e)
+      }
+
+      // 1. Server returns calldata + contract address. We do NOT call
+      //    /api/identity/mint — that's an admin-signed path which mints
+      //    to the admin's address (because the contract uses msg.sender
+      //    as the recipient). That route leaves the user's wallet with
+      //    NO NFT, which then trips verifyTokenOwnership on every
+      //    subsequent /api/me and re-prompts mint forever. The user-sign
+      //    flow below ensures msg.sender = user.wallet, so the NFT
+      //    actually lands in their wallet.
+      const prepRes = await fetch('/api/identity/prepare', { method: 'POST' })
+      const prep = await prepRes.json()
+      if (!prepRes.ok) {
+        throw new Error(prep.detail || prep.error || `prepare failed (${prepRes.status})`)
+      }
+      // Server short-circuited because the row already has a token id.
+      if (prep.already) {
+        const id: Identity = {
+          hasIdentity: true,
+          tokenId: prep.tokenId,
+          txHash: prep.txHash,
+          mintedAt: new Date().toISOString(),
+        }
+        setIdentity(id)
+        if (walletAddr) writeIdentityCache(walletAddr, id)
+        window.dispatchEvent(new CustomEvent('gw:identity-changed'))
+        return
+      }
+
+      setStep('signing')
+
+      // 2. Ensure wallet is on Arc Testnet before signing — OKX silently
+      //    rejects when on the wrong chain. Privy embedded wallets are
+      //    already pinned; switchChain is cheap & idempotent there.
+      try {
+        await wallet.switchChain(ARC_CHAIN_ID)
+      } catch (e) {
+        console.warn('[identity/mint] switchChain failed (tolerating)', e)
+      }
+
+      const provider = await wallet.getEthereumProvider()
+      const userAddr = wallet.address as `0x${string}`
+      const client = createWalletClient({
+        chain: arcTestnet,
+        transport: custom(provider),
+      })
+      console.log('[identity-mint] signing tx', { userAddr, to: prep.contract })
+      const txHash = (await client.sendTransaction({
+        account: userAddr,
+        to: prep.contract as `0x${string}`,
+        data: prep.calldata as Hex,
+      } as Parameters<typeof client.sendTransaction>[0])) as Hex
+      console.log('[identity-mint] tx broadcast', txHash)
 
       setStep('confirming')
 
-      const res = await fetch('/api/identity/mint', {
+      // 3. Server verifies tx (success, signer == user.wallet, owner ==
+      //    user.wallet) and writes the DB row + grants signup bonus.
+      const confirmRes = await fetch('/api/identity/confirm', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txHash }),
       })
-      const data = await res.json()
-      
-      if (!res.ok) {
-        throw new Error(data.detail || data.error || `mint failed (${res.status})`)
+      const data = await confirmRes.json()
+      console.log('[identity-mint] confirm response', { status: confirmRes.status, data, txHash })
+      if (!confirmRes.ok) {
+        throw new Error(data.detail || data.error || `confirm failed (${confirmRes.status})`)
       }
 
-      setIdentity({
+      const id: Identity = {
         hasIdentity: true,
         tokenId: data.tokenId,
         txHash: data.txHash,
         mintedAt: new Date().toISOString(),
-      })
+      }
+      setIdentity(id)
+      if (walletAddr) writeIdentityCache(walletAddr, id)
       window.dispatchEvent(new CustomEvent('gw:identity-changed'))
       window.dispatchEvent(new CustomEvent('gw:credits-changed'))
-      refresh().catch(() => {})
+      refresh(walletAddr).catch(() => {})
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      setErr(msg)
+      // EIP-1193 user reject — show a friendlier message
+      if (/user rejected|denied/i.test(msg)) {
+        setErr('Bạn đã huỷ ký giao dịch — click Mint để thử lại.')
+      } else {
+        setErr(msg)
+      }
     } finally {
       setStep('idle')
+      mintingRef.current = false
     }
   }
 

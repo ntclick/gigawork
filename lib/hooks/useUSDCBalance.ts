@@ -9,20 +9,14 @@
  * RPC is unavailable so the UI never shows a broken state.
  */
 import { useEffect, useState } from 'react'
-import { createPublicClient, defineChain, http, type Address } from 'viem'
+import { createPublicClient, http, type Address } from 'viem'
+
+import { arcTestnet as arcChain } from '@/lib/chain/arcTestnet'
 
 const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
-const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002')
 const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as Address
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')
-
-const arcChain = defineChain({
-  id: ARC_CHAIN_ID,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [ARC_RPC] } },
-})
 
 const erc20Abi = [
   {

@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
+
+import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
@@ -19,6 +21,7 @@ import {
 
 import { useTopup, type TopupStep } from '@/lib/hooks/useTopup'
 import { useUSDCBalance } from '@/lib/hooks/useUSDCBalance'
+import { clearIdentityCache } from '@/lib/identityCache'
 
 type Me = {
   id: string
@@ -37,6 +40,13 @@ function shortAddr(addr: string) {
 
 export function WalletPill() {
   const { ready, authenticated, user } = usePrivy()
+  // CRITICAL: use the SAME wallet resolution rule as every signing call
+  // site (mint, escrow, validation). useActiveWallet prefers an external
+  // wallet (OKX/MetaMask) over the auto-created Privy embedded wallet —
+  // if the user explicitly linked an external one, they want NFTs and
+  // signatures to belong to it. The cookie + DB user.wallet must track
+  // the same address or signer-verification server-side fails.
+  const wallet = useActiveWallet()
   const { login } = useLogin()
   const { logout } = useLogout()
 
@@ -53,27 +63,54 @@ export function WalletPill() {
     }
   }
 
-  // Sync Privy wallet to server-side session cookie. Runs whenever the
-  // wallet address changes — cheap, idempotent.
-  const syncedAddr = useRef<string | null>(null)
+  // Sync Privy session to server-side cookies. Sends BOTH the Privy DID
+  // (stable across wallet switches) and the ACTIVE wallet address.
+  //
+  // Source of truth: wallets[0].address — NOT user.wallet.address.
+  // The former tracks the OKX/MetaMask account currently selected in the
+  // extension; the latter is just the first wallet linked to the Privy
+  // account and never updates on account switch. useEscrowPost signs
+  // with wallets[0], so the cookie must match or signer-verification
+  // server-side throws "createJob signer mismatch".
+  //
+  // We key the dedup on `did|addr` so either dimension changing triggers
+  // a fresh sync. Idempotent: same key → no re-fetch.
+  const activeAddr = wallet?.address?.toLowerCase() ?? null
+  const syncedKey = useRef<string | null>(null)
   useEffect(() => {
     if (!ready) return
-    const addr = user?.wallet?.address?.toLowerCase() ?? null
-    if (addr && addr !== syncedAddr.current) {
-      syncedAddr.current = addr
+    const did = user?.id ?? null
+    const key = did && activeAddr ? `${did}|${activeAddr}` : null
+    console.log('[WalletPill] sync check', { ready, authenticated, did, activeAddr, key, prev: syncedKey.current })
+    if (key && key !== syncedKey.current) {
+      const prev = syncedKey.current
+      syncedKey.current = key
+      console.log('[WalletPill] POST /api/auth/login', { wallet: activeAddr, privyId: did })
+      // Optimistic UX: when the wallet actually changes (not just first
+      // sync), clear `me` so the pill stops showing the previous
+      // wallet's NFT/credits until the refresh resolves. Without this,
+      // users see token #X from their old wallet for ~1s after switch.
+      if (prev) setMe(null)
       fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet: addr }),
+        body: JSON.stringify({ wallet: activeAddr, privyId: did }),
       })
-        .then(() => refresh())
-        .catch(() => {})
+        .then(() => {
+          refresh()
+          // Notify IdentityGate / other consumers that the active wallet
+          // (and therefore the resolved user + NFT) has changed. Without
+          // this, IdentityGate keeps showing the previous wallet's mint
+          // status until the next 'gw:credits-changed' tick.
+          window.dispatchEvent(new CustomEvent('gw:identity-changed'))
+        })
+        .catch((e) => console.warn('[WalletPill] login failed', e))
     }
-    if (!authenticated && syncedAddr.current) {
-      syncedAddr.current = null
+    if (!authenticated && syncedKey.current) {
+      syncedKey.current = null
       fetch('/api/auth/logout', { method: 'POST' }).then(() => refresh())
     }
-  }, [ready, authenticated, user?.wallet?.address])
+  }, [ready, authenticated, user?.id, activeAddr])
 
   useEffect(() => {
     refresh()
@@ -113,7 +150,10 @@ export function WalletPill() {
   const credits = me?.credits ?? 0
   const usdEquiv = (credits / 100).toFixed(2)
   const tier = credits > 1000 ? 'Pro' : 'Free'
-  const addr = user?.wallet?.address ?? ''
+  // Display the same wallet we sync to the server (active OKX account),
+  // not user.wallet (first linked), so the pill matches what's actually
+  // signing tx.
+  const addr = wallet?.address ?? user?.wallet?.address ?? ''
 
   const verified = me?.identity?.hasIdentity ?? false
 
@@ -181,6 +221,7 @@ export function WalletPill() {
             </button>
             <button
               onClick={() => {
+                clearIdentityCache()
                 logout()
                 setMenuOpen(false)
               }}

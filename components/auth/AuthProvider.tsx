@@ -1,25 +1,15 @@
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
-import { defineChain } from 'viem'
+
+// Use the shared arcTestnet — has USDC as nativeCurrency, which is what
+// external wallets (OKX, MetaMask) need to estimate gas correctly.
+// Privy passes this chain config to the wallet popup, so it MUST match.
+// See lib/chain/arcTestnet.ts + AGENTS.md §1.
+import { arcTestnet } from '@/lib/chain/arcTestnet'
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID
 const CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID
-const ARC_RPC_URLS = [
-  'https://rpc.testnet.arc.network',
-  process.env.NEXT_PUBLIC_ARC_RPC,
-  'https://rpc.drpc.testnet.arc.network',
-].filter((url, index, arr): url is string => !!url && arr.indexOf(url) === index)
-const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
-
-const arcTestnet = defineChain({
-  id: 5042002,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: ARC_RPC_URLS } },
-  blockExplorers: { default: { name: 'ArcScan', url: EXPLORER } },
-  testnet: true,
-})
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   if (!APP_ID) return <>{children}</>
