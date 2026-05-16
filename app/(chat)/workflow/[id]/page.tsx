@@ -247,18 +247,12 @@ export default function WorkflowPage() {
       })
   }, [snapshot, id, validate])
 
-  // Auto-fire: when the page settles and escrow is still needed, kick off
-  // the funding flow automatically. Guard with autoEscrowRef so we only
-  // fire once per workflow id. A 600ms delay lets the page render and the
-  // Privy session hydrate before the first popup appears.
-  useEffect(() => {
-    if (!needsEscrow || escrow.step !== 'idle' || autoEscrowRef.current === id) return
-    autoEscrowRef.current = id
-    const timer = setTimeout(() => {
-      runEscrowFunding().catch(() => {})
-    }, 600)
-    return () => clearTimeout(timer)
-  }, [needsEscrow, escrow.step, id, runEscrowFunding])
+  // Auto-fire disabled — popups were jumping on the user before the
+  // Privy wallets[] had hydrated and before the user had even seen the
+  // page. The funding overlay below still renders when needsEscrow is
+  // true; the user clicks the explicit "Continue funding" button to
+  // open the wallet popup on their schedule.
+  void autoEscrowRef // ref kept so existing reset logic compiles
 
   return (
     <>
