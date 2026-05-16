@@ -258,6 +258,55 @@ export default function WorkflowPage() {
       })
   }, [snapshot, id, validate])
 
+  // Auto-resume confirm when the row is stuck at status='funding' with
+  // erc8183.fundTx already persisted. Happens when the user closed the
+  // page (or refreshed) AFTER signing fund but BEFORE useEscrowPost
+  // step 6 (/confirm) ran. /confirm is idempotent — it re-verifies
+  // approve+fund tx and flips status to 'planning', which unblocks
+  // Hermes orchestrator + downstream submit/complete/reputation tx.
+  // No wallet popup involved.
+  const resumeConfirmRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      !snapshot ||
+      resumeConfirmRef.current === id ||
+      snapshot.workflow?.status !== 'funding' ||
+      !snapshot.workflow.erc8183?.fundTx
+    ) {
+      return
+    }
+    resumeConfirmRef.current = id
+    const approveTx = snapshot.workflow.erc8183.approveTx ?? '0x0'
+    fetch('/api/workflow/escrow/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workflowId: id,
+        approveTxHash: approveTx,
+        fundTxHash: snapshot.workflow.erc8183.fundTx,
+      }),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}))
+          console.warn('[escrow] auto-resume confirm failed', data)
+          return
+        }
+        // Pull fresh snapshot so the UI flips out of 'funding' overlay
+        // and Hermes auto-start (status='planning') runs.
+        const fresh = await fetch(`/api/workflow/${id}/messages`, {
+          cache: 'no-store',
+        })
+        if (fresh.ok) setSnapshot(await fresh.json())
+      })
+      .catch((e) =>
+        console.warn(
+          '[escrow] auto-resume confirm errored',
+          e instanceof Error ? e.message : e,
+        ),
+      )
+  }, [snapshot, id])
+
   // Auto-fire disabled — popups were jumping on the user before the
   // Privy wallets[] had hydrated and before the user had even seen the
   // page. The funding overlay below still renders when needsEscrow is
