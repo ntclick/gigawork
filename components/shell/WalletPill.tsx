@@ -43,7 +43,7 @@ function shortAddr(addr: string) {
 }
 
 export function WalletPill() {
-  const { ready, authenticated, user } = usePrivy()
+  const { ready, authenticated, user, linkWallet } = usePrivy()
   // CRITICAL: use the SAME wallet resolution rule as every signing call
   // site (mint, escrow, validation). useActiveWallet prefers an external
   // wallet (OKX/MetaMask) over the auto-created Privy embedded wallet —
@@ -238,7 +238,7 @@ export function WalletPill() {
           {addr ? shortAddr(addr) : 'no wallet'}
         </button>
         {menuOpen && (
-          <div className="gw-fade-in absolute right-0 top-9 z-40 w-44 rounded-md border border-white/10 bg-[#0f131c]/95 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur">
+          <div className="gw-fade-in absolute right-0 top-9 z-40 w-52 rounded-md border border-white/10 bg-[#0f131c]/95 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur">
             <button
               onClick={() => {
                 if (addr) navigator.clipboard.writeText(addr)
@@ -247,6 +247,23 @@ export function WalletPill() {
               className="block w-full rounded px-2 py-1.5 text-left text-xs text-white/75 transition hover:bg-white/5"
             >
               Copy address
+            </button>
+            <button
+              onClick={() => {
+                // Opens Privy's "link a wallet" popup. Privy then adds
+                // the chosen wallet (OKX, MetaMask, …) to wallets[];
+                // useActiveWallet will prefer it on next render.
+                // Clear cache so the new wallet starts with a fresh
+                // /api/me probe instead of inheriting the embedded
+                // wallet's stale entry.
+                clearIdentityCache()
+                linkWallet()
+                setMenuOpen(false)
+              }}
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs text-cyan-200 transition hover:bg-cyan-500/10"
+            >
+              <Plus className="h-3 w-3" />
+              Link external wallet
             </button>
             <button
               onClick={() => {
