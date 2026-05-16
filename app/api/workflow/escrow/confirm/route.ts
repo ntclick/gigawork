@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { ERC8183_USER_CLIENT, verifyApproveAndFund } from '@/lib/chain/agenticCommerce'
+import { publicClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
 
@@ -74,11 +75,30 @@ export async function POST(req: Request) {
     })
   }
 
+  // Canonical signer for THIS job is whoever signed createJob, not
+  // user.wallet (which can be re-bumped by parallel auth-sync calls).
+  // Derive it from the persisted createTx receipt — that hash is
+  // immutable for the life of the workflow row.
+  let canonicalSigner: `0x${string}` = user.wallet.toLowerCase() as `0x${string}`
+  if (wf.erc8183CreateTx) {
+    try {
+      const createTx = await publicClient.getTransaction({
+        hash: wf.erc8183CreateTx as `0x${string}`,
+      })
+      canonicalSigner = createTx.from.toLowerCase() as `0x${string}`
+    } catch (e) {
+      console.warn(
+        '[escrow/confirm] failed to read createTx, falling back to user.wallet',
+        e instanceof Error ? e.message : e,
+      )
+    }
+  }
+
   try {
     await verifyApproveAndFund({
       approveTxHash: parsed.data.approveTxHash as `0x${string}`,
       fundTxHash: parsed.data.fundTxHash as `0x${string}`,
-      expectedClient: user.wallet as `0x${string}`,
+      expectedClient: canonicalSigner,
       expectedJobId: BigInt(wf.erc8183JobId),
     })
 

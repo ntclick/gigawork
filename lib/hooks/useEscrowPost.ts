@@ -138,38 +138,14 @@ export function useEscrowPost(): UseEscrowPostReturn {
         console.warn('[escrow] pre-sync auth failed (tolerating)', e)
       }
 
-      // Verify the active wallet matches the canonical wallet on the
-      // server. When escrow auto-fires before Privy has hydrated the
-      // user's external wallet (OKX) into `wallets[]`, useActiveWallet
-      // can fall back to the embedded one. Signing under the embedded
-      // wallet then trips the createJob signer-mismatch check on the
-      // server (expected = user.wallet from DB, got = embedded address).
-      // Abort cleanly with a message the UI can render — the caller's
-      // catch arm renders a toast and a Retry button.
-      try {
-        const meRes = await fetch('/api/me', { cache: 'no-store' })
-        if (meRes.ok) {
-          const me = (await meRes.json()) as { wallet?: string | null }
-          const expected = me.wallet?.toLowerCase() ?? null
-          const actual = wallet.address.toLowerCase()
-          if (expected && expected !== actual) {
-            setStep('error')
-            const msg =
-              `Wallet mismatch — expected ${expected.slice(0, 6)}…${expected.slice(-4)}` +
-              ` but the active wallet is ${actual.slice(0, 6)}…${actual.slice(-4)}.` +
-              ` Connect/switch to the expected wallet in your extension and retry.`
-            setError(msg)
-            throw new Error(msg)
-          }
-        }
-      } catch (e) {
-        // /api/me failure is non-fatal (we'll let the signer check fail
-        // server-side as before); only the mismatch throw above bails.
-        if (e instanceof Error && e.message.startsWith('Wallet mismatch')) {
-          throw e
-        }
-        console.warn('[escrow] me check failed (tolerating)', e)
-      }
+      // Note: no longer guarding on "wallet matches canonical me.wallet".
+      // The server's post-create now accepts whichever wallet signed
+      // createJob and bumps users.wallet to that signer — matching user
+      // intent "whichever wallet you connect, that wallet pays". Confirm
+      // derives expectedClient from the persisted createTx, so as long
+      // as approve+fund come from the SAME signer as createJob (which
+      // they will, since useEscrowPost captures `wallet` once at the
+      // top of post()), the flow lands cleanly.
 
       try {
         // Single attempt. Earlier code retried up to 3 times within the

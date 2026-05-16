@@ -528,9 +528,16 @@ export function encodeFundForJob(jobId: bigint): Hex {
  */
 export async function setBudgetByAdmin(args: {
   createJobTxHash: Hex
+  /** Hint only — used to log when the active wallet differs from the
+   *  one that actually signed. We DO NOT reject the tx anymore: the
+   *  signer already paid with their own USDC, and forcing signer ==
+   *  user.wallet broke the "whichever wallet you connect, that wallet
+   *  pays" intent when Privy hadn't yet hydrated the user's external
+   *  wallet at sign time. Callers should persist `actualClient` as the
+   *  canonical client for this job and bump users.wallet accordingly. */
   expectedClient: `0x${string}`
   budget: bigint
-}): Promise<{ jobId: bigint; setBudgetTx: Hex }> {
+}): Promise<{ jobId: bigint; setBudgetTx: Hex; actualClient: `0x${string}` }> {
   if (!adminAccount) throw new Error('ADMIN_PRIVATE_KEY not configured')
 
   const receipt = await pollingClient.waitForTransactionReceipt({
@@ -546,17 +553,20 @@ export async function setBudgetByAdmin(args: {
   const jobId = extractJobIdFromReceipt(receipt.logs)
   if (!jobId) throw new Error('JobCreated event missing from createJob receipt')
 
-  // Verify msg.sender of createJob matches expected client.
   const tx = await publicClient.getTransaction({ hash: args.createJobTxHash })
-  if (tx.from.toLowerCase() !== args.expectedClient.toLowerCase()) {
-    throw new Error(`createJob signer mismatch: ${tx.from} != ${args.expectedClient}`)
+  const actualClient = tx.from.toLowerCase() as `0x${string}`
+  if (actualClient !== args.expectedClient.toLowerCase()) {
+    console.warn(
+      `[escrow] createJob signer differs from cookie wallet: signer=${actualClient} cookie=${args.expectedClient}. ` +
+      `Accepting signer as canonical and bumping user.wallet downstream.`,
+    )
   }
 
   // Admin sends setBudget (provider role per Arc reference impl convention).
   const setBudgetData = encodeSetBudget(jobId, args.budget)
   const setBudgetTx = await adminSend(AGENTIC_COMMERCE, setBudgetData)
 
-  return { jobId, setBudgetTx: setBudgetTx.hash }
+  return { jobId, setBudgetTx: setBudgetTx.hash, actualClient }
 }
 
 /**

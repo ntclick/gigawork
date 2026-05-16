@@ -11,7 +11,7 @@ import {
 } from '@/lib/chain/agenticCommerce'
 import { arcTestnet, pollingClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
-import { workflows } from '@/lib/db/schema'
+import { users, workflows } from '@/lib/db/schema'
 
 // Arc Testnet public RPC propagation is uneven — a tx broadcast through
 // one node can take 30-90s to appear on another. Rotate through the same
@@ -224,11 +224,35 @@ export async function POST(req: Request) {
       throw new Error(`createJob tx ${parsed.data.createJobTxHash} reverted`)
     }
 
-    const { jobId, setBudgetTx } = await setBudgetByAdmin({
+    const { jobId, setBudgetTx, actualClient } = await setBudgetByAdmin({
       createJobTxHash: parsed.data.createJobTxHash as `0x${string}`,
       expectedClient: user.wallet as `0x${string}`,
       budget: BigInt(parsed.data.budget),
     })
+
+    // "Whichever wallet you connect, that wallet pays" — if the signer
+    // differs from the cookie wallet (eg user switched accounts in the
+    // extension, or Privy hadn't hydrated their external wallet at
+    // pre-sync time), bump users.wallet to the signer. Downstream
+    // verifyApproveAndFund + /confirm then expect approve+fund tx
+    // signed by the SAME wallet, so the user just keeps signing with
+    // whatever they had open.
+    if (actualClient !== user.wallet.toLowerCase()) {
+      try {
+        await db
+          .update(users)
+          .set({ wallet: actualClient })
+          .where(eq(users.id, user.id))
+        console.log(
+          `[escrow/post-create] bumped users.wallet ${user.wallet} → ${actualClient} (id=${user.id})`,
+        )
+      } catch (e) {
+        console.warn(
+          '[escrow/post-create] users.wallet bump failed (non-fatal)',
+          e instanceof Error ? e.message : e,
+        )
+      }
+    }
 
     // Persist trail. erc8183_job_id is the marker that gates re-entry from
     // /prepare; once set, only /confirm can advance the row.
