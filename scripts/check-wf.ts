@@ -1,5 +1,5 @@
-import { db } from '../../lib/db/client'
-import { workflows, users } from '../../lib/db/schema'
+import { db } from '../lib/db/client'
+import { workflows, users } from '../lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 async function run() {

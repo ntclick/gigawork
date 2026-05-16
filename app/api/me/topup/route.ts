@@ -34,7 +34,8 @@ const USDC = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
 
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')
 
-export const TOPUP_RATE = Number(process.env.TOPUP_RATE_CREDITS_PER_USDC ?? '100')
+// Not exported: Next.js 16 forbids non-route exports from route.ts files.
+const TOPUP_RATE = Number(process.env.TOPUP_RATE_CREDITS_PER_USDC ?? '100')
 
 const erc20Abi = parseAbi([
   'event Transfer(address indexed from, address indexed to, uint256 value)',
