@@ -18,7 +18,7 @@ import { buildBrainTools } from './tools'
 //   openai   → gpt-5-mini   via https://api.openai.com/v1
 //   kimi     → kimi-k2-0905-preview  via https://api.moonshot.ai/v1
 //   deepseek → deepseek-chat        via https://api.deepseek.com
-const PROVIDER = (process.env.AI_PROVIDER ?? 'kimi').toLowerCase()
+const PROVIDER = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
 
 interface ProviderConfig {
   name: string
