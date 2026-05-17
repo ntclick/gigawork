@@ -56,8 +56,8 @@ function resolveProvider(): ProviderConfig {
         name: 'openai',
         apiKey: process.env.OPENAI_API_KEY ?? '',
         baseURL: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
-        model: process.env.OPENAI_MODEL ?? 'gpt-5-mini',
-        fallbackModel: process.env.OPENAI_FALLBACK_MODEL ?? 'gpt-4.1',
+        model: process.env.OPENAI_MODEL ?? 'gpt-4.1',
+        fallbackModel: process.env.OPENAI_FALLBACK_MODEL ?? 'gpt-4o',
       }
   }
 }

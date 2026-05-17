@@ -422,11 +422,36 @@ export default function WorkflowPage() {
                 <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
               </div>
             )}
-            {/* Compact retry strip — shown when escrow is in error/idle
-                with an error message. Auto-fire only runs once per workflow
-                so we need this for the user-cancel + transient-failure
-                cases (user rejects popup, RPC blip, etc.). The right-side
-                ERC-8183 Trail panel still shows full progress. */}
+            {/* Fund & Start CTA — shown for fresh awaiting_fund workflows.
+                User must click to trigger the 3-tx escrow signing flow.
+                After funding completes, status flips to 'planning' and
+                Hermes auto-starts via the auto-send effect. */}
+            {needsEscrow && escrow.step === 'idle' && !escrow.error && (
+              <div className="pointer-events-auto absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
+                <span className="text-xs text-white/50">Escrow deposit required to start Hermes</span>
+                <button
+                  type="button"
+                  onClick={() => runEscrowFunding().catch(() => {})}
+                  className="pixel-border-sm inline-flex items-center gap-2 bg-[var(--giga-accent)] px-6 py-2.5 font-pixel-body text-sm uppercase text-black transition hover:bg-yellow-300"
+                >
+                  Fund &amp; Start Hermes
+                </button>
+              </div>
+            )}
+            {needsEscrow && escrow.step !== 'idle' && escrow.step !== 'error' && escrow.step !== 'done' && (
+              <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-4 py-2.5 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--giga-accent)]" />
+                <span className="text-[var(--giga-accent)]">
+                  {escrow.step === 'preparing' && 'Preparing escrow…'}
+                  {escrow.step === 'signing-create' && 'Sign createJob in wallet…'}
+                  {escrow.step === 'posting-create' && 'Posting createJob tx…'}
+                  {escrow.step === 'signing-approve' && 'Sign USDC approval…'}
+                  {escrow.step === 'signing-fund' && 'Sign fund tx…'}
+                  {escrow.step === 'confirming' && 'Confirming on-chain…'}
+                </span>
+              </div>
+            )}
+            {/* Compact retry strip — shown after escrow error */}
             {needsEscrow && (escrow.step === 'error' || (escrow.step === 'idle' && !!escrow.error)) && (
               <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
                 <span className="text-[var(--giga-accent)]">Escrow not funded</span>
