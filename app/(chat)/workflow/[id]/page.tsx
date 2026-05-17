@@ -10,6 +10,7 @@ import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { AppRail } from '@/components/shell/AppRail'
 import { MainHeader } from '@/components/shell/MainHeader'
+import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
 import { useValidationAttest } from '@/lib/hooks/useValidationAttest'
 import { toast } from '@/components/ui/toast'
@@ -39,6 +40,7 @@ export default function WorkflowPage() {
   const autoSentRef = useRef(false)
   const autoEscrowRef = useRef<string | null>(null)
   const startRef = useRef<number | undefined>(undefined)
+  const wallet = useActiveWallet()
   const escrow = useEscrowPost()
   const postEscrow = escrow.post
   const validate = useValidationAttest()
@@ -354,12 +356,21 @@ export default function WorkflowPage() {
     })()
   }, [snapshot, id])
 
-  // Auto-fire disabled — popups were jumping on the user before the
-  // Privy wallets[] had hydrated. The modal overlay was removed (the
-  // ERC-8183 Trail in WorkflowDocPanel + the small retry strip below
-  // are enough); funding now happens via prepare/confirm auto-resume
-  // on mount, with the retry strip as a manual fallback on error.
-  void autoEscrowRef // ref kept so existing reset logic compiles
+  // Auto-fire escrow once wallet is hydrated. Guarded by wallet
+  // presence so we never pop a signing request before Privy is ready.
+  useEffect(() => {
+    if (
+      !needsEscrow ||
+      !wallet ||
+      autoEscrowRef.current === id ||
+      escrow.step !== 'idle' ||
+      escrow.error
+    ) {
+      return
+    }
+    autoEscrowRef.current = id
+    runEscrowFunding().catch(() => {})
+  }, [needsEscrow, wallet, id, escrow.step, escrow.error, runEscrowFunding])
 
   return (
     <>
@@ -422,22 +433,7 @@ export default function WorkflowPage() {
                 <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
               </div>
             )}
-            {/* Fund & Start CTA — shown for fresh awaiting_fund workflows.
-                User must click to trigger the 3-tx escrow signing flow.
-                After funding completes, status flips to 'planning' and
-                Hermes auto-starts via the auto-send effect. */}
-            {needsEscrow && escrow.step === 'idle' && !escrow.error && (
-              <div className="pointer-events-auto absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
-                <span className="text-xs text-white/50">Escrow deposit required to start Hermes</span>
-                <button
-                  type="button"
-                  onClick={() => runEscrowFunding().catch(() => {})}
-                  className="pixel-border-sm inline-flex items-center gap-2 bg-[var(--giga-accent)] px-6 py-2.5 font-pixel-body text-sm uppercase text-black transition hover:bg-yellow-300"
-                >
-                  Fund &amp; Start Hermes
-                </button>
-              </div>
-            )}
+            {/* Escrow progress strip — inline status while auto-fire is signing */}
             {needsEscrow && escrow.step !== 'idle' && escrow.step !== 'error' && escrow.step !== 'done' && (
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-4 py-2.5 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--giga-accent)]" />
