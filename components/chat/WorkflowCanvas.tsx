@@ -261,6 +261,8 @@ export function WorkflowCanvas({
   const showPlaceholder = !hasPlan
   const showFailedEmpty = showPlaceholder && status === 'failed'
   const showCompletedEmpty = showPlaceholder && status === 'completed'
+  const showIdleEmpty = showPlaceholder && !showFailedEmpty && !showCompletedEmpty &&
+    status !== 'streaming' && status !== 'submitted' && status !== 'running'
   const flowNodes = showPlaceholder ? PLACEHOLDERS : rfNodes
   const flowEdges = showPlaceholder ? PLACEHOLDER_EDGES : rfEdges
   const trail = useMemo(
@@ -300,7 +302,7 @@ export function WorkflowCanvas({
       </ReactFlow>
       {showPlaceholder && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3">
-          {!showFailedEmpty && !showCompletedEmpty && (
+          {!showFailedEmpty && !showCompletedEmpty && !showIdleEmpty && (
             <div className="flex -space-x-2">
               {[0, 1, 2, 3, 4].map((i) => (
                 <div
@@ -315,7 +317,7 @@ export function WorkflowCanvas({
             className={`border-2 px-4 py-2 text-sm font-medium ${
               showFailedEmpty
                 ? 'border-red-400/50 bg-red-500/10 text-red-200'
-                : showCompletedEmpty
+                : showCompletedEmpty || showIdleEmpty
                   ? 'border-white/20 bg-white/[0.04] text-white/65'
                   : 'border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 text-[var(--giga-accent)] shadow-[0_0_15px_rgba(255,204,77,0.3)]'
             }`}
@@ -324,7 +326,9 @@ export function WorkflowCanvas({
               ? 'Workflow stopped before any agent node was created.'
               : showCompletedEmpty
                 ? 'Workflow finished without a replayable canvas plan.'
-                : 'Hermes Agent is orchestrating workflow...'}
+                : showIdleEmpty
+                  ? 'Send a prompt to start Hermes orchestration.'
+                  : 'Hermes Agent is orchestrating workflow...'}
           </div>
         </div>
       )}
