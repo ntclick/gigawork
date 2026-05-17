@@ -6,7 +6,7 @@ import { failWorkflow } from '@/lib/ai/finalizeWorkflow'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
-import { messages, workflows } from '@/lib/db/schema'
+import { messages, nodes, workflows } from '@/lib/db/schema'
 
 const STALE_RUNNING_MS = 3 * 60 * 1000
 
@@ -78,6 +78,8 @@ export async function POST(req: Request, ctx: RouteCtx) {
     console.log(
       `[stream] recovering stale workflow ${id} (running for ${Math.round((Date.now() - lastActivity) / 1000)}s with no activity)`,
     )
+    await db.delete(nodes).where(eq(nodes.workflowId, id))
+    await db.delete(messages).where(eq(messages.workflowId, id))
     await db
       .update(workflows)
       .set({ status: 'planning' })

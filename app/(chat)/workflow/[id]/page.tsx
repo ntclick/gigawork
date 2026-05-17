@@ -135,16 +135,14 @@ export default function WorkflowPage() {
     const waitingForEscrow =
       snapshot.workflow?.status === 'awaiting_fund' || snapshot.workflow?.status === 'funding'
 
-    const canAutoSend =
-      (snapshot.workflow?.status === 'planning' ||
-        (snapshot.workflow?.status === 'running' && !hasAssistant && !hasPlan)) &&
+    if (
+      snapshot.workflow?.status === 'planning' &&
       !snapshot.isFinished &&
       !waitingForEscrow &&
       !hasAssistant &&
       !hasPlan &&
       snapshot.workflow.prompt
-
-    if (canAutoSend) {
+    ) {
       autoSentRef.current = true
       autoSendPollRef.current = 0
       startRef.current = Date.now()
@@ -168,6 +166,32 @@ export default function WorkflowPage() {
       return () => clearTimeout(timer)
     }
   }, [snapshot, sendMessage, id, setMessages, messages.length])
+
+  // Crash recovery: workflow stuck at 'running' but useChat is idle
+  // (brain crashed, server restarted, Kimi timed out). The stream route
+  // detects staleness (>3 min no activity), wipes partial nodes/messages,
+  // resets to 'planning', and re-claims. We clear local messages first
+  // so useChat sends a clean prompt.
+  const recoverRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      !snapshot ||
+      recoverRef.current === id ||
+      snapshot.workflow?.status !== 'running' ||
+      snapshot.isFinished ||
+      status !== 'ready'
+    ) {
+      return
+    }
+    recoverRef.current = id
+    const timer = setTimeout(() => {
+      setMessages([])
+      autoSentRef.current = true
+      startRef.current = Date.now()
+      sendMessage({ text: snapshot.workflow!.prompt })
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [snapshot, status, id, sendMessage, setMessages])
 
   const busy = status === 'streaming' || status === 'submitted'
   const displayStatus = busy ? status : snapshot?.workflow?.status ?? status
