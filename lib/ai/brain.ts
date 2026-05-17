@@ -41,6 +41,7 @@ function resolveProvider(): ProviderConfig {
         apiKey: process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY ?? '',
         baseURL: process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1',
         model: process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview',
+        fallbackModel: 'moonshot-v1-128k',
       }
     case 'deepseek':
       return {
@@ -90,8 +91,7 @@ async function probeModel(): Promise<string> {
   if (probePromise) return probePromise
 
   probePromise = (async () => {
-    if (!config.apiKey || !config.fallbackModel) {
-      // No fallback configured (kimi/deepseek paths) — just trust env.
+    if (!config.apiKey) {
       RESOLVED_MODEL = config.model
       return RESOLVED_MODEL
     }
@@ -116,11 +116,14 @@ async function probeModel(): Promise<string> {
       if (res.status === 404 || res.status === 403 || res.status === 400) {
         const body = await res.text().catch(() => '')
         if (/model.*not.*found|does.*not.*have.*access|invalid.*model|unsupported/i.test(body)) {
-          console.warn(
-            `[brain] ${config.model} unavailable (${res.status}) — falling back to ${config.fallbackModel}`,
-          )
-          RESOLVED_MODEL = config.fallbackModel
-          return RESOLVED_MODEL
+          if (config.fallbackModel) {
+            console.warn(
+              `[brain] ${config.model} unavailable (${res.status}) — falling back to ${config.fallbackModel}`,
+            )
+            RESOLVED_MODEL = config.fallbackModel
+            return RESOLVED_MODEL
+          }
+          console.error(`[brain] ${config.model} unavailable (${res.status}): ${body.slice(0, 200)}`)
         }
       }
       // Any other failure (rate limit, 5xx, network) — keep the configured
@@ -173,6 +176,7 @@ export async function streamBrain(opts: {
   // Resolve model once (probe runs only on first call). Cheap fast-path on
   // subsequent calls — RESOLVED_MODEL is just a string read.
   const activeModel = await probeModel()
+  console.log(`[brain] streaming workflow ${opts.workflowId} with ${config.name}/${activeModel}`)
 
   return streamText({
     model: llm.chatModel(activeModel),
@@ -180,7 +184,7 @@ export async function streamBrain(opts: {
     messages: await convertToModelMessages(opts.uiMessages),
     tools,
     stopWhen: stepCountIs(10),
-    // temperature: not set — Kimi K2 only supports the default (1).
+    abortSignal: AbortSignal.timeout(90_000),
     onError: async ({ error }) => {
       // Persist mid-stream errors (LLM API rejections, network failures) so
       // they're visible in /api/admin/debug-workflow + the workflow page,
