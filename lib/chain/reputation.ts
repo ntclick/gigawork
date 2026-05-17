@@ -10,12 +10,10 @@
  * the DB cache (skills.reputation_score, users.reputation_score) is updated
  * in the same finalize pass.
  *
- * Self-dealing rule (per ERC-8004): an agent's OWNER cannot record reputation
- * for that same agent. We filter out any tokenId currently owned by the
- * admin wallet that signs these txs — in the current deployment skills are
- * minted to the requesting user, not to admin, so admin can review them all.
- * If that changes, filtered tokens are silently skipped so the workflow
- * still settles cleanly.
+ * Self-dealing note: ERC-8004 prevents an agent's OWNER from recording
+ * reputation for that agent on-chain. If admin owns the skill tokens,
+ * giveFeedback will revert — we catch the revert and continue. The DB
+ * score is still incremented by the caller (cacheReputation / reconcile).
  */
 import { encodeFunctionData, keccak256, parseAbi, toHex, type Hex } from 'viem'
 
@@ -63,16 +61,13 @@ export async function incrementReputationBatch(
 ): Promise<Hex | null> {
   if (!REPUTATION_REGISTRY_ADDRESS || !adminAccount) return null
 
-  const unique = [...new Set(tokenIds)]
-  if (unique.length === 0) return null
+  const eligible = [...new Set(tokenIds)]
+  if (eligible.length === 0) return null
 
   const score = outcome === 'failed' ? FAILURE_SCORE : DEFAULT_SCORE
   const feedbackType =
     outcome === 'failed' ? FEEDBACK_TYPE_TASK_FAILED : FEEDBACK_TYPE_TASK_COMPLETED
   const tag = outcome === 'failed' ? FEEDBACK_TAG_FAILED : FEEDBACK_TAG_SETTLED
-
-  const eligible = unique
-  if (eligible.length === 0) return null
 
   // Compute a stable feedbackHash per submission so the registry can
   // dedupe — using the tag is enough for the demo flow; in prod you'd
