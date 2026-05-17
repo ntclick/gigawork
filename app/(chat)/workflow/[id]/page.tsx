@@ -278,10 +278,13 @@ export default function WorkflowPage() {
     fetch(`/api/workflow/${id}/reputation/reconcile`, { method: 'POST' })
       .then((r) => r.ok ? r.json() : null)
       .then(() => {
-        // Re-fetch snapshot to pick up the new reputationUpdate message
+        // Re-fetch snapshot AND update useChat messages so Canvas/DocPanel see the result
         fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
           .then((r) => { if (r.ok) return r.json(); throw new Error('') })
-          .then((j: Snapshot) => setSnapshot(j))
+          .then((j: Snapshot) => {
+            setSnapshot(j)
+            if (j.messages.length > 0) setMessages(j.messages)
+          })
           .catch(() => {})
       })
       .catch(() => {})
@@ -291,7 +294,7 @@ export default function WorkflowPage() {
       .catch(() => {
         validate.probe(id).catch(() => {})
       })
-  }, [snapshot, id, validate])
+  }, [snapshot, id, validate, setMessages])
 
   // Auto-resume when the row is stuck at status='funding' with fundTx
   // already persisted. Two-stage recovery:

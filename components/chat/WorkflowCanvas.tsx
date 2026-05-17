@@ -349,7 +349,7 @@ export function WorkflowCanvas({
               <CanvasStateRow label="Agents" state={trail.agentState} detail={`${trail.completed}/${trail.total || 0}`} />
               <CanvasStateRow label="Report" state={trail.reportState} detail={trail.reportReady ? 'ready' : trail.reportDetail} />
               <CanvasStateRow label="Settle" state={trail.settleState} detail={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
-              <CanvasStateRow label="Repute" state={trail.reputationState} detail={trail.reputationTx ? 'cached' : 'pending'} />
+              <CanvasStateRow label="Repute" state={trail.reputationState} detail={trail.reputationTx ? 'cached' : trail.reputationStatus === 'skipped' ? 'DB only' : trail.reputationStatus === 'recorded' ? 'done' : 'pending'} />
             </div>
 
             {trail.agentRows.length > 0 && (
@@ -603,7 +603,7 @@ function buildCanvasTrail(
   const completed = statuses.filter((s) => s === 'completed').length
   const total = planNodes.length
   const agentsDone = total > 0 && completed + failed >= total
-  const { hasReport, reputationTx } = extractCanvasMilestones(messages, workflowStatus)
+  const { hasReport, reputationTx, reputationStatus } = extractCanvasMilestones(messages, workflowStatus)
   const composerNode = planNodes.find((node) => (node.data as PixelNodeData).skill === 'report-composer')
   const composerState = composerNode ? details.get(composerNode.id)?.status ?? 'pending' : undefined
   const reportReady = hasReport || composerState === 'completed'
@@ -629,9 +629,13 @@ function buildCanvasTrail(
       : 'idle'
   const reputationState: CanvasTrailState = reputationTx
     ? 'done'
-    : erc8183?.completeTx
-      ? 'active'
-      : 'idle'
+    : reputationStatus === 'skipped' || reputationStatus === 'recorded'
+      ? 'done'
+      : reputationStatus === 'error'
+        ? 'failed'
+        : erc8183?.completeTx
+          ? 'active'
+          : 'idle'
   const current =
     reputationState === 'done'
       ? 'complete'
@@ -655,6 +659,7 @@ function buildCanvasTrail(
     reportReady,
     reportDetail: composerState ?? 'compose',
     reputationTx,
+    reputationStatus,
     completed,
     total,
     current,
@@ -680,6 +685,7 @@ function buildCanvasTrail(
 function extractCanvasMilestones(messages: UIMessage[], workflowStatus?: string) {
   let hasReport = false
   let reputationTx: string | null = null
+  let reputationStatus: string | null = null
   for (const m of messages) {
     for (const part of m.parts) {
       if (part.type === 'text' && m.role === 'assistant') {
@@ -693,12 +699,13 @@ function extractCanvasMilestones(messages: UIMessage[], workflowStatus?: string)
         if (output.ok !== false && output.summary_markdown) hasReport = true
       }
       if (toolName === 'reputationUpdate' && part.state === 'output-available') {
-        const output = (part.output || {}) as { tx?: string }
+        const output = (part.output || {}) as { tx?: string; status?: string }
         reputationTx = output.tx ?? reputationTx
+        if (output.status) reputationStatus = output.status
       }
     }
   }
-  return { hasReport, reputationTx }
+  return { hasReport, reputationTx, reputationStatus }
 }
 
 function isCanvasReportText(text: string) {

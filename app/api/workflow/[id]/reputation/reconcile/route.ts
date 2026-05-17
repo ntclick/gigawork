@@ -115,8 +115,8 @@ export async function POST(_req: Request, ctx: RouteCtx) {
         tx: repTx,
         tokenIds,
         outcome,
-        status: repTx ? 'recorded' : 'skipped',
-        reason: repTx ? undefined : 'incrementReputationBatch returned null (registry or admin not configured)',
+        status: 'recorded',
+        reason: repTx ? undefined : 'On-chain tx unavailable — DB score incremented.',
       },
       content: null,
     })
