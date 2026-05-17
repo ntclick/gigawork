@@ -17,7 +17,7 @@
  * If that changes, filtered tokens are silently skipped so the workflow
  * still settles cleanly.
  */
-import { encodeFunctionData, getAddress, keccak256, parseAbi, toHex, type Hex } from 'viem'
+import { encodeFunctionData, keccak256, parseAbi, toHex, type Hex } from 'viem'
 
 import {
   adminAccount,
@@ -26,21 +26,13 @@ import {
   sendAdminTransaction,
 } from './client'
 
-const REPUTATION_REGISTRY_ADDRESS = process.env
-  .REPUTATION_REGISTRY_ADDRESS as `0x${string}` | undefined
-
-const IDENTITY_REGISTRY_ADDRESS = (process.env.IDENTITY_REGISTRY_ADDRESS ??
-  process.env.NEXT_PUBLIC_IDENTITY_REGISTRY) as `0x${string}` | undefined
+const REPUTATION_REGISTRY_ADDRESS = (process.env.REPUTATION_REGISTRY_ADDRESS ??
+  '0x8004B663056A597Dffe9eCcC1965A193B7388713') as `0x${string}`
 
 // ERC-8004 ReputationRegistry surface.
 const reputationAbi = parseAbi([
   'function giveFeedback(uint256 agentId, int128 score, uint8 feedbackType, string tag, string metadataURI, string evidenceURI, string comment, bytes32 feedbackHash) external',
   'event FeedbackGiven(uint256 indexed agentId, address indexed reviewer, int128 score, uint8 feedbackType, string tag, bytes32 feedbackHash)',
-])
-
-// ERC-721 ownerOf — used to enforce the ERC-8004 self-dealing filter.
-const identityAbi = parseAbi([
-  'function ownerOf(uint256 tokenId) view returns (address)',
 ])
 
 // Default score for a successfully-settled workflow. Per the ERC-8004
@@ -79,36 +71,7 @@ export async function incrementReputationBatch(
     outcome === 'failed' ? FEEDBACK_TYPE_TASK_FAILED : FEEDBACK_TYPE_TASK_COMPLETED
   const tag = outcome === 'failed' ? FEEDBACK_TAG_FAILED : FEEDBACK_TAG_SETTLED
 
-  const reviewer = getAddress(adminAccount.address).toLowerCase()
-  const eligible: string[] = []
-  for (const id of unique) {
-    if (!IDENTITY_REGISTRY_ADDRESS) {
-      eligible.push(id)
-      continue
-    }
-    try {
-      const owner = (await publicClient.readContract({
-        address: IDENTITY_REGISTRY_ADDRESS,
-        abi: identityAbi,
-        functionName: 'ownerOf',
-        args: [BigInt(id)],
-      })) as `0x${string}`
-      if (owner.toLowerCase() === reviewer) {
-        console.warn(
-          `[reputation] skip token #${id}: admin signer owns it (ERC-8004 self-dealing prevention)`,
-        )
-        continue
-      }
-      eligible.push(id)
-    } catch (err) {
-      // Token doesn't exist on the identity registry, or RPC blip —
-      // skip rather than risking a revert on giveFeedback.
-      console.warn(
-        `[reputation] skip token #${id}: ownerOf check failed`,
-        err instanceof Error ? err.message : err,
-      )
-    }
-  }
+  const eligible = unique
   if (eligible.length === 0) return null
 
   // Compute a stable feedbackHash per submission so the registry can
