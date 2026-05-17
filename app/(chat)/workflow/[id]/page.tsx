@@ -268,16 +268,27 @@ export default function WorkflowPage() {
   useEffect(() => {
     if (
       !snapshot ||
-      snapshot.workflow?.status !== 'completed' ||
+      (snapshot.workflow?.status !== 'completed' && snapshot.workflow?.status !== 'failed') ||
       reconcileRanRef.current === id
     ) {
       return
     }
     reconcileRanRef.current = id
+    // Reputation reconciliation — fire if no reputationUpdate message exists
+    fetch(`/api/workflow/${id}/reputation/reconcile`, { method: 'POST' })
+      .then((r) => r.ok ? r.json() : null)
+      .then(() => {
+        // Re-fetch snapshot to pick up the new reputationUpdate message
+        fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
+          .then((r) => { if (r.ok) return r.json(); throw new Error('') })
+          .then((j: Snapshot) => setSnapshot(j))
+          .catch(() => {})
+      })
+      .catch(() => {})
+    // Validation reconciliation
     fetch(`/api/workflow/${id}/validation/reconcile`, { method: 'POST' })
       .then(() => validate.probe(id))
       .catch(() => {
-        // Even if reconcile errors, probe directly to drive the strip.
         validate.probe(id).catch(() => {})
       })
   }, [snapshot, id, validate])
