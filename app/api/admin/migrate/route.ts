@@ -113,6 +113,7 @@ const MIGRATIONS: Array<[label: string, sqlText: string]> = [
   ['workflows.erc8183_approve_tx', `alter table workflows add column if not exists erc8183_approve_tx text`],
   ['workflows.erc8183_deliverable_hash', `alter table workflows add column if not exists erc8183_deliverable_hash text`],
   ['workflows.erc8183_budget_usdc', `alter table workflows add column if not exists erc8183_budget_usdc text`],
+  ['workflows.erc8183_reputation_tx', `alter table workflows add column if not exists erc8183_reputation_tx text`],
   ['workflows.title', `alter table workflows add column if not exists title text`],
   ['workflows.tags', `alter table workflows add column if not exists tags text[]`],
   ['workflows.archived_at', `alter table workflows add column if not exists archived_at timestamptz`],

@@ -14,6 +14,7 @@ import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
 import { useValidationAttest } from '@/lib/hooks/useValidationAttest'
 import { toast } from '@/components/ui/toast'
+import { DeployModal } from '@/components/chat/DeployModal'
 
 type Erc8183Trail = {
   jobId: string | null
@@ -25,6 +26,7 @@ type Erc8183Trail = {
   completeTx: string | null
   deliverableHash: string | null
   budgetUsdc: string | null
+  reputationTx: string | null
 }
 
 type Snapshot = {
@@ -37,6 +39,7 @@ export default function WorkflowPage() {
   const params = useParams<{ id: string }>()
   const id = params?.id ?? ''
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [isDeployOpen, setIsDeployOpen] = useState(false)
   const autoSentRef = useRef(false)
   const autoEscrowRef = useRef<string | null>(null)
   const startRef = useRef<number | undefined>(undefined)
@@ -69,7 +72,12 @@ export default function WorkflowPage() {
       }
     },
     onError: (err) => {
-      toast.error('Stream lỗi', err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      // workflow_already_started is expected when revisiting a completed
+      // workflow — the auto-send or crash-recovery fires before the
+      // snapshot confirms the workflow is finished. Silently ignore.
+      if (/workflow_already_started|already running or finished/i.test(msg)) return
+      toast.error('Stream error', msg)
     },
   })
 
@@ -104,6 +112,22 @@ export default function WorkflowPage() {
       }
     }
   }, [messages])
+
+  const refreshMessages = useCallback(async () => {
+    if (!id) return
+    try {
+      const res = await fetch(`/api/workflow/${id}/messages`)
+      if (res.ok) {
+        const j = await res.json()
+        setSnapshot(j)
+        if (j.messages && j.messages.length > 0) {
+          setMessages(j.messages)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to refresh messages:', e)
+    }
+  }, [id, setMessages])
 
   // Hydrate from DB so reload preserves the canvas + doc panel.
   // We also re-fetch when the stream finishes (status transitions to 'idle')
@@ -187,13 +211,26 @@ export default function WorkflowPage() {
     }
     recoverRef.current = id
     const timer = setTimeout(() => {
-      setMessages([])
-      autoSentRef.current = true
-      startRef.current = Date.now()
-      sendMessage({ text: snapshot.workflow!.prompt })
+      // Re-fetch snapshot to get fresh status before attempting recovery
+      fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
+        .then((r) => r.ok ? r.json() : null)
+        .then((fresh: Snapshot | null) => {
+          if (!fresh) return
+          // Abort if the workflow has finished by the time we checked
+          if (fresh.isFinished || fresh.workflow?.status === 'completed' || fresh.workflow?.status === 'failed') {
+            setSnapshot(fresh)
+            if (fresh.messages.length > 0 && messages.length === 0) setMessages(fresh.messages)
+            return
+          }
+          setMessages([])
+          autoSentRef.current = true
+          startRef.current = Date.now()
+          sendMessage({ text: snapshot.workflow!.prompt })
+        })
+        .catch(() => {})
     }, 1500)
     return () => clearTimeout(timer)
-  }, [snapshot, status, id, sendMessage, setMessages])
+  }, [snapshot, status, id, sendMessage, setMessages, messages.length])
 
   const busy = status === 'streaming' || status === 'submitted'
   const displayStatus = busy ? status : snapshot?.workflow?.status ?? status
@@ -234,10 +271,10 @@ export default function WorkflowPage() {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      if (/huỷ ký|user rejected|denied/i.test(message)) {
+      if (/cancelled|user rejected|denied/i.test(message)) {
         // User-cancel is expected behavior — show a softer message and
         // skip the snapshot reload (state didn't change on-chain).
-        toast.warning('Bạn đã huỷ ký', 'Click "Retry" để mở lại popup ký.')
+        toast.warning('Signature cancelled', 'Click "Retry" to open the signing popup again.')
         return
       }
       if (/still pending|pending on Arc|not mined yet/i.test(message)) {
@@ -412,6 +449,7 @@ export default function WorkflowPage() {
             </div>
             <button
               type="button"
+              onClick={() => setIsDeployOpen(true)}
               className="pixel-border-sm flex shrink-0 items-center gap-2 bg-[var(--giga-accent)] px-4 py-2 font-pixel-body text-base text-black transition hover:bg-yellow-300 sm:px-6 sm:text-xl"
             >
               <span className="text-sm">📉</span>
@@ -426,20 +464,7 @@ export default function WorkflowPage() {
               status={displayStatus}
               workflowId={id}
               erc8183={snapshot?.workflow?.erc8183 ?? null}
-              onEditNode={(req) => {
-                if (busy) {
-                  toast.warning('Hermes is running', 'Wait for the current step to finish before editing.')
-                  return
-                }
-                const envelope =
-                  `[EDIT_NODE id=${req.nodeId} original_skill=${req.originalSkill} new_skill=${req.newSkill}]\n` +
-                  `input_json: ${req.inputJson}\n` +
-                  (req.note ? `\nUser note: ${req.note}\n` : '') +
-                  `\nRe-run this single step with the values above. ` +
-                  `Use dispatchSkill('${req.newSkill}', input=input_json verbatim). ` +
-                  `Then update finalizeReport with the new output replacing the old one.`
-                sendMessage({ text: envelope })
-              }}
+              onNodeUpdated={refreshMessages}
             />
             {busy && (
               <div className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs font-pixel-body">
@@ -533,6 +558,12 @@ export default function WorkflowPage() {
           erc8183={snapshot?.workflow?.erc8183 ?? null}
         />
       </div>
+      <DeployModal
+        isOpen={isDeployOpen}
+        onClose={() => setIsDeployOpen(false)}
+        workflowId={id}
+        workflowTitle={title}
+      />
     </>
   )
 }

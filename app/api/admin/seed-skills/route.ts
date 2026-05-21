@@ -83,7 +83,7 @@ const SEED: Array<{ name: string; manifest: Manifest }> = [
     name: 'report-composer',
     manifest: {
       schema_version: '1',
-      display_name: 'Report Composer (Kimi K2)',
+      display_name: 'Report Composer (OpenAI)',
       category: 'synthesis',
       description: 'Synthesize upstream data into a beginner-friendly markdown brief.',
       best_for_keywords: ['report', 'compose', 'summary', 'verdict'],
@@ -106,7 +106,7 @@ const SEED: Array<{ name: string; manifest: Manifest }> = [
       schema_version: '1',
       display_name: 'Document Digest',
       category: 'research',
-      description: 'Fetch a URL, strip HTML, summarize via Kimi K2 (title / TLDR / key claims).',
+      description: 'Fetch a URL, strip HTML, summarize via OpenAI (title / TLDR / key claims).',
       best_for_keywords: ['document', 'whitepaper', 'article', 'digest', 'tldr'],
       input_schema: {
         type: 'object',

@@ -24,37 +24,32 @@ import { users } from '@/lib/db/schema'
 
 const Body = z.object({
   notifyEmail: z
-    .union([z.string().email().max(254), z.literal(''), z.null()])
+    .union([z.string().trim().email().max(254), z.literal(''), z.null()])
     .optional(),
   emailApiKey: z
     .union([
-      // Resend keys look like  re_<32+ chars> ; we accept any provider key
-      // that's >= 16 chars and starts with letter/digit (broad).
-      z.string().regex(/^[A-Za-z0-9_]{16,200}$/, 'Invalid API key (16+ chars, alphanumeric/underscore)'),
+      z.string().trim().min(1, 'API key cannot be empty'),
       z.literal(''),
       z.null(),
     ])
     .optional(),
   emailFrom: z
     .union([
-      z.string().email().max(254),
-      // Allow display-name format `Name <email@x.com>`
-      z.string().regex(/^.{1,64}\s<[^@\s]+@[^@\s]+\.[^@\s]+>$/, 'Invalid sender (use email or "Name <email@x.com>")'),
+      z.string().trim().min(1, 'Sender cannot be empty'),
       z.literal(''),
       z.null(),
     ])
     .optional(),
   telegramChatId: z
     .union([
-      z.string().regex(/^(@[a-zA-Z][a-zA-Z0-9_]{4,31}|-?\d{5,20})$/, '@channel or numeric chat id'),
+      z.string().trim().min(1, 'Chat ID cannot be empty'),
       z.literal(''),
       z.null(),
     ])
     .optional(),
   telegramBotToken: z
     .union([
-      // Telegram bot tokens look like:  1234567890:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-      z.string().regex(/^\d{6,12}:[A-Za-z0-9_-]{30,80}$/, 'Invalid bot token (expected `<digits>:<35 chars>` from @BotFather)'),
+      z.string().trim().min(1, 'Bot token cannot be empty'),
       z.literal(''),
       z.null(),
     ])
@@ -135,6 +130,10 @@ export async function POST(req: Request) {
     for (const k of fields) {
       if (k in parsed.data) {
         const v = parsed.data[k]
+        // Safeguard: ignore masked placeholders submitted by the client
+        if ((k === 'telegramBotToken' || k === 'emailApiKey') && v && v.includes('•')) {
+          continue
+        }
         patch[k] = v && v !== '' ? v : null
       }
     }

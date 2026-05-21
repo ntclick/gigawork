@@ -19,25 +19,19 @@
  * done. Each step's failure leaves DB in a re-resumable state — next call
  * to post() will pick up where it left off.
  */
-import { usePrivy, useSendTransaction } from '@privy-io/react-auth'
-
-import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
+import { useWallets } from '@privy-io/react-auth'
 import { useCallback, useState } from 'react'
 import { createPublicClient, createWalletClient, custom, http, type Hex } from 'viem'
+import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 
-// Custom arcTestnet (USDC native gas, NOT ETH) — viem/chains version is
-// wrong about nativeCurrency and breaks external wallet gas estimation.
-// See lib/chain/arcTestnet.ts + AGENTS.md §1.
-import { ARC_CHAIN_ID, arcTestnet } from '@/lib/chain/arcTestnet'
+const POST_CREATE_POLL_ATTEMPTS = 48
+const POST_CREATE_POLL_INTERVAL_MS = 2_500
+const POST_CREATE_RESET_MISSING_AFTER_POLLS = 44
 
-const ARC_RPC_URL =
-  process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'
-
-// Server-side post-create polling window. Arc Testnet RPC propagation
-// lag can run 60-90s, so we wait up to 120s before giving up.
-const POST_CREATE_POLL_ATTEMPTS = 80          // 80 * 1.0s = 80s total (faster polls)
-const POST_CREATE_POLL_INTERVAL_MS = 1_000
-const POST_CREATE_RESET_MISSING_AFTER_POLLS = 44  // only declare missing after 110s (8s buffer before total timeout)
+const publicClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http(),
+})
 
 export type EscrowStep =
   | 'idle'
@@ -83,9 +77,7 @@ type PostCreateResponse = {
 }
 
 export function useEscrowPost(): UseEscrowPostReturn {
-  const activeWallet = useActiveWallet()
-  const { user: privyUser } = usePrivy()
-  const { sendTransaction: privySendTransaction } = useSendTransaction()
+  const { wallets } = useWallets()
   const [step, setStep] = useState<EscrowStep>('idle')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<EscrowResult | null>(null)
@@ -104,58 +96,15 @@ export function useEscrowPost(): UseEscrowPostReturn {
       setResult(null)
       setTxHashes({})
 
-      const wallet = activeWallet
+      const wallet = wallets[0]
       if (!wallet) {
         setStep('error')
         setError('No wallet connected')
         throw new Error('No wallet connected')
       }
-      console.log('[escrow] wallet meta', {
-        address: wallet.address,
-        walletClientType: (wallet as { walletClientType?: string }).walletClientType,
-        connectorType: (wallet as { connectorType?: string }).connectorType,
-        chainId: (wallet as { chainId?: string }).chainId,
-      })
-
-      // Pre-sync cookie to the wallet we're about to sign with. WalletPill
-      // also does this on render, but its useEffect can lag behind a fresh
-      // page mount or a recent account switch — escrow auto-fires 600ms
-      // after mount, which is faster than the typical Privy hydrate cycle.
-      // Sending privyId (stable DID from usePrivy) ensures the server
-      // resolves to the right user row and bumps user.wallet so the
-      // createJob signer check passes. Idempotent: same cookie → no-op.
-      try {
-        const privyId = privyUser?.id
-        await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            wallet: wallet.address.toLowerCase(),
-            ...(privyId ? { privyId } : {}),
-          }),
-        })
-      } catch (e) {
-        console.warn('[escrow] pre-sync auth failed (tolerating)', e)
-      }
-
-      // Note: no longer guarding on "wallet matches canonical me.wallet".
-      // The server's post-create now accepts whichever wallet signed
-      // createJob and bumps users.wallet to that signer — matching user
-      // intent "whichever wallet you connect, that wallet pays". Confirm
-      // derives expectedClient from the persisted createTx, so as long
-      // as approve+fund come from the SAME signer as createJob (which
-      // they will, since useEscrowPost captures `wallet` once at the
-      // top of post()), the flow lands cleanly.
 
       try {
-        // Single attempt. Earlier code retried up to 3 times within the
-        // same post() call when post-create returned create_tx_not_found,
-        // but each retry triggers ANOTHER wallet popup — Privy then
-        // rejects rapid back-to-back signing as "user denied". Single
-        // attempt + a clear error message lets the user retry by clicking
-        // Continue funding again, which goes through prepare's idempotent
-        // resume path (no extra sign needed if createTx is persisted).
-        for (let attempt = 0; attempt < 1; attempt++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
         // ── 1. prepare ──────────────────────────────────────────
         setStep('preparing')
         const prepRes = await fetch('/api/workflow/escrow/prepare', {
@@ -207,127 +156,38 @@ export function useEscrowPost(): UseEscrowPostReturn {
           throw new Error('prepare returned incomplete bundle')
         }
 
-        // Per AGENTS.md canonical pattern:
-        //  - Embedded (Privy email/social) → useSendTransaction hook. The
-        //    viem-bridge has a known UserRejectedRequestError bug when
-        //    sending through a custom(provider) transport for embedded
-        //    wallets, so we go through Privy's native hook instead.
-        //  - External (OKX, MetaMask, Rabby…) → viem walletClient with
-        //    custom(provider) transport. Chain is set on the CLIENT, NOT
-        //    on the tx params — passing `chain` into sendTransaction
-        //    triggers a redundant wallet_switchEthereumChain that OKX
-        //    silently fails. Gas/fees are auto-estimated by viem+wallet,
-        //    matching scripts/onchain/full-flow-8183.ts which also passes
-        //    no explicit gas.
-        const walletClientType = (wallet as { walletClientType?: string }).walletClientType
-        const isEmbedded = walletClientType === 'privy'
-
-        if (!isEmbedded) {
-          try {
-            await wallet.switchChain(ARC_CHAIN_ID)
-          } catch (e) {
-            console.warn('[escrow] switchChain failed (tolerating)', e)
-          }
-          await new Promise((r) => setTimeout(r, 250))
+        // Switch chain once up front. Privy embedded wallets noop if already correct.
+        try {
+          await wallet.switchChain(ARC_CHAIN_ID)
+        } catch {
+          /* tolerate */
         }
-
         const provider = await wallet.getEthereumProvider()
-        const userAddr = wallet.address as `0x${string}`
-
-        const externalWalletClient = isEmbedded
-          ? null
-          : createWalletClient({ chain: arcTestnet, transport: custom(provider) })
-
-        // PublicClient for explicit gas + fee estimation via Arc RPC.
-        // External wallets on a custom chain with non-ETH native currency
-        // (Arc → USDC) tend to estimate fee = 0 if we don't override.
-        // We fetch maxFeePerGas + maxPriorityFeePerGas from the chain RPC
-        // directly so the tx broadcast carries valid fee params and gets
-        // included instead of stuck-pending. AGENTS.md §4.
-        const estimateClient = createPublicClient({
-          chain: arcTestnet,
-          transport: http(ARC_RPC_URL, { batch: false }),
-        })
-
-        const signTx = async (args: { to: `0x${string}`; data: Hex }): Promise<Hex> => {
-          console.log('[escrow] signTx →', { to: args.to, embedded: isEmbedded })
-
-          // Embedded — Privy hook owns build+sign+broadcast.
-          if (isEmbedded) {
-            const result = await privySendTransaction(
-              { to: args.to, data: args.data, chainId: ARC_CHAIN_ID },
-              { address: userAddr },
-            )
-            console.log('[escrow] signTx ← hash', result.hash)
-            return result.hash
-          }
-
-          // External — fetch gas + fees from Arc RPC, then pass tường minh.
-          // NO `chain` in tx params (would trigger wallet_switchEthereumChain).
-          const [gas, fees] = await Promise.all([
-            estimateClient
-              .estimateGas({ account: userAddr, to: args.to, data: args.data })
-              .catch((err) => {
-                console.warn('[escrow] estimateGas failed, using fallback', err)
-                return 500_000n
-              }),
-            estimateClient
-              .estimateFeesPerGas()
-              .catch((err) => {
-                console.warn('[escrow] estimateFeesPerGas failed, wallet will default', err)
-                return null
-              }),
-          ])
-          console.log('[escrow] gas params', {
-            gas: gas.toString(),
-            maxFeePerGas: fees?.maxFeePerGas?.toString(),
-            maxPriorityFeePerGas: fees?.maxPriorityFeePerGas?.toString(),
-          })
-
-          const client = externalWalletClient!
-          const hash = (await client.sendTransaction({
-            account: userAddr,
-            to: args.to,
-            data: args.data,
-            gas,
-            ...(fees?.maxFeePerGas ? { maxFeePerGas: fees.maxFeePerGas } : {}),
-            ...(fees?.maxPriorityFeePerGas
-              ? { maxPriorityFeePerGas: fees.maxPriorityFeePerGas }
-              : {}),
-          } as Parameters<typeof client.sendTransaction>[0])) as Hex
-          console.log('[escrow] signTx ← hash', hash)
-          return hash
+        const currentChain = await provider.request({ method: 'eth_chainId' }).catch(() => null)
+        if (typeof currentChain === 'string' && Number.parseInt(currentChain, 16) !== ARC_CHAIN_ID) {
+          throw new Error(`Wallet is on chain ${Number.parseInt(currentChain, 16)}, expected Arc Testnet ${ARC_CHAIN_ID}`)
         }
+        const walletClient = createWalletClient({ chain: arcTestnet, transport: custom(provider) })
+        const userAddr = wallet.address as `0x${string}`
 
         // ── 2. user signs createJob, or resume existing create tx ─────
         let createTx = prep.createTx as Hex | undefined
         let createTxFresh = false
         if (!createTx) {
           setStep('signing-create')
-          createTx = await signTx({
+          const txRequest = {
+            account: userAddr,
             to: prep.createJob!.to as `0x${string}`,
             data: prep.createJob!.data as Hex,
-          })
+          }
+          const gas = await publicClient.estimateGas(txRequest)
+          createTx = (await walletClient.sendTransaction({
+            ...txRequest,
+            gas,
+          })) as Hex
           createTxFresh = true
           setTxHashes((s) => ({ ...s, create: createTx }))
           await trackEscrowTx(workflowId, { createJobTxHash: createTx })
-
-          // Frontend waits for the receipt FIRST — same pattern as the
-          // scripts/onchain reference script. The wallet broadcasts via
-          // its own RPC; if we hand the hash to the server before it's
-          // mined, the server's RPC may not have seen it yet (propagation
-          // lag across nodes). Polling via the same Arc public RPC pool
-          // here means viem keeps retrying until the receipt appears on
-          // any of the load-balanced nodes — the same mechanism that
-          // makes the reference script reliable.
-          try {
-            await waitForCreateReceipt(createTx)
-          } catch (e) {
-            // If the local wait times out, fall through to the server poll
-            // loop anyway — it has its own multi-RPC fallback and a longer
-            // window. Log so we can diagnose stuck-tx vs. propagation lag.
-            console.warn('[escrow] frontend waitForTransactionReceipt failed, falling back to server poll', e)
-          }
         }
 
         // ── 3. backend provider signs setBudget after createJob lands ──
@@ -355,16 +215,9 @@ export function useEscrowPost(): UseEscrowPostReturn {
           throw new Error(normalizeEscrowError(post.detail || 'Create job transaction is still pending confirmation', post.hint, post.txHash))
         }
         if (post.error === 'create_tx_not_found' && post.resetCreateTx) {
-          // Do NOT auto-retry-sign within the same post() call. Privy
-          // embedded wallet often rejects rapid back-to-back signing
-          // requests as "user denied" — the user thinks they signed but
-          // sees an error. Surface the error so the user can re-click
-          // Continue funding from a clean state. The persisted createTx
-          // in DB is preserved unless dropMissingTx fired, so resume is
-          // idempotent on the next click.
           setTxHashes({})
           setStep('idle')
-          throw new Error(post.detail || 'Create job transaction not visible on Arc RPC. Please retry — the wallet hash will be reused.')
+          if (attempt < 2) continue
         }
         if (!postOk || !post.jobId || !post.setBudgetTx || !post.fund?.data) {
           throw new Error(normalizeEscrowError(post.detail || post.error || `post-create ${postStatus}`, post.hint, post.txHash))
@@ -377,10 +230,16 @@ export function useEscrowPost(): UseEscrowPostReturn {
             throw new Error('prepare returned no approve calldata')
           }
           setStep('signing-approve')
-          approveTx = await signTx({
+          const txRequest = {
+            account: userAddr,
             to: prep.approve.to as `0x${string}`,
             data: prep.approve.data as Hex,
-          })
+          }
+          const gas = await publicClient.estimateGas(txRequest)
+          approveTx = (await walletClient.sendTransaction({
+            ...txRequest,
+            gas,
+          })) as Hex
           setTxHashes((s) => ({ ...s, approve: approveTx }))
           await trackEscrowTx(workflowId, { approveTxHash: approveTx })
         }
@@ -389,10 +248,16 @@ export function useEscrowPost(): UseEscrowPostReturn {
         let fundTx = prep.fundTx as Hex | undefined
         if (!fundTx) {
           setStep('signing-fund')
-          fundTx = await signTx({
+          const txRequest = {
+            account: userAddr,
             to: prep.contract as `0x${string}`,
             data: post.fund.data as Hex,
-          })
+          }
+          const gas = await publicClient.estimateGas(txRequest)
+          fundTx = (await walletClient.sendTransaction({
+            ...txRequest,
+            gas,
+          })) as Hex
           setTxHashes((s) => ({ ...s, fund: fundTx }))
           await trackEscrowTx(workflowId, { fundTxHash: fundTx })
         }
@@ -434,24 +299,24 @@ export function useEscrowPost(): UseEscrowPostReturn {
         throw new Error('Escrow funding could not recover stale create transaction')
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        console.error('[escrow] raw error caught:', e, '\nmessage:', msg, '\nstack:', e instanceof Error ? e.stack : undefined)
+        const userRejected = /user rejected|denied|cancelled/i.test(msg)
         const staleTx = /no longer visible|stale hashes were cleared|sign again/i.test(msg)
         const pendingTx = /still pending|pending on Arc|not mined yet/i.test(msg)
-        setStep(pendingTx ? 'posting-create' : staleTx ? 'idle' : 'error')
+        setStep(pendingTx ? 'posting-create' : staleTx || userRejected ? 'idle' : 'error')
         if (staleTx) setTxHashes({})
-        if (isUserRejection(e)) {
-          setError('Bạn đã huỷ ký giao dịch')
-          throw new Error('Bạn đã huỷ ký giao dịch')
+        if (userRejected) {
+          setError('Transaction signature cancelled. Click "Continue" to try again.')
+          throw new Error('Transaction signature cancelled by user')
         } else if (/insufficient.*funds|insufficient.*balance/i.test(msg)) {
-          setError('Ví không đủ USDC hoặc gas. Hãy topup hoặc đợi pre-fund.')
-          throw new Error('Ví không đủ USDC hoặc gas. Hãy topup hoặc đợi pre-fund.')
+          setError('Insufficient USDC or gas in wallet. Please top up or wait for pre-funding.')
+          throw new Error('Insufficient USDC or gas in wallet. Please top up or wait for pre-funding.')
         } else {
           setError(msg)
           throw new Error(msg)
         }
       }
     },
-    [activeWallet, privySendTransaction, privyUser?.id],
+    [wallets],
   )
 
   return { step, error, result, txHashes, reset, post }
@@ -483,47 +348,4 @@ function normalizeEscrowError(detail: string, hint?: string, txHash?: string) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/**
- * Wait for a tx receipt — exact pattern from scripts/onchain/full-flow-8183.ts:
- *   const pub = createPublicClient({ chain: arcTestnet, transport: http() })
- *   const rcpt = await pub.waitForTransactionReceipt({ hash })
- *
- * `transport: http()` with no URL uses arcTestnet's default rpcUrls (the
- * three official Arc public RPCs), which viem load-balances internally.
- * waitForTransactionReceipt polls until the receipt appears or times out.
- */
-async function waitForCreateReceipt(hash: Hex): Promise<void> {
-  const pub = createPublicClient({ chain: arcTestnet, transport: http() })
-  const rcpt = await pub.waitForTransactionReceipt({
-    hash,
-    timeout: 60_000,
-    pollingInterval: 1_000,
-  })
-  if (rcpt.status !== 'success') {
-    throw new Error(`createJob tx ${hash} reverted`)
-  }
-}
-
-/**
- * Detect real user-rejection from wallet errors. Privy / viem wrap errors so we
- * walk `cause` chain checking EIP-1193 code 4001 + the viem error class name.
- * Only fall back to message regex with very specific phrases — a loose pattern
- * like `/rejected/i` matches RPC errors, chain mismatch, and Privy session
- * issues and would mis-label non-cancel failures as user cancel.
- */
-function isUserRejection(err: unknown): boolean {
-  let cur: unknown = err
-  for (let depth = 0; depth < 6 && cur; depth++) {
-    const e = cur as { code?: unknown; name?: string; shortMessage?: string; message?: string; cause?: unknown }
-    if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true
-    if (e.name === 'UserRejectedRequestError') return true
-    const msg = `${e.shortMessage ?? ''} ${e.message ?? ''}`
-    if (/User rejected the request|User denied (transaction|message) signature|action_rejected/i.test(msg)) {
-      return true
-    }
-    cur = e.cause
-  }
-  return false
 }

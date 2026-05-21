@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, timestamp, integer } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, jsonb, timestamp, integer, index } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -55,6 +55,7 @@ export const workflows = pgTable('workflows', {
   erc8183CompleteTx: text('erc8183_complete_tx'),
   erc8183DeliverableHash: text('erc8183_deliverable_hash'),
   erc8183BudgetUsdc: text('erc8183_budget_usdc'),
+  erc8183ReputationTx: text('erc8183_reputation_tx'),
 })
 
 export const creditLedger = pgTable('credit_ledger', {
@@ -113,3 +114,18 @@ export type Skill = typeof skills.$inferSelect
 export type Node = typeof nodes.$inferSelect
 export type Message = typeof messages.$inferSelect
 export type NewMessage = typeof messages.$inferInsert
+
+export const deployments = pgTable('deployments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workflowId: uuid('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  cronExpression: text('cron_expression').default('*/30 * * * *').notNull(),
+  status: text('status').default('active').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('deployments_workflow_id_idx').on(table.workflowId),
+  index('deployments_user_id_idx').on(table.userId),
+])
+
+export type Deployment = typeof deployments.$inferSelect
+export type NewDeployment = typeof deployments.$inferInsert

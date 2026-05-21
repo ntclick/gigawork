@@ -19,6 +19,7 @@ export interface Erc8183Trail {
   completeTx: string | null
   deliverableHash: string | null
   budgetUsdc: string | null
+  reputationTx: string | null
 }
 
 /**
@@ -217,7 +218,8 @@ function UnifiedTrail({
     : erc8183?.submitTx || (erc8183?.fundTx && reportReady)
       ? 'active'
       : 'idle'
-  const reputationState: TrailState = reputationTx
+  const effectiveRepTx = reputationTx ?? erc8183?.reputationTx ?? null
+  const reputationState: TrailState = effectiveRepTx
     ? 'done'
     : reputationStatus === 'skipped'
       ? 'done'
@@ -238,7 +240,7 @@ function UnifiedTrail({
         />
         <TrailRow label="Report" state={reportState} detail={reportReady ? 'ready' : composer?.status ?? 'compose'} />
         <TrailRow label="Settle" state={settleState} detail={erc8183?.jobId ? `#${erc8183.jobId}` : 'pending'} />
-        <TrailRow label="Reputation" state={reputationState} detail={reputationTx ? 'cached' : 'pending'} />
+        <TrailRow label="Reputation" state={reputationState} detail={effectiveRepTx ? 'on-chain' : reputationStatus === 'skipped' ? 'DB cached' : 'pending'} />
       </div>
 
       {dispatches.length > 0 && (
@@ -268,6 +270,7 @@ function UnifiedTrail({
           <TrailTxRow label="Submit deliverable" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : reportReady && erc8183.fundTx ? 'active' : 'idle'} />
           <TrailTxRow label="Complete job" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
           {erc8183.deliverableHash && <HashRow label="Deliverable" hash={erc8183.deliverableHash} />}
+          <TrailTxRow label="Reputation" tx={effectiveRepTx} state={reputationState} detail={reputationStatus === 'skipped' ? 'DB only' : reputationStatus === 'error' ? 'failed' : undefined} />
         </div>
       )}
 
@@ -275,7 +278,7 @@ function UnifiedTrail({
         <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Reputation</p>
         <TrailTxRow
           label="Increment score"
-          tx={reputationTx}
+          tx={effectiveRepTx}
           state={reputationState}
           detail={reputationStatus === 'skipped' ? 'DB cached' : reputationStatus === 'error' ? 'failed' : undefined}
         />

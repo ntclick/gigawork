@@ -176,7 +176,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       budget_per_buy_usd: 200,
       frequency: 'weekly',
     },
-    followupSkills: ['report-composer'],
+    followupSkills: ['trading-signals', 'report-composer'],
     uses: ['dca-executor', 'trading-signals', 'report-composer'],
     prompt:
       'Build a buy/sell ladder for ETH around live spot. Pair with 4h trading signals so each tier has a confidence note. Output a clean table.',
@@ -222,7 +222,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     desc: 'Run any analysis and push the result to your email or Telegram.',
     category: 'execution',
     freeTextOnly: true,
-    uses: ['report-composer', 'email-sender', 'telegram-sender'],
+    uses: ['trading-signals', 'report-composer', 'email-sender', 'telegram-sender'],
     prompt:
       'Scan BTC + ETH 4h technical signals, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
     slottedPrompt:

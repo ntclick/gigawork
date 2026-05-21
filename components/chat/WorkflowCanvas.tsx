@@ -33,7 +33,7 @@ import {
 import type { UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 
-import { NodeDetailSheet, type NodeDetail, type NodeEditRequest } from './NodeDetailSheet'
+import { NodeDetailSheet, type NodeDetail } from './NodeDetailSheet'
 import type { Erc8183Trail } from './WorkflowDocPanel'
 
 type PlanNode = {
@@ -160,6 +160,7 @@ const VERIFIED_PILL: Record<NodeKind, { bg: string; border: string; text: string
 const PLACEHOLDERS: Node[] = [0, 1, 2, 3].map((i) => ({
   id: `p${i}`,
   position: { x: 60 + i * 220, y: 200 },
+  draggable: false,
   data: { label: '' },
   style: {
     width: 110,
@@ -183,15 +184,15 @@ const PLACEHOLDER_EDGES: Edge[] = [
 export function WorkflowCanvas({
   messages,
   status,
-  onEditNode,
   workflowId,
   erc8183,
+  onNodeUpdated,
 }: {
   messages: UIMessage[]
   status?: string
-  onEditNode?: (req: NodeEditRequest) => void
   workflowId?: string
   erc8183?: Erc8183Trail | null
+  onNodeUpdated?: () => void
 }) {
   // Re-derive plan from messages — pure function, runs every render but cheap.
   const { nodes: planNodes, edges: planEdges, hasPlan, details } = useMemo(
@@ -283,7 +284,7 @@ export function WorkflowCanvas({
         fitViewOptions={{ padding: 0.35, maxZoom: 1 }}
         panOnDrag
         zoomOnScroll
-        nodesDraggable
+        nodesDraggable={!showPlaceholder}
         nodesConnectable={false}
         elementsSelectable
         proOptions={{ hideAttribution: true }}
@@ -387,8 +388,8 @@ export function WorkflowCanvas({
       <NodeDetailSheet
         detail={selectedNode}
         onClose={() => setSelectedNode(null)}
-        onEdit={onEditNode}
         workflowId={workflowId}
+        onNodeUpdated={onNodeUpdated}
       />
     </div>
   )
@@ -424,16 +425,18 @@ function buildFromMessages(messages: UIMessage[]): {
         if (out?.nodes?.length && plan.length === 0) plan = out.nodes
       }
       if (toolName === 'dispatchSkill') {
-        const input = (part.input as { node_id?: string; input_json?: string } | undefined) ?? {}
+        const input = (part.input as { node_id?: string; input_json?: string; input?: unknown } | undefined) ?? {}
         const planId = findPlanIdByNodeId(plan, input.node_id)
         if (plan.length > 0 && !planId) continue
         if (!planId) continue
         const det = details.get(planId) ?? {
           status: 'pending' as DispatchState,
         }
-        // Decode input_json if present
+        // Decode input_json or use raw input object if present
         if (input.input_json) {
           try { det.input = JSON.parse(input.input_json) } catch { det.input = input.input_json }
+        } else if (input.input) {
+          det.input = input.input
         }
         if (part.state === 'output-available') {
           const out = part.output as { ok?: boolean; output?: unknown; error?: string } | undefined

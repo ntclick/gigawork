@@ -53,7 +53,8 @@ export async function GET(_req: Request, ctx: RouteCtx) {
     wf.erc8183ApproveTx ||
     wf.erc8183FundTx ||
     wf.erc8183SubmitTx ||
-    wf.erc8183CompleteTx
+    wf.erc8183CompleteTx ||
+    wf.erc8183ReputationTx
   )
 
   const rows = await withDbRetry(
@@ -158,6 +159,7 @@ export async function GET(_req: Request, ctx: RouteCtx) {
             completeTx: wf.erc8183CompleteTx,
             deliverableHash: wf.erc8183DeliverableHash,
             budgetUsdc: wf.erc8183BudgetUsdc,
+            reputationTx: wf.erc8183ReputationTx,
           }
         : null,
     },

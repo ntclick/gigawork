@@ -15,8 +15,12 @@
  */
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { eq } from 'drizzle-orm'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
+import { db } from '@/lib/db/client'
+import { users } from '@/lib/db/schema'
+
 
 const Body = z.object({
   kind: z.enum(['email', 'telegram']),
@@ -80,21 +84,22 @@ export async function POST(req: Request) {
   }
 
   // kind === 'telegram'
-  if (!u.telegramChatId) {
+  if (!u.telegramBotToken) {
     return NextResponse.json(
       {
         ok: false,
         kind: 'telegram',
-        error: 'telegram_chat_id not set — fill the chat id and save first.',
+        error: 'Telegram Bot Token not configured. Please fill it and save first.',
       },
       { status: 400 },
     )
   }
   const input = {
-    chat_id: u.telegramChatId,
+    chat_id: u.telegramChatId ?? undefined,
     message: TEST_TG,
     parse_mode: 'Markdown',
-    bot_token: u.telegramBotToken ?? undefined,
+    bot_token: u.telegramBotToken,
+    userId: u.id, // also pass userId so the skill handler itself can auto-save if it detects
   }
   const r = await fetch(`${selfBaseUrl(req)}/api/skills/telegram-sender`, {
     method: 'POST',
@@ -102,6 +107,20 @@ export async function POST(req: Request) {
     body: JSON.stringify(input),
   })
   const j = (await r.json()) as Record<string, unknown>
+
+  // If the skill successfully sent the message and auto-detected a chat ID, save it to the DB!
+  if (j.sent === true && typeof j.chat_id === 'string' && j.chat_id) {
+    const botId = u.telegramBotToken.split(':')[0]
+    if (!u.telegramChatId || u.telegramChatId === botId || u.telegramChatId !== j.chat_id) {
+      console.log(`[profile/test] auto-saving detected telegramChatId: ${j.chat_id}`)
+      try {
+        await db.update(users).set({ telegramChatId: j.chat_id }).where(eq(users.id, u.id))
+      } catch (dbErr) {
+        console.error('[profile/test] failed to auto-save detected telegramChatId', dbErr)
+      }
+    }
+  }
+
   return NextResponse.json({ ok: j.sent === true, kind: 'telegram', ...j })
 }
 

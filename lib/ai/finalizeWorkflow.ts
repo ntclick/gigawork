@@ -5,6 +5,8 @@ import { incrementReputationBatch } from '@/lib/chain/reputation'
 import { attestWorkflowCompletion } from '@/lib/chain/validation'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
+import { curlFetchJSON } from '@/lib/skills/curlFetch'
+
 
 export async function publishFinalReport({
   workflowId,
@@ -73,14 +75,11 @@ export async function publishFinalReport({
     // Settlement is best-effort — if it fails (e.g. job was never funded,
     // or RPC times out) we still save the report and mark completed.
     // The settlement trail in the UI will show the failure reason.
-    const settled = await settleWorkflowJob(workflowId, finalMarkdown)
-    if (settled) {
-      await cacheReputation(workflowId, userId)
-    } else {
-      // Record why settlement was skipped but do NOT block the report.
-      console.warn('[publishFinalReport] settlement skipped — still publishing report')
-    }
+    await settleWorkflowJob(workflowId, finalMarkdown)
   }
+
+  // Always cache reputation (updates DB scores and attempts on-chain feedback)
+  await cacheReputation(workflowId, userId)
 
   await db.insert(messages).values({
     workflowId,
@@ -94,7 +93,123 @@ export async function publishFinalReport({
     .set({ status: 'completed' })
     .where(eq(workflows.id, workflowId))
 
+  // Send a brief notification to user's saved Telegram bot upon successful deployment (completion)
+  sendTelegramNotification(workflowId, userId, finalMarkdown).catch((e) => {
+    console.error('[Telegram Notification] error', e)
+  })
+
   return { ok: true }
+}
+
+async function sendTelegramNotification(workflowId: string, userId: string | null, finalMarkdown: string) {
+  if (!userId) return
+  try {
+    const [u] = await db
+      .select({
+        telegramChatId: users.telegramChatId,
+        telegramBotToken: users.telegramBotToken,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+
+    if (!u || !u.telegramBotToken) {
+      console.log('[Telegram Notification] Skipped: No saved bot token found for user.')
+      return
+    }
+
+    let chatId = u.telegramChatId?.trim() ?? ''
+    const token = u.telegramBotToken.trim()
+
+    // Extract bot ID from token (format: BOT_ID:SECRET).
+    // If the saved chat_id equals the bot's own ID, the bot would try to
+    // message itself which Telegram rejects with 403. Clear it to auto-detect.
+    const botId = token.split(':')[0]
+    if (botId && chatId === botId) {
+      console.log(`[Telegram Notification] chat_id ${chatId} matches bot's own ID — clearing to auto-detect`)
+      chatId = ''
+    }
+
+    // Auto-detect chat_id from getUpdates if not provided
+    if (!chatId) {
+      try {
+        const updatesUrl = `https://api.telegram.org/bot${token}/getUpdates`
+        const updatesRes = await curlFetchJSON<{ ok: boolean; result?: any[] }>(updatesUrl, {
+          method: 'GET',
+          timeoutMs: 5000,
+        })
+        if (updatesRes.ok && Array.isArray(updatesRes.result) && updatesRes.result.length > 0) {
+          const reversed = [...updatesRes.result].reverse()
+          for (const item of reversed) {
+            const cid = item.message?.chat?.id ?? item.edited_message?.chat?.id ?? item.callback_query?.message?.chat?.id
+            if (cid) {
+              chatId = String(cid)
+              console.log(`[Telegram Notification] Auto-detected chat_id=${chatId} via getUpdates`)
+              
+              // Auto-save the detected chat_id back to user profile so we don't have to scan again
+              try {
+                await db.update(users).set({ telegramChatId: chatId }).where(eq(users.id, userId))
+                console.log(`[Telegram Notification] Auto-saved detected chat_id=${chatId} to user profile`)
+              } catch (dbErr) {
+                console.error('[Telegram Notification] failed to auto-save detected chat_id', dbErr)
+              }
+              break
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Telegram Notification] Failed to auto-detect chat_id from getUpdates', err)
+      }
+    }
+
+    if (!chatId) {
+      console.log('[Telegram Notification] Skipped: No valid chat_id found or auto-detected.')
+      return
+    }
+
+    const [wf] = await db
+      .select({ prompt: workflows.prompt })
+      .from(workflows)
+      .where(eq(workflows.id, workflowId))
+      .limit(1)
+
+    const title = wf?.prompt ? wf.prompt.slice(0, 100) + (wf.prompt.length > 100 ? '...' : '') : 'Workflow'
+    
+    // Clean up markdown syntax for a clean message
+    let summaryText = finalMarkdown
+      .replace(/[#*`_[\]()]/g, '') // strip markdown
+      .replace(/\n+/g, ' ') // collapse newlines
+      .trim()
+    if (summaryText.length > 350) {
+      summaryText = summaryText.slice(0, 350) + '...'
+    }
+
+    const message = 
+      `🚀 *Hermes Deploy Successful!*\n\n` +
+      `📌 *Workflow:* ${title}\n` +
+      `🆔 *ID:* \`${workflowId}\`\n\n` +
+      `📝 *Summary:*\n_${summaryText}_`
+
+    const url = `https://api.telegram.org/bot${token}/sendMessage`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown',
+      }),
+    })
+    
+    if (!res.ok) {
+      const errText = await res.text()
+      console.warn(`[Telegram Notification] telegram API failed: ${errText}`)
+    } else {
+      console.log(`[Telegram Notification] Brief deploy report sent successfully for ${workflowId}`)
+    }
+  } catch (e) {
+    console.warn('[Telegram Notification] failed (non-fatal)', e)
+  }
 }
 
 async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
@@ -220,7 +335,7 @@ export async function failWorkflow(
       return
     }
 
-    const repTx = await incrementReputationBatch(tokenIds, 'failed')
+    const repTx = await incrementReputationBatch(tokenIds, 'failed', workflowId)
     await db.insert(messages).values({
       workflowId,
       role: 'system',
@@ -242,6 +357,18 @@ export async function failWorkflow(
 }
 
 async function cacheReputation(workflowId: string, userId: string | null) {
+  const existing = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.workflowId, workflowId),
+        eq(messages.toolName, 'reputationUpdate'),
+      ),
+    )
+    .limit(1)
+  if (existing.length > 0) return
+
   try {
     // Count completed skills (with or without on-chain agentTokenId)
     const allCompletedSkills = await db
@@ -308,7 +435,7 @@ async function cacheReputation(workflowId: string, userId: string | null) {
       return
     }
 
-    const repTx = await incrementReputationBatch(tokenIds)
+    const repTx = await incrementReputationBatch(tokenIds, 'completed', workflowId)
     if (!repTx) {
       // Registry not configured or admin wallet missing — record so
       // UI shows a clear status instead of "pending" forever.
@@ -326,6 +453,12 @@ async function cacheReputation(workflowId: string, userId: string | null) {
       })
       return
     }
+
+    // Persist to workflows row so API returns it in erc8183 trail
+    await db
+      .update(workflows)
+      .set({ erc8183ReputationTx: repTx })
+      .where(eq(workflows.id, workflowId))
 
     await db.insert(messages).values({
       workflowId,

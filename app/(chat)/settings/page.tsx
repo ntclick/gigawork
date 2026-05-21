@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import {
   ArrowLeft,
   CheckCircle2,
+  ExternalLink,
   Eye,
   EyeOff,
   Loader2,
@@ -149,6 +150,7 @@ function ProfileForm({
   const [botToken, setBotToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [clearToken, setClearToken] = useState(false)
+  const [showAdvancedTg, setShowAdvancedTg] = useState(!!profile.telegramChatId)
   // ─── UI state ───
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<number | null>(null)
@@ -211,14 +213,15 @@ function ProfileForm({
     setSaving(true)
     try {
       // Only send dirty fields so unset values don't get accidentally cleared.
+      // Automatically trim whitespace from all inputs.
       const body: Record<string, string | null> = {}
-      if (email !== initialEmail) body.notifyEmail = email
-      if (emailFrom !== initialFrom) body.emailFrom = emailFrom
-      if (chatId !== initialChatId) body.telegramChatId = chatId
+      if (email !== initialEmail) body.notifyEmail = email.trim()
+      if (emailFrom !== initialFrom) body.emailFrom = emailFrom.trim()
+      if (chatId !== initialChatId) body.telegramChatId = chatId.trim()
       if (clearEmailKey) body.emailApiKey = ''
-      else if (emailKey.length > 0) body.emailApiKey = emailKey
+      else if (emailKey.trim().length > 0) body.emailApiKey = emailKey.trim()
       if (clearToken) body.telegramBotToken = ''
-      else if (botToken.length > 0) body.telegramBotToken = botToken
+      else if (botToken.trim().length > 0) body.telegramBotToken = botToken.trim()
 
       const r = await fetch('/api/me/profile', {
         method: 'POST',
@@ -467,30 +470,52 @@ function ProfileForm({
           </p>
         </div>
 
-        {/* Chat id */}
-        <div>
-          <label className="mb-1.5 block text-xs uppercase tracking-wider text-white/65">
-            Chat ID
-          </label>
-          <input
-            type="text"
-            value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
-            placeholder="123456789  or  @your_channel"
-            className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-[var(--giga-accent)] focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-white/45">
-            DM{' '}
-            <a
-              href="https://t.me/userinfobot"
-              target="_blank"
-              rel="noreferrer"
-              className="text-cyan-300 underline-offset-2 hover:underline"
-            >
-              @userinfobot
-            </a>{' '}
-            to get your numeric id, then start a chat with YOUR bot so it can message you.
-          </p>
+        {/* Chat id collapsible */}
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedTg(!showAdvancedTg)}
+            className="text-[11px] font-bold uppercase tracking-wider text-cyan-300 hover:text-cyan-200 transition-colors flex items-center gap-1 focus:outline-none"
+          >
+            {showAdvancedTg ? '▼ Hide Chat ID (Optional)' : '▶ Configure Chat ID manually (Optional)'}
+          </button>
+          
+          {showAdvancedTg && (
+            <div className="mt-2 border-l-2 border-cyan-500/30 pl-3 py-1 space-y-2 animate-in fade-in duration-200">
+              <label className="mb-1 block text-xs uppercase tracking-wider text-white/65">
+                Chat ID (Optional)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatId}
+                  onChange={(e) => setChatId(e.target.value)}
+                  placeholder="123456789  or  @your_channel"
+                  className="flex-1 border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-[var(--giga-accent)] focus:outline-none"
+                />
+                <a
+                  href="https://t.me/userinfobot"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-1 border-2 border-black bg-cyan-500/25 px-3 py-2 text-xs font-bold uppercase tracking-wider text-cyan-300 hover:bg-cyan-500/45 transition-colors whitespace-nowrap"
+                >
+                  Get ID <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+              <p className="mt-1 text-[11px] text-white/45">
+                DM{' '}
+                <a
+                  href="https://t.me/userinfobot"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-cyan-300 underline-offset-2 hover:underline"
+                >
+                  @userinfobot
+                </a>{' '}
+                to get your numeric id, then start a chat with YOUR bot so it can message you.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Send test */}
@@ -498,18 +523,18 @@ function ProfileForm({
           <div className="flex items-center justify-between">
             <div className="text-xs text-white/55">
               Send a test message to <span className="font-mono text-white/75">
-                {profile.telegramChatId || 'your saved chat'}
+                {profile.telegramChatId || 'your auto-detected chat'}
               </span>
             </div>
             <button
               type="button"
-              disabled={testingTg || !profile.telegramChatId || dirty}
+              disabled={testingTg || (!profile.telegramChatId && !profile.hasTelegramBotToken) || dirty}
               onClick={() => sendTest('telegram')}
               title={
                 dirty
                   ? 'Save changes first'
-                  : !profile.telegramChatId
-                    ? 'Set chat id first'
+                  : (!profile.telegramChatId && !profile.hasTelegramBotToken)
+                    ? 'Set bot token first'
                     : 'Send a test Telegram message'
               }
               className="inline-flex items-center gap-1.5 border-2 border-black bg-[#1f1f33] px-3 py-1.5 text-xs text-white/85 transition hover:bg-[#27273f] disabled:cursor-not-allowed disabled:opacity-40"

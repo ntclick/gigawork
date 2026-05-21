@@ -8,6 +8,20 @@
       "when": 1778399238166,
       "tag": "0000_jazzy_talon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779259200000,
+      "tag": "0001_add_workflow_reputation_tx",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779346502362,
+      "tag": "0002_lying_morbius",
+      "breakpoints": true
     }
   ]
 }

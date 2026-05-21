@@ -271,7 +271,7 @@ export function IdentityGate({
       const msg = e instanceof Error ? e.message : String(e)
       // EIP-1193 user reject — show a friendlier message
       if (/user rejected|denied/i.test(msg)) {
-        setErr('Bạn đã huỷ ký giao dịch — click Mint để thử lại.')
+        setErr('Transaction signature cancelled — click Mint to try again.')
       } else {
         setErr(msg)
       }

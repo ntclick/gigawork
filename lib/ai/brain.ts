@@ -209,16 +209,23 @@ export async function streamBrain(opts: {
       // Auto-finalize: Kimi sometimes streams the final report as plain text
       // instead of calling finalizeReport. We persist the assembled text
       // and flip the workflow to completed so reload + history pickers work.
+      //
+      // IMPORTANT: Every path MUST end in a terminal state (completed/failed).
+      // Vercel kills functions at maxDuration (120s) — if onFinish doesn't
+      // commit a terminal status before that, the workflow stays 'running'
+      // forever with no recovery path.
       try {
         const cleanText = (text ?? '').trim()
         const alreadyFinalized = await hasFinalizeMessage(opts.workflowId)
+        if (alreadyFinalized) return
+
         const dispatchCount = await countMessages(opts.workflowId, 'dispatchSkill')
         const nodeStats = await getNodeStats(opts.workflowId)
-        const nodeCount = nodeStats.total
 
-        if (!alreadyFinalized && dispatchCount === 0) {
+        // 1. Brain never dispatched anything → fail
+        if (dispatchCount === 0) {
           const reason =
-            nodeCount === 0
+            nodeStats.total === 0
               ? 'Brain stopped before creating workflow nodes. Please rerun the request.'
               : 'Brain stopped before dispatching any skill. Please rerun the workflow.'
           await db.insert(messages).values({
@@ -226,25 +233,18 @@ export async function streamBrain(opts: {
             role: 'brain',
             content: reason,
             toolName: 'stream_error',
-            toolPayload: {
-              finishReason,
-              source: 'streamText.onFinish',
-              cleanText: cleanText.slice(0, 1000),
-              dispatchCount,
-              nodeCount,
-            },
+            toolPayload: { finishReason, source: 'streamText.onFinish', dispatchCount, nodeStats },
           })
           await failWorkflow(opts.workflowId, opts.userId)
           return
         }
 
-        if (cleanText.length > 0 && !alreadyFinalized) {
+        // 2. Brain streamed final text → publish as report
+        if (cleanText.length > 0) {
           if (!nodeStats.allTerminal) {
             await persistIncompleteWorkflow(opts.workflowId, opts.userId, {
-              finishReason,
-              source: 'streamText.onFinish',
-              cleanText: cleanText.slice(0, 1000),
-              nodeStats,
+              finishReason, source: 'streamText.onFinish',
+              cleanText: cleanText.slice(0, 1000), nodeStats,
             })
             return
           }
@@ -258,7 +258,8 @@ export async function streamBrain(opts: {
           return
         }
 
-        if (!alreadyFinalized && nodeStats.allTerminal) {
+        // 3. All nodes terminal → try composer markdown, else fail
+        if (nodeStats.allTerminal) {
           const composerMarkdown = await findCompletedComposerMarkdown(opts.workflowId)
           if (composerMarkdown) {
             await publishFinalReport({
@@ -270,11 +271,31 @@ export async function streamBrain(opts: {
             })
             return
           }
+          // All nodes done but no report content → fail gracefully
+          await db.insert(messages).values({
+            workflowId: opts.workflowId,
+            role: 'brain',
+            content: `All ${nodeStats.total} nodes finished (${nodeStats.completed} ok, ${nodeStats.failed} failed) but no report was composed.`,
+            toolName: 'stream_error',
+            toolPayload: { finishReason, source: 'streamText.onFinish:no-report', nodeStats },
+          })
+          await failWorkflow(opts.workflowId, opts.userId)
+          return
         }
 
-        if (!alreadyFinalized && finishReason !== 'tool-calls') {
-          await failWorkflow(opts.workflowId, opts.userId)
-        }
+        // 4. Nodes still pending/running → fail pending, mark workflow failed
+        await db
+          .update(nodes)
+          .set({ status: 'failed', output: { error: `Brain stopped (${finishReason}) before dispatching this node.` } })
+          .where(and(eq(nodes.workflowId, opts.workflowId), eq(nodes.status, 'pending')))
+        await db.insert(messages).values({
+          workflowId: opts.workflowId,
+          role: 'brain',
+          content: `Brain stopped (${finishReason}) after ${nodeStats.total} nodes: ${nodeStats.completed} completed, ${nodeStats.failed} failed, ${nodeStats.pending} never dispatched, ${nodeStats.running} still running.`,
+          toolName: 'stream_error',
+          toolPayload: { finishReason, source: 'streamText.onFinish:incomplete', nodeStats },
+        })
+        await failWorkflow(opts.workflowId, opts.userId)
       } catch (e) {
         console.error('[brain.onFinish] failed to persist final state', e)
       }

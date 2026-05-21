@@ -18,7 +18,7 @@ const ARC_EXPLORER =
  * MainHeader — top bar matching the "GigaWork - Workflow Editor" mockup.
  *
  * - Brand logo on the left
- * - Section tabs (Dashboard / Workflows / Agents / Settings)
+ * - Section tabs (Home / Workflows / Agents / Settings)
  * - Real on-chain USDC balance pulled from the user's connected wallet
  * - Profile avatar + menu, notifications button
  * - Mobile: collapses to logo + USDC pill + profile (nav becomes hamburger)
@@ -26,7 +26,6 @@ const ARC_EXPLORER =
 
 const NAV = [
   { label: 'Home', href: '/', glyph: '⌂', match: (p: string) => p === '/' },
-  { label: 'Dashboard', href: '/dashboard', glyph: '■' },
   { label: 'Workflows', href: '/', glyph: '⚡', match: (p: string) => p.startsWith('/workflow') },
   { label: 'Agents', href: '/agents', glyph: '◆' },
   { label: 'Docs', href: '/docs', glyph: '?' },

@@ -24,6 +24,9 @@
  *  ✅ telegram-sender   → Telegram Bot API (per-user bot_token; dev-mock if absent)
  */
 import { curlFetchJSON } from './curlFetch'
+import { and, eq } from 'drizzle-orm'
+import { db } from '@/lib/db/client'
+import { nodes, skills, users } from '@/lib/db/schema'
 
 function hash(s: string): number {
   let h = 2166136261
@@ -719,19 +722,26 @@ export const SKILLS: Record<string, SkillHandler> = {
     const userNote = typeof input.user_note === 'string' ? input.user_note : undefined
     const fallbackMarkdown = sanitizeReportMarkdown(buildDeterministicReport(data, userNote))
 
-    const kimiKey = process.env.KIMI_API_KEY ?? ''
-    const kimiBase = process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1'
-    const kimiModel = process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview'
+    const provider = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
+    const useOpenAI = provider === 'openai' || !process.env.KIMI_API_KEY
 
-    if (!kimiKey || Object.keys(data).length === 0) {
+    const apiKey = useOpenAI ? (process.env.OPENAI_API_KEY ?? '') : (process.env.KIMI_API_KEY ?? '')
+    const baseUrl = useOpenAI
+      ? (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1')
+      : (process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1')
+    const model = useOpenAI
+      ? (process.env.OPENAI_MODEL ?? 'gpt-4o-mini')
+      : (process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview')
+
+    if (!apiKey || Object.keys(data).length === 0) {
       return {
         format,
         tone,
         composed: false,
         markdown: fallbackMarkdown,
         evidence_markdown: fallbackMarkdown,
-        error: !kimiKey
-          ? 'KIMI_API_KEY not set — cannot synthesize report. Add it to .env.local.'
+        error: !apiKey
+          ? `${useOpenAI ? 'OPENAI_API_KEY' : 'KIMI_API_KEY'} not set — cannot synthesize report. Add it to .env.local.`
           : 'No upstream data passed to composer. Brain should run scanner/sentiment first.',
         raw_input_keys: Object.keys(data),
         generated_at: new Date().toISOString(),
@@ -755,14 +765,14 @@ export const SKILLS: Record<string, SkillHandler> = {
     try {
       const r = await curlFetchJSON<{
         choices: { message: { content: string } }[]
-      }>(`${kimiBase}/chat/completions`, {
+      }>(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${kimiKey}`,
+          authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model: kimiModel,
+          model: model,
           messages: [
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt },
@@ -774,7 +784,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       })
       const markdown = sanitizeReportMarkdown(r.choices?.[0]?.message?.content?.trim() ?? '')
       if (!markdown) {
-        throw new Error('Kimi returned empty content')
+        throw new Error(`${useOpenAI ? 'OpenAI' : 'Kimi'} returned empty content`)
       }
       return {
         format,
@@ -783,7 +793,7 @@ export const SKILLS: Record<string, SkillHandler> = {
         markdown,
         evidence_markdown: fallbackMarkdown,
         upstream_keys: Object.keys(data),
-        model: kimiModel,
+        model: model,
         word_count: markdown.split(/\s+/).filter(Boolean).length,
         generated_at: new Date().toISOString(),
       }
@@ -795,7 +805,7 @@ export const SKILLS: Record<string, SkillHandler> = {
         composed: false,
         markdown: fallbackMarkdown,
         evidence_markdown: fallbackMarkdown,
-        error: `Kimi synthesis failed: ${msg}`,
+        error: `${useOpenAI ? 'OpenAI' : 'Kimi'} synthesis failed: ${msg}`,
         raw_input_keys: Object.keys(data),
         generated_at: new Date().toISOString(),
       }
@@ -813,14 +823,22 @@ export const SKILLS: Record<string, SkillHandler> = {
       }
     }
 
-    const kimiKey = process.env.KIMI_API_KEY ?? ''
-    const kimiBase = process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1'
-    const kimiModel = process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview'
-    if (!kimiKey) {
+    const provider = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
+    const useOpenAI = provider === 'openai' || !process.env.KIMI_API_KEY
+
+    const apiKey = useOpenAI ? (process.env.OPENAI_API_KEY ?? '') : (process.env.KIMI_API_KEY ?? '')
+    const baseUrl = useOpenAI
+      ? (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1')
+      : (process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1')
+    const model = useOpenAI
+      ? (process.env.OPENAI_MODEL ?? 'gpt-4o-mini')
+      : (process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview')
+
+    if (!apiKey) {
       return {
         url,
         digested: false,
-        error: 'KIMI_API_KEY not set — document-digest needs an LLM to synthesize.',
+        error: `${useOpenAI ? 'OPENAI_API_KEY' : 'KIMI_API_KEY'} not set — document-digest needs an LLM to synthesize.`,
         generated_at: new Date().toISOString(),
       }
     }
@@ -905,14 +923,14 @@ export const SKILLS: Record<string, SkillHandler> = {
     try {
       const r = await curlFetchJSON<{
         choices: { message: { content: string } }[]
-      }>(`${kimiBase}/chat/completions`, {
+      }>(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${kimiKey}`,
+          authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model: kimiModel,
+          model: model,
           messages: [
             { role: 'system', content: sys },
             { role: 'user', content: userPrompt },
@@ -934,7 +952,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       return {
         url,
         digested: false,
-        error: `Kimi digest failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        error: `${useOpenAI ? 'OpenAI' : 'Kimi'} digest failed: ${e instanceof Error ? e.message : 'unknown'}`,
         word_count: sourceWordCount,
         generated_at: new Date().toISOString(),
       }
@@ -951,7 +969,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       source_type: parsedDigest.source_type ?? 'other',
       citations: [{ url, label: 'source' }],
       word_count: sourceWordCount,
-      model: kimiModel,
+      model: model,
       generated_at: new Date().toISOString(),
     }
   },
@@ -1700,14 +1718,125 @@ export const SKILLS: Record<string, SkillHandler> = {
   },
 
   'telegram-sender': async (input) => {
-    const chatId = (input.chat_id as string | undefined)?.trim() ?? ''
-    const message = (input.message as string | undefined)?.trim() ?? ''
+    let chatId = (input.chat_id as string | undefined)?.trim() ?? ''
+    if (chatId) {
+      if (!/^-?\d+$/.test(chatId) && !chatId.startsWith('@')) {
+        let hint = 'Invalid chat_id format. '
+        if (chatId.toLowerCase().endsWith('bot')) {
+          hint += 'Do NOT use the Bot Username as the Chat ID. Use your numeric Telegram User ID (e.g. 584930128) which you can get from @userinfobot.'
+        } else {
+          hint += 'Bots cannot message personal usernames. Use your numeric Telegram Chat ID (e.g. 584930128) which you can get from @userinfobot.'
+        }
+        throw new Error(hint)
+      }
+    }
+    let message = (input.message as string | undefined)?.trim() ?? ''
+
+    // Resolve parameter aliases
+    if (!message) message = (input.text as string | undefined)?.trim() ?? ''
+    if (!message) message = (input.body_markdown as string | undefined)?.trim() ?? ''
+    if (!message) message = (input.body as string | undefined)?.trim() ?? ''
+
+    // Database fallback if message is empty but workflowId is present
+    if (!message && input.workflowId && typeof input.workflowId === 'string') {
+      try {
+        const [composerNode] = await db
+          .select({ output: nodes.output })
+          .from(nodes)
+          .innerJoin(skills, eq(nodes.skillId, skills.id))
+          .where(
+            and(
+              eq(nodes.workflowId, input.workflowId),
+              eq(skills.name, 'report-composer'),
+              eq(nodes.status, 'completed'),
+            )
+          )
+          .limit(1)
+
+        if (composerNode?.output) {
+          const outObj = composerNode.output as Record<string, unknown>
+          if (typeof outObj.markdown === 'string' && outObj.markdown.trim()) {
+            message = outObj.markdown.trim()
+          }
+        }
+      } catch (dbErr) {
+        console.error('[telegram-sender] failed to fetch fallback message from report-composer', dbErr)
+      }
+    }
+
+    // If still empty, fall back to a sensible default notification instead of throwing/crashing
+    if (!message) {
+      message = '📢 *GigaWork Alert* \n\nYour workflow executed successfully, but no customized message body was composed. Please check your dashboard for full details.'
+    }
+
     const parseMode = (input.parse_mode as string | undefined) ?? 'Markdown'
     const disablePreview = (input.disable_preview as boolean | undefined) ?? true
     const token = (input.bot_token as string | undefined) ?? process.env.TELEGRAM_BOT_TOKEN
 
-    if (!chatId) throw new Error('missing chat_id')
-    if (!message) throw new Error('missing message')
+    if (token && token.includes('••••')) {
+      throw new Error(
+        'Telegram Bot Token is not configured or is using a placeholder/masked value. ' +
+        'Please go to Settings to save your real Telegram Bot Token & Chat ID, or provide a valid custom bot token for this node.'
+      )
+    }
+
+    // Extract bot ID from token (format: BOT_ID:SECRET).
+    // If the saved chat_id equals the bot's own ID, the bot would try to
+    // message itself which Telegram rejects with 403. Clear it so
+    // auto-detect via getUpdates finds the real user.
+    if (token && chatId) {
+      const botId = token.split(':')[0]
+      if (botId && chatId === botId) {
+        console.log(`[telegram-sender] chat_id ${chatId} matches bot's own ID — clearing to auto-detect real user`)
+        chatId = ''
+      }
+    }
+
+    // Auto-detect chat_id from getUpdates if not provided and bot token is available
+    if (!chatId && token) {
+      try {
+        const updatesUrl = `https://api.telegram.org/bot${token}/getUpdates`
+        const updatesRes = await curlFetchJSON<{ ok: boolean; result?: any[] }>(updatesUrl, {
+          method: 'GET',
+          timeoutMs: 5000,
+        })
+        if (updatesRes.ok && Array.isArray(updatesRes.result) && updatesRes.result.length > 0) {
+          // Scan updates from newest to oldest
+          const reversed = [...updatesRes.result].reverse()
+          for (const item of reversed) {
+            const cid = item.message?.chat?.id ?? item.edited_message?.chat?.id ?? item.callback_query?.message?.chat?.id
+            if (cid) {
+              chatId = String(cid)
+              console.log(`[telegram-sender] Auto-detected chat_id=${chatId} via getUpdates`)
+
+              // Permanently save the auto-detected chat_id back to user profile if userId is available
+              if (input.userId && typeof input.userId === 'string') {
+                try {
+                  const botId = token.split(':')[0]
+                  const [user] = await db.select({ telegramChatId: users.telegramChatId }).from(users).where(eq(users.id, input.userId)).limit(1)
+                  if (user && (!user.telegramChatId || user.telegramChatId === botId || user.telegramChatId !== chatId)) {
+                    console.log(`[telegram-sender] Auto-saving detected chat_id=${chatId} to userId=${input.userId}`)
+                    await db.update(users).set({ telegramChatId: chatId }).where(eq(users.id, input.userId))
+                  }
+                } catch (saveErr) {
+                  console.error('[telegram-sender] failed to auto-save chat_id', saveErr)
+                }
+              }
+              break
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[telegram-sender] Failed to auto-detect chat_id from getUpdates', err)
+      }
+    }
+
+    if (!chatId) {
+      throw new Error(
+        'Missing chat_id. Please provide a Chat ID, or open Telegram and send a message (like /start) to your bot first, ' +
+        'then try again so GigaWork can auto-detect your Chat ID automatically.'
+      )
+    }
 
     if (!token) {
       console.log(`[telegram-sender:dev-mock] would send to=${chatId}: "${message.slice(0, 80)}"`)

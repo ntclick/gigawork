@@ -20,7 +20,8 @@
  */
 import { useWallets } from '@privy-io/react-auth'
 import { useCallback, useState } from 'react'
-import { createWalletClient, custom, encodeFunctionData, parseUnits, type Hex } from 'viem'
+import { createPublicClient, createWalletClient, custom, encodeFunctionData, http, parseUnits, type Hex } from 'viem'
+import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 
 const USDC = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as `0x${string}`
@@ -29,7 +30,10 @@ const TREASURY = (process.env.NEXT_PUBLIC_USDC_TREASURY ?? '') as `0x${string}`
 
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')
 
-const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002')
+const publicClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http(),
+})
 
 // Minimal ERC-20 ABI for transfer().
 const erc20TransferAbi = [
@@ -87,19 +91,19 @@ export function useTopup(): UseTopupReturn {
 
       if (!TREASURY) {
         setStep('error')
-        setError('Treasury address chưa cấu hình (NEXT_PUBLIC_USDC_TREASURY)')
+        setError('Treasury address is not configured (NEXT_PUBLIC_USDC_TREASURY)')
         return
       }
       if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) {
         setStep('error')
-        setError('Số USDC phải > 0')
+        setError('USDC amount must be greater than 0')
         return
       }
 
       const wallet = wallets[0]
       if (!wallet) {
         setStep('error')
-        setError('Chưa có ví được kết nối')
+        setError('No wallet connected')
         return
       }
 
@@ -114,7 +118,7 @@ export function useTopup(): UseTopupReturn {
         }
 
         const provider = await wallet.getEthereumProvider()
-        const walletClient = createWalletClient({ transport: custom(provider) })
+        const walletClient = createWalletClient({ chain: arcTestnet, transport: custom(provider) })
 
         const value = parseUnits(String(usdcAmount), USDC_DECIMALS)
         const data = encodeFunctionData({
@@ -123,11 +127,15 @@ export function useTopup(): UseTopupReturn {
           args: [TREASURY, value],
         })
 
-        const hash = (await walletClient.sendTransaction({
+        const txRequest = {
           account: wallet.address as `0x${string}`,
           to: USDC,
           data,
-          chain: null,
+        }
+        const gas = await publicClient.estimateGas(txRequest)
+        const hash = (await walletClient.sendTransaction({
+          ...txRequest,
+          gas,
         })) as Hex
         setTxHash(hash)
 
@@ -162,7 +170,7 @@ export function useTopup(): UseTopupReturn {
         const msg = e instanceof Error ? e.message : String(e)
         // User rejected wallet popup is benign — surface a friendly message.
         if (/user rejected|denied|cancelled/i.test(msg)) {
-          setError('Bạn đã huỷ ký giao dịch')
+          setError('Transaction signature cancelled by user')
         } else {
           setError(msg)
         }

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
-import { nodes, users, workflows } from '@/lib/db/schema'
+import { messages, nodes, users, workflows } from '@/lib/db/schema'
 import { getCurrentUser } from '@/lib/auth/session'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
 
@@ -13,7 +13,12 @@ import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
  * without modifying the workflow state or consuming credits.
  * Returns ERC-8183 compliant structured output.
  *
- * Body: { nodeId: string, skillName: string, input: Record<string, unknown> }
+ * Body: {
+ *   nodeId: string,
+ *   skillName: string,
+ *   input: Record<string, unknown>,
+ *   save?: boolean  — when true, persists the result to the nodes table
+ * }
  */
 export async function POST(
   request: NextRequest,
@@ -29,9 +34,10 @@ export async function POST(
     nodeId?: string
     skillName?: string
     input?: Record<string, unknown>
+    save?: boolean
   }
 
-  const { nodeId, skillName, input = {} } = body
+  const { nodeId, skillName, input = {}, save = false } = body
   if (!nodeId || !skillName) {
     return NextResponse.json(
       { error: 'nodeId and skillName are required' },
@@ -79,22 +85,174 @@ export async function POST(
       if (!inputCopy.from && profile?.emailFrom) inputCopy.from = profile.emailFrom
     }
     if (skillName === 'telegram-sender') {
-      if (!inputCopy.chat_id && profile?.telegramChatId) inputCopy.chat_id = profile.telegramChatId
-      if (!inputCopy.bot_token && profile?.telegramBotToken) inputCopy.bot_token = profile.telegramBotToken
+      // Only fall back to profile credentials if the user is NOT using a custom bot token
+      if (!inputCopy.bot_token) {
+        if (!inputCopy.chat_id && profile?.telegramChatId) inputCopy.chat_id = profile.telegramChatId
+        if (profile?.telegramBotToken) inputCopy.bot_token = profile.telegramBotToken
+      }
+    }
+  }
+
+  // When saving, resolve nodeId → DB node UUID.
+  // nodeId can be a plan_id slug (e.g. "send-telegram") rather than a UUID.
+  let resolvedNodeId: string | null = null
+  if (save) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeId)
+    if (isUuid) {
+      resolvedNodeId = nodeId
+    } else {
+      // Look up by skill_name match in this workflow
+      const skillRow = await getSkillByName(skillName)
+      if (skillRow) {
+        const candidates = await db
+          .select({ id: nodes.id })
+          .from(nodes)
+          .where(and(eq(nodes.workflowId, workflowId), eq(nodes.skillId, skillRow.id)))
+          .limit(1)
+        if (candidates[0]) resolvedNodeId = candidates[0].id
+      }
+    }
+
+    // Mark node as running before executing
+    if (resolvedNodeId) {
+      await db
+        .update(nodes)
+        .set({ status: 'running' })
+        .where(eq(nodes.id, resolvedNodeId))
     }
   }
 
   try {
-    const output = (await callSkillEndpoint(skill, inputCopy)) as Record<string, unknown>
+    // Debug: log which credentials are being used (masked for security)
+    if (skillName === 'telegram-sender') {
+      const tk = inputCopy.bot_token as string | undefined
+      const ci = inputCopy.chat_id as string | undefined
+      console.log(
+        `[test-node] telegram-sender: bot_token=${tk ? '****' + tk.slice(-6) : 'NONE'}, chat_id=${ci ?? 'NONE'}, source=${input.bot_token ? 'custom' : 'profile'}`,
+      )
+    }
+    const output = (await callSkillEndpoint(skill, { ...inputCopy, workflowId })) as Record<string, unknown>
+
+    // Persist to DB when save=true
+    if (save && resolvedNodeId) {
+      await db
+        .update(nodes)
+        .set({ status: 'completed', output })
+        .where(eq(nodes.id, resolvedNodeId))
+
+      // Clean & redact input (original client-sent inputs) for messages toolPayload
+      const recordedInput: Record<string, unknown> = { ...input }
+      const redactKeys = ['bot_token', 'api_key', 'authorization'] as const
+      for (const k of redactKeys) {
+        const v = recordedInput[k]
+        if (typeof v === 'string' && v.length > 0) {
+          recordedInput[k] = '••••' + v.slice(-4)
+        }
+      }
+
+      const updated = await db
+        .update(messages)
+        .set({
+          toolPayload: {
+            skill_name: skillName,
+            input: recordedInput,
+            ok: true,
+            output,
+            dispatch_tx: null,
+          },
+        })
+        .where(
+          and(
+            eq(messages.workflowId, workflowId),
+            eq(messages.nodeId, resolvedNodeId),
+            eq(messages.toolName, 'dispatchSkill'),
+          ),
+        )
+        .returning()
+
+      if (updated.length === 0) {
+        await db.insert(messages).values({
+          workflowId,
+          role: 'system',
+          nodeId: resolvedNodeId,
+          toolName: 'dispatchSkill',
+          toolPayload: {
+            skill_name: skillName,
+            input: recordedInput,
+            ok: true,
+            output,
+            dispatch_tx: null,
+          },
+          content: null,
+        })
+      }
+    }
 
     return NextResponse.json({
       ok: true,
       node_id: nodeId,
       skill_name: skillName,
       output,
+      saved: save && !!resolvedNodeId,
     })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
+
+    // Persist failure to DB when save=true
+    if (save && resolvedNodeId) {
+      await db
+        .update(nodes)
+        .set({ status: 'failed', output: { error } })
+        .where(eq(nodes.id, resolvedNodeId))
+
+      // Clean & redact input (original client-sent inputs) for messages toolPayload
+      const recordedInput: Record<string, unknown> = { ...input }
+      const redactKeys = ['bot_token', 'api_key', 'authorization'] as const
+      for (const k of redactKeys) {
+        const v = recordedInput[k]
+        if (typeof v === 'string' && v.length > 0) {
+          recordedInput[k] = '••••' + v.slice(-4)
+        }
+      }
+
+      const updated = await db
+        .update(messages)
+        .set({
+          toolPayload: {
+            skill_name: skillName,
+            input: recordedInput,
+            ok: false,
+            error,
+            dispatch_tx: null,
+          },
+        })
+        .where(
+          and(
+            eq(messages.workflowId, workflowId),
+            eq(messages.nodeId, resolvedNodeId),
+            eq(messages.toolName, 'dispatchSkill'),
+          ),
+        )
+        .returning()
+
+      if (updated.length === 0) {
+        await db.insert(messages).values({
+          workflowId,
+          role: 'system',
+          nodeId: resolvedNodeId,
+          toolName: 'dispatchSkill',
+          toolPayload: {
+            skill_name: skillName,
+            input: recordedInput,
+            ok: false,
+            error,
+            dispatch_tx: null,
+          },
+          content: null,
+        })
+      }
+    }
+
     return NextResponse.json(
       { ok: false, error, skill_name: skillName, node_id: nodeId },
       { status: 500 },

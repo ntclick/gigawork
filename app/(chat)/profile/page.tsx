@@ -11,17 +11,22 @@ import {
   Fingerprint, 
   Mail, 
   MessageSquare, 
+  Play,
   Shield, 
   User as UserIcon,
   Wallet,
   Clock,
   ChevronRight,
-  Loader2
+  Loader2,
+  Activity,
+  Trash2
 } from 'lucide-react'
 
 import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { MainHeader } from '@/components/shell/MainHeader'
+import { toast } from '@/components/ui/toast'
+import { TestResultModal } from '@/components/chat/TestResultModal'
 
 type Profile = {
   notifyEmail: string | null
@@ -48,6 +53,11 @@ type UserData = {
 export default function ProfilePage() {
   const [user, setUser] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deploymentsList, setDeploymentsList] = useState<any[]>([])
+  const [deploymentsLoading, setDeploymentsLoading] = useState(true)
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false)
+  const [testDeploymentId, setTestDeploymentId] = useState('')
+  const [testWorkflowTitle, setTestWorkflowTitle] = useState('')
 
   useEffect(() => {
     fetch('/api/me')
@@ -61,6 +71,69 @@ export default function ProfilePage() {
       .catch((err) => console.error('Failed to fetch user', err))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    fetch('/api/me/deployments')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setDeploymentsList(data)
+      })
+      .catch((err) => console.error('Failed to fetch deployments', err))
+      .finally(() => setDeploymentsLoading(false))
+  }, [])
+
+  const handleToggleDeployment = async (deployId: string) => {
+    const target = deploymentsList.find((d) => d.id === deployId)
+    const willPause = target?.status === 'active'
+    try {
+      const res = await fetch(`/api/deployments/${deployId}`, {
+        method: 'POST'
+      })
+      if (res.ok) {
+        setDeploymentsList((prev) =>
+          prev.map((d) =>
+            d.id === deployId
+              ? { ...d, status: d.status === 'active' ? 'paused' : 'active' }
+              : d
+          )
+        )
+        if (willPause) {
+          toast.warning('Cron job tạm dừng', 'Hermes sẽ không chạy workflow này cho đến khi bạn Resume lại.')
+        } else {
+          toast.success('Cron job đã kích hoạt', 'Hermes sẽ tiếp tục chạy workflow theo lịch đã cấu hình.')
+        }
+      } else {
+        toast.error('Không thể cập nhật', 'Vui lòng thử lại sau.')
+      }
+    } catch (e) {
+      console.error('Failed to toggle deployment status', e)
+      toast.error('Lỗi kết nối', 'Không thể kết nối đến server.')
+    }
+  }
+
+  const handleDeleteDeployment = async (deployId: string) => {
+    if (!confirm('Xác nhận xoá deployment này? Hermes sẽ ngừng chạy workflow theo lịch.')) return
+    try {
+      const res = await fetch(`/api/deployments/${deployId}`, {
+        method: 'DELETE'
+      })
+      if (res.ok) {
+        setDeploymentsList((prev) => prev.filter((d) => d.id !== deployId))
+        toast.success('Đã xoá deployment', 'Cron job đã được gỡ khỏi Hermes.')
+      } else {
+        toast.error('Không thể xoá', 'Vui lòng thử lại sau.')
+      }
+    } catch (e) {
+      console.error('Failed to delete deployment', e)
+      toast.error('Lỗi kết nối', 'Không thể kết nối đến server.')
+    }
+  }
+
+  const handleTestDeployment = (deployId: string, workflowPrompt: string) => {
+    setTestDeploymentId(deployId)
+    setTestWorkflowTitle(workflowPrompt || `Workflow ${deployId.slice(0, 8)}`)
+    setIsTestModalOpen(true)
+  }
 
   const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
@@ -214,6 +287,84 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
+                  {/* Active Deployments */}
+                  <div className="border-2 border-black bg-[var(--giga-panel)] p-6">
+                    <h3 className="font-pixel-body text-xs uppercase tracking-widest text-[var(--giga-accent)] mb-6 flex items-center gap-2">
+                      <Activity className="h-4 w-4" /> Active Deployments (Hermes Cron)
+                    </h3>
+
+                    {deploymentsLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="h-6 w-6 animate-spin text-[var(--giga-accent)]" />
+                      </div>
+                    ) : deploymentsList.length === 0 ? (
+                      <div className="text-center py-6 border border-dashed border-white/10 bg-black/10">
+                        <p className="font-pixel-body text-[10px] text-white/40 uppercase">
+                          No active deployments
+                        </p>
+                        <p className="text-[10px] text-white/30 font-pixel-body mt-1">
+                          Deploy a completed workflow to schedule automations
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {deploymentsList.map((d) => (
+                          <div key={d.id} className="flex flex-col sm:flex-row sm:items-center justify-between border border-white/10 bg-black/20 p-4 gap-4">
+                            <div className="flex-1 min-w-0">
+                              <Link 
+                                href={`/workflow/${d.workflowId}`} 
+                                className="font-pixel-body text-xs text-white hover:text-[var(--giga-accent)] hover:underline transition truncate block uppercase"
+                              >
+                                {d.workflowPrompt || `Workflow ${d.workflowId.slice(0, 8)}`}
+                              </Link>
+                              <div className="flex flex-wrap items-center gap-2 mt-1.5 font-mono text-[9px] text-white/40">
+                                <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5 text-[var(--giga-accent)]" /> {getCronDescription(d.cronExpression)}</span>
+                                <span>•</span>
+                                <span>Status:</span>
+                                <span className={`inline-flex px-1.5 py-0.5 text-[8px] font-pixel-body border uppercase font-bold select-none ${
+                                  d.status === 'active' 
+                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' 
+                                    : 'border-white/10 bg-white/5 text-white/40'
+                                }`}>
+                                  {d.status}
+                                </span>
+                                <span>•</span>
+                                <span>Created: {new Date(d.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 shrink-0 self-end sm:self-center">
+                              <button
+                                type="button"
+                                onClick={() => handleTestDeployment(d.id, d.workflowPrompt)}
+                                className="px-3 py-1.5 font-pixel-body text-[10px] uppercase border border-cyan-500/20 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition active:scale-95 cursor-pointer flex items-center gap-1"
+                              >
+                                <Play className="h-2.5 w-2.5" /> TEST
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDeployment(d.id)}
+                                className={`px-3 py-1.5 font-pixel-body text-[10px] uppercase border transition active:scale-95 cursor-pointer ${
+                                  d.status === 'active'
+                                    ? 'border-yellow-500/20 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20'
+                                    : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                                }`}
+                              >
+                                {d.status === 'active' ? 'PAUSE' : 'RESUME'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDeployment(d.id)}
+                                className="px-3 py-1.5 font-pixel-body text-[10px] uppercase border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition active:scale-95 cursor-pointer"
+                              >
+                                DELETE
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Connected Accounts */}
                   <div className="border-2 border-black bg-[var(--giga-panel)] p-6">
                     <h3 className="font-pixel-body text-xs uppercase tracking-widest text-white/60 mb-6 flex items-center gap-2">
@@ -295,6 +446,21 @@ export default function ProfilePage() {
           </div>
         </main>
       </div>
+      <TestResultModal
+        isOpen={isTestModalOpen}
+        onClose={() => setIsTestModalOpen(false)}
+        deploymentId={testDeploymentId}
+        workflowTitle={testWorkflowTitle}
+      />
     </div>
   )
+}
+
+function getCronDescription(cron: string) {
+  if (cron === '*/10 * * * *') return 'Every 10 mins'
+  if (cron === '*/30 * * * *') return 'Every 30 mins'
+  if (cron === '0 * * * *') return 'Every hour'
+  if (cron === '0 */6 * * *') return 'Every 6 hours'
+  if (cron === '0 0 * * *') return 'Every day'
+  return cron
 }

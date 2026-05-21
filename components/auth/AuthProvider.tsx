@@ -1,6 +1,7 @@
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
+import { baseSepolia, sepolia } from 'viem/chains'
 
 // Use the shared arcTestnet — has USDC as nativeCurrency, which is what
 // external wallets (OKX, MetaMask) need to estimate gas correctly.
@@ -41,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           coinbaseWallet: { config: { preference: { options: 'eoaOnly' } } },
         },
         defaultChain: arcTestnet,
-        supportedChains: [arcTestnet],
+        supportedChains: [arcTestnet, sepolia, baseSepolia],
       }}
     >
       {children}

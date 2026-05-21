@@ -692,12 +692,21 @@ const ARC_TOKENS: Record<string, string> = {
   USDC: ARC_USDC,
   USYC: '0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C', // Token
   EURC: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
+  cirBTC: '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF',
+}
+
+const TOKEN_DECIMALS: Record<string, number> = {
+  USDC: 6,
+  USYC: 6,
+  EURC: 6,
+  cirBTC: 8,
 }
 
 const SWAP_TOKENS = [
   { symbol: 'USDC', name: 'USD Coin' },
   { symbol: 'USYC', name: 'Hashnote USYC' },
   { symbol: 'EURC', name: 'Euro Coin' },
+  { symbol: 'cirBTC', name: 'cirBTC' },
 ]
 
 function SwapTab() {
@@ -714,8 +723,8 @@ function SwapTab() {
   const [estimatedOut, setEstimatedOut] = useState<string | null>(null)
   const [estimating, setEstimating] = useState(false)
 
-  const balanceIn = useTokenBalance(wallet, ARC_TOKENS[tokenIn], ARC_RPC)
-  const balanceOut = useTokenBalance(wallet, ARC_TOKENS[tokenOut], ARC_RPC)
+  const balanceIn = useTokenBalance(wallet, ARC_TOKENS[tokenIn], ARC_RPC, TOKEN_DECIMALS[tokenIn] ?? 6)
+  const balanceOut = useTokenBalance(wallet, ARC_TOKENS[tokenOut], ARC_RPC, TOKEN_DECIMALS[tokenOut] ?? 6)
 
   const swapDirection = () => {
     setTokenIn(tokenOut)

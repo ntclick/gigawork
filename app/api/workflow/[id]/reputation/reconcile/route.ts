@@ -105,7 +105,7 @@ export async function POST(_req: Request, ctx: RouteCtx) {
       return NextResponse.json({ ok: true, skipped: true })
     }
 
-    const repTx = await incrementReputationBatch(tokenIds, outcome)
+    const repTx = await incrementReputationBatch(tokenIds, outcome, id)
 
     await db.insert(messages).values({
       workflowId: id,

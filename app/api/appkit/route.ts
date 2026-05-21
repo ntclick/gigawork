@@ -27,6 +27,7 @@ const CONTRACTS = {
   EURC:    '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as `0x${string}`,
   TELLER:  '0x9fdF14c5B14173D74C08Af27AebFf39240dC105A' as `0x${string}`,
   ACCOUNT_MANAGER: '0xcc205224862c7641930c87679e98999d23c26113' as `0x${string}`,
+  cirBTC:  '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF' as `0x${string}`,
 } as const
 
 // ── ABIs ────────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ const TOKEN_MAP: Record<string, `0x${string}`> = {
   USDC: CONTRACTS.USDC,
   USYC: CONTRACTS.USYC,
   EURC: CONTRACTS.EURC,
+  cirBTC: CONTRACTS.cirBTC,
 }
 
 export async function POST(req: Request) {

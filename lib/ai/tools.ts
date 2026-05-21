@@ -458,11 +458,17 @@ export function buildBrainTools(ctx: BrainContext) {
           if (!input.from && profile?.emailFrom) input.from = profile.emailFrom
         }
         if (skill_name === 'telegram-sender') {
-          if (!input.chat_id && profile?.telegramChatId) {
-            input.chat_id = profile.telegramChatId
+          // Only fall back to profile credentials if the user is NOT using a custom bot token
+          if (!input.bot_token) {
+            if (!input.chat_id && profile?.telegramChatId) {
+              input.chat_id = profile.telegramChatId
+            }
+            if (profile?.telegramBotToken) {
+              input.bot_token = profile.telegramBotToken
+            }
           }
-          if (!input.bot_token && profile?.telegramBotToken) {
-            input.bot_token = profile.telegramBotToken
+          if (userId) {
+            input.userId = userId
           }
         }
       }
@@ -498,7 +504,7 @@ export function buildBrainTools(ctx: BrainContext) {
       }
 
       try {
-        const output = (await callSkillEndpoint(skill, input)) as Record<string, unknown>
+        const output = (await callSkillEndpoint(skill, { ...input, workflowId })) as Record<string, unknown>
 
         await db
           .update(nodes)

@@ -27,16 +27,23 @@ const dohCache = new Map<string, { ip: string; expiresAt: number }>()
 async function resolveViaDoh(hostname: string): Promise<string> {
   const cached = dohCache.get(hostname)
   if (cached && cached.expiresAt > Date.now()) return cached.ip
-  const r = await undiciFetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=A`, {
-    headers: { accept: 'application/dns-json' },
-  })
-  if (!r.ok) throw new Error(`doh ${hostname}: HTTP ${r.status}`)
-  const j = (await r.json()) as { Status: number; Answer?: { type: number; data: string }[] }
-  if (j.Status !== 0) throw new Error(`doh ${hostname}: status ${j.Status}`)
-  const ipv4 = j.Answer?.find((a) => a.type === 1 && /^\d+\.\d+\.\d+\.\d+$/.test(a.data))?.data
-  if (!ipv4) throw new Error(`doh ${hostname}: no A record`)
-  dohCache.set(hostname, { ip: ipv4, expiresAt: Date.now() + CACHE_TTL_MS })
-  return ipv4
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const r = await undiciFetch(`${DOH_URL}?name=${encodeURIComponent(hostname)}&type=A`, {
+      headers: { accept: 'application/dns-json' },
+      signal: ctrl.signal,
+    })
+    if (!r.ok) throw new Error(`doh ${hostname}: HTTP ${r.status}`)
+    const j = (await r.json()) as { Status: number; Answer?: { type: number; data: string }[] }
+    if (j.Status !== 0) throw new Error(`doh ${hostname}: status ${j.Status}`)
+    const ipv4 = j.Answer?.find((a) => a.type === 1 && /^\d+\.\d+\.\d+\.\d+$/.test(a.data))?.data
+    if (!ipv4) throw new Error(`doh ${hostname}: no A record`)
+    dohCache.set(hostname, { ip: ipv4, expiresAt: Date.now() + CACHE_TTL_MS })
+    return ipv4
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export interface CurlFetchOptions {
@@ -100,6 +107,13 @@ export async function curlFetchJSON<T = unknown>(url: string, opts: CurlFetchOpt
   }
 
   if (status >= 400 || status === 0) {
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>
+      const errMsg = parsed.description || parsed.message || parsed.error || ''
+      if (errMsg) {
+        throw new Error(`HTTP ${status} from ${u.hostname}${u.pathname}: ${errMsg} via curl`)
+      }
+    } catch {}
     throw new Error(`HTTP ${status} from ${u.hostname}${u.pathname} via curl`)
   }
 

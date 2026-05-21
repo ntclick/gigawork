@@ -28,6 +28,11 @@ export async function POST(req: Request, ctx: RouteCtx) {
     }
     throw e
   }
+
+  const body = (await req.json().catch(() => ({}))) as {
+    messages?: UIMessage[]
+  }
+
   const [wf] = await withDbRetry(
     () => db
       .select()
@@ -43,11 +48,22 @@ export async function POST(req: Request, ctx: RouteCtx) {
     })
   }
 
-  if (wf.status !== 'planning' && wf.status !== 'running') {
+  let status = wf.status
+  const isUserRequest = body.messages && body.messages.length > 0
+  if (isUserRequest && (status === 'completed' || status === 'failed' || status === 'refused' || status === 'settlement_failed')) {
+    // Reset to planning so we can re-stream/re-run when user manually edits a node or sends a message
+    await db
+      .update(workflows)
+      .set({ status: 'planning' })
+      .where(eq(workflows.id, id))
+    status = 'planning'
+  }
+
+  if (status !== 'planning' && status !== 'running') {
     return new Response(
       JSON.stringify({
         error: 'workflow_already_started',
-        status: wf.status,
+        status: status,
         message: 'This workflow is already running or finished. Use the workflow snapshot instead of starting Hermes again.',
       }),
       {
@@ -57,7 +73,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
     )
   }
 
-  if (wf.status === 'running') {
+  if (status === 'running') {
     const [latest] = await db
       .select({ createdAt: messages.createdAt })
       .from(messages)
@@ -69,7 +85,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
       return new Response(
         JSON.stringify({
           error: 'workflow_already_started',
-          status: wf.status,
+          status: status,
           message: 'Hermes is actively working on this workflow.',
         }),
         { status: 409, headers: { 'Content-Type': 'application/json' } },
@@ -105,9 +121,6 @@ export async function POST(req: Request, ctx: RouteCtx) {
     )
   }
 
-  const body = (await req.json().catch(() => ({}))) as {
-    messages?: UIMessage[]
-  }
   const uiMessages = body.messages ?? [
     { id: 'seed', role: 'user' as const, parts: [{ type: 'text' as const, text: wf.prompt }] },
   ]
