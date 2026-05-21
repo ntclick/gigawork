@@ -1064,13 +1064,37 @@ export const SKILLS: Record<string, SkillHandler> = {
     let spotPrice = 0
     let pct24h = 0
     let dataSource = 'binance'
+    const DCA_BINANCE_HOSTS = [
+      'https://api.binance.com',
+      'https://api1.binance.com',
+      'https://api2.binance.com',
+      'https://api3.binance.com',
+      'https://data-api.binance.vision',
+    ]
     try {
-      const t = await fetchJSON<BinanceTicker>(
-        `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`,
-        { timeoutMs: 6000 },
-      )
-      spotPrice = Number(t.lastPrice)
-      pct24h = Number(t.priceChangePercent)
+      let fetched = false
+      const errors: string[] = []
+      for (const host of DCA_BINANCE_HOSTS) {
+        try {
+          const t = await fetchJSON<BinanceTicker>(
+            `${host}/api/v3/ticker/24hr?symbol=${symbol}`,
+            { timeoutMs: 6000 },
+          )
+          spotPrice = Number(t.lastPrice)
+          pct24h = Number(t.priceChangePercent)
+          dataSource = host.replace('https://', '')
+          fetched = true
+          break
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          errors.push(`${host}: ${msg}`)
+          if (msg.includes('451') || msg.includes('403') || msg.includes('fetch failed') || msg.includes('ECONNREFUSED')) {
+            continue
+          }
+          throw e
+        }
+      }
+      if (!fetched) throw new Error(`All Binance endpoints failed: ${errors.join(' | ')}`)
     } catch (e) {
       const seed = `dca:${asset}:${budget}:${freq}`
       spotPrice = Number(jitter(seed, asset === 'BTC' ? 67000 : asset === 'ETH' ? 3500 : 100, 0.1).toFixed(2))
@@ -1329,16 +1353,46 @@ export const SKILLS: Record<string, SkillHandler> = {
     const exch = (input.exchange as string | undefined) ?? 'binance'
     const binanceSymbol = symbol.replace('/', '')
 
-    const ticker = await fetchJSON<{ lastPrice: string; priceChangePercent: string }>(
-      `https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`,
-      { timeoutMs: 6000 },
+    // Binance geo-blocks certain server IPs (HTTP 451). Try multiple mirrors.
+    const BINANCE_HOSTS = [
+      'https://api.binance.com',
+      'https://api1.binance.com',
+      'https://api2.binance.com',
+      'https://api3.binance.com',
+      'https://api4.binance.com',
+      'https://data-api.binance.vision',
+    ]
+
+    async function binanceFetch<T>(path: string, timeoutMs = 8000): Promise<{ data: T; host: string }> {
+      const errors: string[] = []
+      for (const host of BINANCE_HOSTS) {
+        try {
+          const data = await fetchJSON<T>(`${host}${path}`, { timeoutMs })
+          return { data, host }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          errors.push(`${host}: ${msg}`)
+          // If it's a 451 (geo-block) or network error, try next mirror
+          if (msg.includes('451') || msg.includes('403') || msg.includes('fetch failed') || msg.includes('ECONNREFUSED')) {
+            continue
+          }
+          // For other errors (400 bad symbol, 429 rate limit), don't retry
+          throw e
+        }
+      }
+      throw new Error(`All Binance endpoints failed: ${errors.join(' | ')}`)
+    }
+
+    const { data: ticker, host: usedHost } = await binanceFetch<{ lastPrice: string; priceChangePercent: string }>(
+      `/api/v3/ticker/24hr?symbol=${binanceSymbol}`,
+      6000,
     )
     const price = round2(Number(ticker.lastPrice))
     const priceChange24h = round2(Number(ticker.priceChangePercent))
 
-    const klines = await fetchJSON<unknown[][]>(
-      `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${tf}&limit=300`,
-      { timeoutMs: 8000 },
+    const { data: klines } = await binanceFetch<unknown[][]>(
+      `/api/v3/klines?symbol=${binanceSymbol}&interval=${tf}&limit=300`,
+      8000,
     )
     const closes = klines.map((k) => Number(k[4]))
 
@@ -1396,6 +1450,7 @@ export const SKILLS: Record<string, SkillHandler> = {
           ? `Price above EMA20 ($${price} vs $${ema20}) — short-term momentum bullish`
           : `Price below EMA20 ($${price} vs $${ema20}) — short-term momentum bearish`,
       ],
+      binance_mirror: usedHost,
       data_sources: ['binance_ticker_24hr', 'binance_klines'],
       generated_at: new Date().toISOString(),
     }
