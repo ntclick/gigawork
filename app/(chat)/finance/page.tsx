@@ -1105,8 +1105,15 @@ const BRIDGE_SOURCES = [
 
 type BridgeEstimate = { feeTotal: number; providerFee: number; forwarderFee: number; kitFee: number; amountReceived: number }
 
+const CHAIN_ID_MAP: Record<string, number> = {
+  Arc_Testnet: 5042002,
+  Ethereum_Sepolia: 11155111,
+  Base_Sepolia: 84532,
+}
+
 function BridgeTab() {
   const { user } = usePrivy()
+  const { wallets } = useWallets()
   const wallet = user?.wallet?.address ?? null
 
   const [fromChain, setFromChain] = useState('Ethereum_Sepolia')
@@ -1132,6 +1139,60 @@ function BridgeTab() {
   const belowMin = parsedAmount > 0 && parsedAmount < MIN_BRIDGE
   const exceedsBal = balance.raw > BigInt(0) && parsedAmount > parseFloat(balance.formatted)
   const maxSpendable = balance.raw > BigInt(0) ? Math.max(0, parseFloat(balance.formatted) - FEE_BUFFER) : 0
+
+  // Enforce/auto-switch wallet chain on mount or when fromChain changes
+  useEffect(() => {
+    const walletObj = wallets[0]
+    if (walletObj) {
+      const targetChainId = CHAIN_ID_MAP[fromChain]
+      if (targetChainId) {
+        walletObj.switchChain(targetChainId).catch(() => {})
+      }
+    }
+  }, [fromChain, wallets])
+
+  // Chain selection handlers that automatically swap/adjust chains
+  const handleSelectFrom = async (val: string) => {
+    let newTo = toChain
+    if (val === toChain) {
+      newTo = fromChain
+      setToChain(fromChain)
+    }
+    setFromChain(val)
+
+    const walletObj = wallets[0]
+    if (walletObj) {
+      const targetChainId = CHAIN_ID_MAP[val]
+      if (targetChainId) {
+        try {
+          await walletObj.switchChain(targetChainId)
+        } catch (e) {
+          console.warn('Auto chain switch failed:', e)
+        }
+      }
+    }
+  }
+
+  const handleSelectTo = async (val: string) => {
+    let newFrom = fromChain
+    if (val === fromChain) {
+      newFrom = toChain
+      setFromChain(toChain)
+    }
+    setToChain(val)
+
+    const walletObj = wallets[0]
+    if (walletObj) {
+      const targetChainId = CHAIN_ID_MAP[newFrom]
+      if (targetChainId) {
+        try {
+          await walletObj.switchChain(targetChainId)
+        } catch (e) {
+          console.warn('Auto chain switch failed:', e)
+        }
+      }
+    }
+  }
 
   // Debounced fee estimate
   useEffect(() => {
@@ -1159,14 +1220,67 @@ function BridgeTab() {
   const execute = async () => {
     setBusy(true); setError(null); setResult(null); setStep('Initiating bridge...')
     try {
-      const r = await fetch('/api/appkit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bridge', amount, fromChain, toChain, speed }),
+      const walletObj = wallets[0]
+      if (!walletObj) throw new Error('Chưa kết nối ví. Vui lòng kết nối ví trước.')
+
+      let kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
+      if (!kitKey) {
+        try {
+          const res = await fetch('/api/appkit')
+          if (res.ok) {
+            const data = await res.json()
+            if (data.kitKey) {
+              kitKey = data.kitKey
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch CIRCLE_KIT_KEY from server:', e)
+        }
+      }
+      if (!kitKey) throw new Error('CIRCLE_KIT_KEY chưa được cấu hình (Vui lòng cấu hình CIRCLE_KIT_KEY hoặc NEXT_PUBLIC_CIRCLE_KIT_KEY trên Vercel).')
+
+      // Switch to source chain
+      const targetChainId = CHAIN_ID_MAP[fromChain]
+      if (targetChainId) {
+        try {
+          await walletObj.switchChain(targetChainId)
+        } catch (err) {
+          console.error('Failed to switch chain:', err)
+          throw new Error(`Vui lòng chuyển ví sang mạng ${source.label} để thực hiện bridge.`)
+        }
+      }
+
+      setStep('Connecting EIP-1193 provider...')
+      const provider = await walletObj.getEthereumProvider()
+
+      setStep('Loading Circle App-Kit...')
+      const { AppKit } = await import('@circle-fin/app-kit')
+      const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
+
+      const kit = new AppKit()
+      const adapter = await createViemAdapterFromProvider({ provider: provider as any })
+
+      setStep('Prompting bridge transaction in wallet...')
+      const result = await (kit as any).bridge({
+        from: { adapter, chain: fromChain as any },
+        to: { adapter, chain: toChain as any, useForwarder: true } as any,
+        amount,
+        config: { transferSpeed: speed, kitKey },
       })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      setResult(j)
+
+      if (result.state === 'error') {
+        const failedStep = result.steps?.find((s: any) => s.state === 'error')
+        throw new Error(failedStep?.errorMessage || 'Bridge failed')
+      }
+
+      setResult({
+        ok: true,
+        amount,
+        fromChain,
+        toChain,
+        txHash: result.steps?.find((s: any) => s.txHash)?.txHash ?? null,
+        explorerUrl: result.steps?.find((s: any) => s.explorerUrl)?.explorerUrl ?? null,
+      })
       setAmount('')
       window.dispatchEvent(new Event('gw:credits-changed'))
     } catch (e) {
@@ -1190,7 +1304,7 @@ function BridgeTab() {
         </div>
         <div className="grid grid-cols-3 gap-2">
           {BRIDGE_SOURCES.map((s) => (
-            <button key={`from-${s.value}`} disabled={busy || s.value === toChain} onClick={() => setFromChain(s.value)}
+            <button key={`from-${s.value}`} disabled={busy} onClick={() => handleSelectFrom(s.value)}
               className={`border-2 border-black px-1 py-2 text-[11px] font-bold transition disabled:opacity-40 ${
                 fromChain === s.value ? 'bg-cyan-500/20 text-cyan-300' : 'bg-[#1f1f33] text-white/75 hover:bg-[#27273f]'
               }`}>{s.label}</button>
@@ -1199,7 +1313,18 @@ function BridgeTab() {
 
         {/* Swap direction */}
         <div className="my-3 flex justify-center">
-          <button onClick={() => { const t = fromChain; setFromChain(toChain); setToChain(t) }} disabled={busy}
+          <button onClick={() => {
+            const t = fromChain
+            setFromChain(toChain)
+            setToChain(t)
+            const walletObj = wallets[0]
+            if (walletObj) {
+              const targetChainId = CHAIN_ID_MAP[toChain]
+              if (targetChainId) {
+                walletObj.switchChain(targetChainId).catch(() => {})
+              }
+            }
+          }} disabled={busy}
             className="rounded-full border-2 border-black bg-[#1f1f33] p-1.5 text-cyan-500 transition hover:bg-[#27273f] active:scale-95 disabled:opacity-50">
             <ArrowUpDown className="h-4 w-4" />
           </button>
@@ -1209,7 +1334,7 @@ function BridgeTab() {
         <label className="mb-1 block text-xs uppercase tracking-wider text-white/55">To</label>
         <div className="mb-3 grid grid-cols-3 gap-2">
           {BRIDGE_SOURCES.map((s) => (
-            <button key={`to-${s.value}`} disabled={busy || s.value === fromChain} onClick={() => setToChain(s.value)}
+            <button key={`to-${s.value}`} disabled={busy} onClick={() => handleSelectTo(s.value)}
               className={`border-2 border-black px-1 py-2 text-[11px] font-bold transition disabled:opacity-40 ${
                 toChain === s.value ? 'bg-cyan-500/20 text-cyan-300' : 'bg-[#1f1f33] text-white/75 hover:bg-[#27273f]'
               }`}>{s.label}</button>
@@ -1286,7 +1411,7 @@ function BridgeTab() {
             {result.txHash && (
               <a href={result.explorerUrl || `https://testnet.arcscan.app/tx/${result.txHash}`} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200">
-                View on ArcScan <ExternalLink className="h-3 w-3" /></a>
+                View Transaction <ExternalLink className="h-3 w-3" /></a>
             )}
           </div>
         )}
