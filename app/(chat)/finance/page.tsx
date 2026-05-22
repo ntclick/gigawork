@@ -858,16 +858,61 @@ function SwapTab() {
         }
 
       } else {
-        // --- Regular App-Kit Swap ---
-        const r = await fetch('/api/appkit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'swap', amount, tokenIn, tokenOut }),
+        // --- Regular App-Kit Swap (USDC ↔ EURC) — user ký trực tiếp ---
+        const walletObj = wallets[0]
+        if (!walletObj) throw new Error('Chưa kết nối ví. Vui lòng kết nối ví trước.')
+
+        const kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
+        if (!kitKey) throw new Error('NEXT_PUBLIC_CIRCLE_KIT_KEY chưa được cấu hình.')
+
+        // Switch sang Arc Testnet trước khi swap
+        try { await walletObj.switchChain(5042002) } catch { /* ignore */ }
+
+        const provider = await walletObj.getEthereumProvider()
+
+        const { AppKit } = await import('@circle-fin/app-kit')
+        const { createViemAdapterFromProvider } = await import('@circle-fin/adapter-viem-v2')
+
+        const kit = new AppKit()
+        const adapter = await createViemAdapterFromProvider({ provider: provider as any })
+
+        // Map symbol → contract address
+        const TOKEN_MAP: Record<string, string> = {
+          USDC: ARC_TOKENS.USDC,
+          EURC: ARC_TOKENS.EURC,
+          cirBTC: ARC_TOKENS.cirBTC,
+        }
+        const resolvedIn  = TOKEN_MAP[tokenIn]  ?? tokenIn
+        const resolvedOut = TOKEN_MAP[tokenOut] ?? tokenOut
+
+        const swapResult = await (kit as any).swap({
+          from: { adapter, chain: 'Arc_Testnet' as any },
+          tokenIn:  resolvedIn  as any,
+          tokenOut: resolvedOut as any,
+          amountIn: amount,
+          config: { kitKey, slippageBps: 100 },
         })
-        const j = await r.json()
-        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-        setResult(j)
+
+        const normalizeAmt = (v: unknown): string | null => {
+          if (v == null) return null
+          if (typeof v === 'string' || typeof v === 'number') return String(v)
+          if (typeof v === 'object' && 'amount' in (v as any)) return String((v as any).amount)
+          return null
+        }
+
+        setResult({
+          ok: true,
+          action: 'swap',
+          tokenIn,
+          tokenOut,
+          amountIn: amount,
+          amountOut: normalizeAmt((swapResult as any).amountOut),
+          txHash: (swapResult as any).txHash ?? null,
+          explorerUrl: (swapResult as any).explorerUrl ?? null,
+          fees: (swapResult as any).fees ?? [],
+        })
       }
+
 
       setAmount('')
       setEstimatedOut(null)
