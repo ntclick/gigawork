@@ -71,6 +71,20 @@ const TOKEN_MAP: Record<string, `0x${string}`> = {
   cirBTC: CONTRACTS.cirBTC,
 }
 
+export async function GET() {
+  try {
+    await getCurrentUser()
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    throw e
+  }
+
+  const kitKey = process.env.CIRCLE_KIT_KEY ?? process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY ?? ''
+  return NextResponse.json({ kitKey })
+}
+
 export async function POST(req: Request) {
   try {
     await getCurrentUser()

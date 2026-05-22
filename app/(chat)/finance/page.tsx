@@ -862,8 +862,21 @@ function SwapTab() {
         const walletObj = wallets[0]
         if (!walletObj) throw new Error('Chưa kết nối ví. Vui lòng kết nối ví trước.')
 
-        const kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
-        if (!kitKey) throw new Error('CIRCLE_KIT_KEY chưa được cấu hình (cần NEXT_PUBLIC_CIRCLE_KIT_KEY trên Vercel).')
+        let kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
+        if (!kitKey) {
+          try {
+            const res = await fetch('/api/appkit')
+            if (res.ok) {
+              const data = await res.json()
+              if (data.kitKey) {
+                kitKey = data.kitKey
+              }
+            }
+          } catch (e) {
+            console.error('Failed to fetch CIRCLE_KIT_KEY from server:', e)
+          }
+        }
+        if (!kitKey) throw new Error('CIRCLE_KIT_KEY chưa được cấu hình (Vui lòng cấu hình CIRCLE_KIT_KEY hoặc NEXT_PUBLIC_CIRCLE_KIT_KEY trên Vercel).')
 
         // Switch sang Arc Testnet trước khi swap
         try { await walletObj.switchChain(5042002) } catch { /* ignore */ }
