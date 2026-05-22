@@ -26,6 +26,61 @@ import { useTokenBalance } from '@/lib/hooks/useTokenBalance'
 import { createWalletClient, custom, parseUnits, createPublicClient, http, encodeFunctionData, maxUint256, type Hex } from 'viem'
 
 const PRESETS = [3, 5, 10, 25]
+
+// Monkeypatch window.fetch to strip x-user-agent header for api.circle.com calls.
+// This resolves the browser CORS block caused by Circle SDK's bug where it sends
+// x-user-agent in preflight headers but api.circle.com's CORS policy does not allow it.
+if (typeof window !== 'undefined' && !(window as any).__gw_circle_fetch_patched) {
+  (window as any).__gw_circle_fetch_patched = true
+  const originalFetch = window.fetch
+  window.fetch = function (input, init) {
+    let isCircleUrl = false
+    if (typeof input === 'string') {
+      isCircleUrl = input.includes('api.circle.com')
+    } else if (input && typeof input === 'object' && 'url' in input) {
+      const url = (input as any).url || ''
+      isCircleUrl = typeof url === 'string' && url.includes('api.circle.com')
+    }
+
+    if (isCircleUrl) {
+      // 1. Clean headers in Request object if input is Request
+      if (input && typeof input === 'object' && 'headers' in input) {
+        try {
+          const reqHeaders = (input as any).headers
+          if (reqHeaders && typeof reqHeaders.delete === 'function') {
+            reqHeaders.delete('x-user-agent')
+            reqHeaders.delete('X-User-Agent')
+          }
+        } catch (e) {}
+      }
+      
+      // 2. Clean headers in init options
+      if (init && init.headers) {
+        try {
+          if (init.headers instanceof Headers) {
+            init.headers.delete('x-user-agent')
+            init.headers.delete('X-User-Agent')
+          } else if (Array.isArray(init.headers)) {
+            init.headers = init.headers.filter(
+              ([k]) => k.toLowerCase() !== 'x-user-agent'
+            )
+          } else if (typeof init.headers === 'object') {
+            const newHeaders = { ...init.headers } as Record<string, string>
+            for (const key of Object.keys(newHeaders)) {
+              if (key.toLowerCase() === 'x-user-agent') {
+                delete newHeaders[key]
+              }
+            }
+            init.headers = newHeaders
+          }
+        } catch (err) {
+          console.error('Error stripping x-user-agent header:', err)
+        }
+      }
+    }
+    return originalFetch.apply(this, [input, init])
+  }
+}
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
 const STEP_LABELS: Record<TopupStep, string> = {
