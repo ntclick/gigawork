@@ -862,8 +862,8 @@ function SwapTab() {
         const walletObj = wallets[0]
         if (!walletObj) throw new Error('Chưa kết nối ví. Vui lòng kết nối ví trước.')
 
-        const kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
-        if (!kitKey) throw new Error('NEXT_PUBLIC_CIRCLE_KIT_KEY chưa được cấu hình.')
+        const kitKey = process.env.CIRCLE_KIT_KEY
+        if (!kitKey) throw new Error('CIRCLE_KIT_KEY chưa được cấu hình.')
 
         // Switch sang Arc Testnet trước khi swap
         try { await walletObj.switchChain(5042002) } catch { /* ignore */ }
