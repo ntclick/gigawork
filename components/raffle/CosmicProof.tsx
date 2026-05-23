@@ -111,24 +111,46 @@ export function CosmicProof({ merkleRoot, commitBlock, seed, drawn, txHash, cont
                   <span className="text-slate-600 block uppercase text-[8px] font-semibold tracking-wider">Cosmic Random Seed (Keccak256):</span>
                   <span className="text-amber-400/90 block truncate select-all">{seed}</span>
                 </div>
-                {txHash && (
-                  <div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 pt-0.5">
+                  {txHash && (
                     <a
                       href={`${explorerUrl}/tx/${txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 font-medium"
+                      className="inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 font-semibold"
                     >
                       View Draw Transaction
                       <ExternalLink className="h-3 w-3" />
                     </a>
-                  </div>
-                )}
+                  )}
+                  <a
+                    href="https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold"
+                  >
+                    Verify SpaceComputer IPFS Beacon
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
               </div>
             ) : (
-              <div className="text-[10px] text-slate-500 bg-slate-950/30 p-2.5 rounded border border-dashed border-white/5 flex items-center gap-1.5">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-600" />
-                Waiting for target block hash to derive Cosmic Seed...
+              <div className="space-y-2.5">
+                <div className="text-[10px] text-slate-500 bg-slate-950/30 p-2.5 rounded border border-dashed border-white/5 flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-600" />
+                  Waiting for target block hash to derive Cosmic Seed...
+                </div>
+                <div>
+                  <a
+                    href="https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold"
+                  >
+                    Check SpaceComputer IPFS Beacon
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
               </div>
             )}
           </div>
