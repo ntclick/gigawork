@@ -471,7 +471,7 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
 
           {/* 3-Column layout */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            {/* Column 1: Sơ đồ minh bạch */}
+            {/* Column 1: Transparency Diagram */}
             <div className="space-y-6">
               <CosmicProof
                 merkleRoot={raffle.merkleRoot}
@@ -520,7 +520,7 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                     commitBlock={raffle.commitBlock}
                   />
 
-                  {/* Column 2.2: Tự tra cứu & Xác minh */}
+                  {/* Column 2.2: Self-Lookup & Verification */}
                   <VerifyPanel
                     raffleId={raffle.id}
                     drawn={raffle.drawn}
