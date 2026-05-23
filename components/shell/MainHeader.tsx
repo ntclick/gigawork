@@ -28,6 +28,7 @@ const NAV = [
   { label: 'Home', href: '/', glyph: '⌂', match: (p: string) => p === '/' },
   { label: 'Workflows', href: '/', glyph: '⚡', match: (p: string) => p.startsWith('/workflow') },
   { label: 'Agents', href: '/agents', glyph: '◆' },
+  { label: 'Raffle', href: '/raffle', glyph: '🛰️', match: (p: string) => p.startsWith('/raffle') },
   { label: 'Docs', href: '/docs', glyph: '?' },
   { label: 'Finance', href: '/finance', glyph: '$' },
   { label: 'Profile', href: '/profile', glyph: '👤' },

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, timestamp, integer, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, jsonb, timestamp, integer, index, boolean } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -129,3 +129,40 @@ export const deployments = pgTable('deployments', {
 
 export type Deployment = typeof deployments.$inferSelect
 export type NewDeployment = typeof deployments.$inferInsert
+
+export const raffles = pgTable('raffles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  prizeDescription: text('prize_description'),
+  winnerCount: integer('winner_count').notNull(),
+  totalEntries: integer('total_entries').notNull(),
+  merkleRoot: text('merkle_root').notNull(),
+  commitBlock: integer('commit_block').notNull(),
+  drawn: boolean('drawn').default(false).notNull(),
+  seed: text('seed'),
+  onChainRaffleId: integer('on_chain_raffle_id'),
+  txHash: text('tx_hash'),
+  contractAddress: text('contract_address'),
+  rawEntries: text('raw_entries').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('raffles_user_id_idx').on(table.userId),
+])
+
+export const raffleWinners = pgTable('raffle_winners', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  raffleId: uuid('raffle_id').references(() => raffles.id, { onDelete: 'cascade' }).notNull(),
+  index: integer('index').notNull(),
+  username: text('username').notNull(),
+  merkleProof: jsonb('merkle_proof').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('raffle_winners_raffle_id_idx').on(table.raffleId),
+])
+
+export type Raffle = typeof raffles.$inferSelect
+export type NewRaffle = typeof raffles.$inferInsert
+export type RaffleWinner = typeof raffleWinners.$inferSelect
+export type NewRaffleWinner = typeof raffleWinners.$inferInsert

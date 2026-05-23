@@ -23,7 +23,11 @@
     "db:add-reputation-cols": "tsx scripts/add-reputation-cols.ts",
     "reputation:compile": "tsx scripts/compile-reputation.ts",
     "reputation:test": "tsx scripts/test-reputation.ts",
-    "reputation:deploy": "tsx scripts/deploy-reputation.ts"
+    "reputation:deploy": "tsx scripts/deploy-reputation.ts",
+    "raffle:compile": "tsx scripts/compile-raffle.ts",
+    "raffle:deploy": "tsx scripts/deploy-raffle.ts",
+    "raffle:test": "tsx scripts/test-raffle.ts",
+    "raffle:verify": "tsx scripts/verify-raffle.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",

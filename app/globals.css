@@ -675,3 +675,33 @@ button, a, .gw-transition {
 .gw-md blockquote { border-left: 4px solid rgba(255,255,255,0.2); padding-left: 1em; font-style: italic; opacity: 0.8; margin-bottom: 1em; }
 .gw-md pre { background: rgba(0,0,0,0.3); padding: 1em; border-radius: 4px; overflow-x: auto; margin-bottom: 1em; font-family: monospace; }
 .gw-md code { background: rgba(0,0,0,0.3); padding: 0.1em 0.3em; border-radius: 2px; font-family: monospace; font-size: 0.9em; }
+
+/* ─── Cosmic Raffle Custom Micro-Animations ─── */
+@keyframes flash {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-flash {
+  animation: flash 0.8s ease-out forwards;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
