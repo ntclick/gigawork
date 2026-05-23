@@ -24,8 +24,8 @@ const seedCache = new Map<number, `0x${string}`>()
  * Falls back to the public IPFS beacon gateways in case of credentials missing or API outages.
  */
 async function fetchSpaceComputerEntropy(): Promise<string | null> {
-  const clientId = process.env.ORBITPORT_CLIENT_ID
-  const clientSecret = process.env.ORBITPORT_CLIENT_SECRET
+  const clientId = process.env.ORBITPORT_CLIENT_ID?.trim()
+  const clientSecret = process.env.ORBITPORT_CLIENT_SECRET?.trim()
 
   if (clientId && clientSecret) {
     try {
@@ -43,11 +43,25 @@ async function fetchSpaceComputerEntropy(): Promise<string | null> {
         return entropy
       }
     } catch (e) {
-      console.warn('⚠️ Authenticated SDK cTRNG request failed, falling back to public IPFS beacon:', e instanceof Error ? e.message : e)
+      console.warn('⚠️ Authenticated SDK cTRNG request failed, falling back to public IPFS beacon via SDK:', e instanceof Error ? e.message : e)
     }
   }
 
-  // Fallback to public IPFS beacon gateways
+  // Fallback 1: Try using the OrbitportSDK without credentials (public IPFS beacon mode)
+  try {
+    console.log('🛰️ Initiating public SpaceComputer cTRNG request via SDK (unauthenticated IPFS mode)...')
+    const publicSdk = new OrbitportSDK({ config: {} })
+    const result = await publicSdk.ctrng.random()
+    if (result?.success && result?.data?.data) {
+      const entropy = result.data.data
+      console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy via public SDK (IPFS): ${entropy}`)
+      return entropy
+    }
+  } catch (e) {
+    console.warn('⚠️ Public SDK IPFS request failed, falling back to manual HTTP IPFS gateways:', e instanceof Error ? e.message : e)
+  }
+
+  // Fallback 2: Direct HTTP fetch from public IPFS beacon gateways (no dependencies)
   const gateways = [
     "https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
     "https://cloudflare-ipfs.com/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
