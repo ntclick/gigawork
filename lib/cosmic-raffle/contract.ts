@@ -4,7 +4,7 @@ import CosmicRaffleArtifact from '../../contracts/CosmicRaffle.json'
 
 // ─── Setup Chain & Clients ─────────────────────────────────────
 const ARC_RPC = process.env.ARC_RPC_URL ?? process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.testnet.arc.network'
-export const CONTRACT_ADDRESS = (process.env.COSMIC_RAFFLE_ADDRESS ?? process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS) as `0x${string}`
+export const CONTRACT_ADDRESS = (process.env.COSMIC_RAFFLE_ADDRESS ?? process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS ?? '0x3ea7ed77795acad23e414daea25af690810d6dbb') as `0x${string}`
 
 export const arcChain = defineChain({
   id: Number(process.env.ARC_CHAIN_ID ?? process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002'),
