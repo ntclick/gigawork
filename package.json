@@ -36,6 +36,7 @@
     "@circle-fin/adapter-viem-v2": "^1.9.0",
     "@circle-fin/app-kit": "^1.4.2",
     "@privy-io/react-auth": "^3.22.2",
+    "@spacecomputer-io/orbitport-sdk-ts": "^0.2.1",
     "@xyflow/react": "^12.10.2",
     "ai": "^6.0.168",
     "class-variance-authority": "^0.7.1",

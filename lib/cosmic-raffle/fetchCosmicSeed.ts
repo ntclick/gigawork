@@ -1,4 +1,5 @@
 import { createPublicClient, http, defineChain, keccak256, encodePacked } from 'viem'
+import { OrbitportSDK } from '@spacecomputer-io/orbitport-sdk-ts'
 
 // ─── viem setup ────────────────────────────────────────────────
 const ARC_RPC = process.env.ARC_RPC_URL ?? process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.testnet.arc.network'
@@ -18,10 +19,35 @@ const publicClient = createPublicClient({
 const seedCache = new Map<number, `0x${string}`>()
 
 /**
- * Fetches the cosmic entropy from SpaceComputer's public IPFS beacon.
- * Uses multiple public IPFS gateways for 100% reliability.
+ * Fetches the cosmic entropy from SpaceComputer's cTRNG service.
+ * First attempts to query via the authenticated Orbitport SDK.
+ * Falls back to the public IPFS beacon gateways in case of credentials missing or API outages.
  */
 async function fetchSpaceComputerEntropy(): Promise<string | null> {
+  const clientId = process.env.ORBITPORT_CLIENT_ID
+  const clientSecret = process.env.ORBITPORT_CLIENT_SECRET
+
+  if (clientId && clientSecret) {
+    try {
+      console.log('🛰️ Initiating authenticated SpaceComputer cTRNG request via SDK...')
+      const sdk = new OrbitportSDK({
+        config: {
+          clientId,
+          clientSecret,
+        },
+      })
+      const result = await sdk.ctrng.random()
+      if (result?.success && result?.data?.data) {
+        const entropy = result.data.data
+        console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy via SDK: ${entropy}`)
+        return entropy
+      }
+    } catch (e) {
+      console.warn('⚠️ Authenticated SDK cTRNG request failed, falling back to public IPFS beacon:', e instanceof Error ? e.message : e)
+    }
+  }
+
+  // Fallback to public IPFS beacon gateways
   const gateways = [
     "https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
     "https://cloudflare-ipfs.com/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
@@ -30,18 +56,18 @@ async function fetchSpaceComputerEntropy(): Promise<string | null> {
 
   for (const url of gateways) {
     try {
-      console.log(`🛰️ Attempting to fetch SpaceComputer cosmic cTRNG from: ${url}`)
+      console.log(`🛰️ Attempting to fetch SpaceComputer cosmic cTRNG from fallback IPFS: ${url}`)
       const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
       if (res.ok) {
         const json = await res.json()
         if (json?.data?.ctrng && json.data.ctrng.length > 0) {
           const value = json.data.ctrng[0]
-          console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy: ${value}`)
+          console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy via fallback IPFS: ${value}`)
           return value
         }
       }
     } catch (e) {
-      console.warn(`⚠️ Failed to fetch cTRNG from gateway ${url}:`, e instanceof Error ? e.message : e)
+      console.warn(`⚠️ Failed to fetch cTRNG from fallback gateway ${url}:`, e instanceof Error ? e.message : e)
     }
   }
   return null
