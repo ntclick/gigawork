@@ -74,6 +74,37 @@ export default function RaffleLandingPage() {
                 Create New Raffle
               </Button>
             </Link>
+        </section>
+
+        {/* Provably Fair Explanation Section */}
+        <section className="max-w-5xl mx-auto px-6 pt-8 pb-4">
+          <div className="border border-cyan-500/15 bg-gradient-to-r from-cyan-950/20 to-indigo-950/20 rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-start justify-between relative overflow-hidden">
+            <div className="absolute right-0 top-0 h-40 w-40 bg-gradient-to-br from-cyan-500/10 to-transparent blur-3xl pointer-events-none rounded-full" />
+            
+            <div className="space-y-3 flex-1">
+              <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5 font-pixel-body">
+                <Sparkles className="h-4 w-4 animate-pulse" />
+                How Provably-Fair Drawings Work
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
+                Every drawing on GigaWork is completely transparent and mathematically verifiable. 
+                First, the contestant list is permanently frozen into a cryptographic <strong>Merkle Tree Root</strong> stored on-chain at the moment of creation. 
+                Once your target future blockchain block is reached, our drawing engine mixes **SpaceComputer Satellite Cosmic Ray Entropy (cTRNG)** with the **On-Chain Block Hash** to derive a completely unpredictable Cosmic Seed. 
+                An immutable Solidity contract then runs a **Fisher-Yates Shuffle** directly on-chain to choose the winners. 
+                Neither GigaWork, the campaign host, nor space operators can predict or manipulate the outcome!
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2.5 w-full md:w-auto shrink-0 md:pt-2">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono bg-slate-900/60 border border-white/5 px-3 py-2 rounded-xl">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" style={{ animationDuration: '3s' }} />
+                Dual-Entropy Engine Online
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono bg-slate-900/60 border border-white/5 px-3 py-2 rounded-xl">
+                <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+                ArcScan Contract Verified
+              </div>
+            </div>
           </div>
         </section>
 
