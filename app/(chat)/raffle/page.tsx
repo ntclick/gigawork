@@ -74,6 +74,7 @@ export default function RaffleLandingPage() {
                 Create New Raffle
               </Button>
             </Link>
+          </div>
         </section>
 
         {/* Provably Fair Explanation Section */}
