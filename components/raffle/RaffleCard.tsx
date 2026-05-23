@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Calendar, Users, Trophy, ChevronRight, Orbit } from 'lucide-react'
+import { Calendar, Users, Trophy, ChevronRight, Orbit, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -15,6 +15,7 @@ interface Raffle {
   commitBlock: number
   drawn: boolean
   createdAt: string
+  txHash?: string | null
 }
 
 interface RaffleCardProps {
@@ -58,6 +59,23 @@ export function RaffleCard({ raffle }: RaffleCardProps) {
           <h3 className="text-lg font-bold text-slate-100 group-hover:text-cyan-400 transition-colors duration-200 line-clamp-1">
             {raffle.title}
           </h3>
+
+          {/* Tx Proof Link */}
+          {raffle.drawn && raffle.txHash && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 font-mono font-medium">ArcScan Proof:</span>
+              <a
+                href={`${process.env.NEXT_PUBLIC_ARC_EXPLORER || 'https://testnet.arcscan.app'}/tx/${raffle.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 font-mono font-bold transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {raffle.txHash.slice(0, 6)}...{raffle.txHash.slice(-4)}
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            </div>
+          )}
 
           {/* Prize description */}
           {raffle.prizeDescription && (
