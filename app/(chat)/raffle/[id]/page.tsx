@@ -14,6 +14,7 @@ import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
 import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, keccak256, encodePacked } from 'viem'
 import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
+import CosmicRaffleInstanceArtifact from '@/contracts/CosmicRaffleInstance.json'
 import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
 
 const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS || '0x3ea7ed77795acad23e414daea25af690810d6dbb') as `0x${string}`
@@ -108,17 +109,29 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
           transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
         })
 
+        const isStandalone = raffle.contractAddress && 
+          raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+
+        let abi: any
+        let args: any[]
+        let targetAddress: `0x${string}`
+
+        if (isStandalone) {
+          abi = CosmicRaffleInstanceArtifact.abi
+          args = [seed, winningUsernames, proofs]
+          targetAddress = raffle.contractAddress as `0x${string}`
+        } else {
+          abi = CosmicRaffleArtifact.abi
+          args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
+          targetAddress = CONTRACT_ADDRESS
+        }
+
         const gas = await publicClient.estimateContractGas({
-          address: CONTRACT_ADDRESS,
-          abi: CosmicRaffleArtifact.abi,
+          address: targetAddress,
+          abi,
           functionName: 'drawWinners',
           account: activeWallet.address as `0x${string}`,
-          args: [
-            BigInt(raffle.onChainRaffleId),
-            seed,
-            winningUsernames,
-            proofs,
-          ],
+          args,
         })
 
         const gasPrice = await publicClient.getGasPrice()
@@ -249,20 +262,32 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
         transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
       })
 
+      const isStandalone = raffle.contractAddress && 
+        raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+
+      let abi: any
+      let args: any[]
+      let targetAddress: `0x${string}`
+
+      if (isStandalone) {
+        abi = CosmicRaffleInstanceArtifact.abi
+        args = [seed, winningUsernames, proofs]
+        targetAddress = raffle.contractAddress as `0x${string}`
+      } else {
+        abi = CosmicRaffleArtifact.abi
+        args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
+        targetAddress = CONTRACT_ADDRESS
+      }
+
       const callData = encodeFunctionData({
-        abi: CosmicRaffleArtifact.abi,
+        abi,
         functionName: 'drawWinners',
-        args: [
-          BigInt(raffle.onChainRaffleId),
-          seed,
-          winningUsernames,
-          proofs,
-        ],
+        args,
       })
 
       const txHash = await walletClient.sendTransaction({
         account: wallet.address as `0x${string}`,
-        to: CONTRACT_ADDRESS,
+        to: targetAddress,
         data: callData,
       })
 

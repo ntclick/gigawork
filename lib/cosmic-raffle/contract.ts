@@ -1,10 +1,12 @@
 import { createPublicClient, createWalletClient, http, defineChain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import CosmicRaffleArtifact from '../../contracts/CosmicRaffle.json'
+import CosmicRaffleInstanceArtifact from '../../contracts/CosmicRaffleInstance.json'
 
 // ─── Setup Chain & Clients ─────────────────────────────────────
 const ARC_RPC = process.env.ARC_RPC_URL ?? process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.testnet.arc.network'
 export const CONTRACT_ADDRESS = (process.env.COSMIC_RAFFLE_ADDRESS ?? process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS ?? '0x3ea7ed77795acad23e414daea25af690810d6dbb') as `0x${string}`
+export const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_FACTORY_ADDRESS ?? '0x972c84ede4e2f1d9cd9cb1181b99a5e0643f2d39') as `0x${string}`
 
 export const arcChain = defineChain({
   id: Number(process.env.ARC_CHAIN_ID ?? process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? '5042002'),
@@ -32,6 +34,24 @@ export function getAdminWallet() {
     chain: arcChain,
     transport: http(ARC_RPC),
   })
+}
+
+/**
+ * Reads the list of winning indices directly from the standalone raffle contract instance by address.
+ */
+export async function getWinningIndicesFromStandaloneContract(contractAddress: `0x${string}`): Promise<number[]> {
+  try {
+    const data = await publicClient.readContract({
+      address: contractAddress,
+      abi: CosmicRaffleInstanceArtifact.abi,
+      functionName: 'getWinningIndices',
+    }) as bigint[]
+
+    return data.map(Number)
+  } catch (error) {
+    console.error(`❌ getWinningIndices failed for standalone contract ${contractAddress}:`, error)
+    throw error
+  }
 }
 
 /**

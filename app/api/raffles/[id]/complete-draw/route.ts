@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles, raffleWinners } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { getWinningIndicesFromContract } from '@/lib/cosmic-raffle/contract'
+import { getWinningIndicesFromContract, getWinningIndicesFromStandaloneContract } from '@/lib/cosmic-raffle/contract'
 import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
 import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
 
@@ -35,13 +35,21 @@ export async function POST(
       return NextResponse.json({ error: 'Raffle has already been drawn.' }, { status: 400 })
     }
 
-    if (raffle.onChainRaffleId === null) {
-      return NextResponse.json({ error: 'Raffle is not registered on-chain.' }, { status: 400 })
-    }
-
     // 2. Retrieve winning indices from the smart contract (populated on-chain by drawWinners transaction)
-    console.log(`📥 Querying smart contract for winning indices for raffleId: ${raffle.onChainRaffleId}...`)
-    const winningIndices = await getWinningIndicesFromContract(raffle.onChainRaffleId)
+    let winningIndices: number[]
+    const isStandalone = raffle.contractAddress && 
+      raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+
+    if (isStandalone) {
+      console.log(`📥 Querying standalone contract for winning indices at address: ${raffle.contractAddress}...`)
+      winningIndices = await getWinningIndicesFromStandaloneContract(raffle.contractAddress as `0x${string}`)
+    } else {
+      if (raffle.onChainRaffleId === null) {
+        return NextResponse.json({ error: 'Raffle is not registered on-chain.' }, { status: 400 })
+      }
+      console.log(`📥 Querying shared smart contract for winning indices for raffleId: ${raffle.onChainRaffleId}...`)
+      winningIndices = await getWinningIndicesFromContract(raffle.onChainRaffleId)
+    }
 
     // 3. Parse and rebuild Merkle tree of entries
     const entries = parseEntries(raffle.rawEntries)

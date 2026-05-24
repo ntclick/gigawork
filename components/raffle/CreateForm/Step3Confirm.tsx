@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldAlert, Sparkles, Loader2, ArrowLeft, Send } from 'lucide-react'
-import { createWalletClient, custom, encodeFunctionData, createPublicClient, http } from 'viem'
+import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, decodeEventLog } from 'viem'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { usePrivy } from '@privy-io/react-auth'
 import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
-import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
+import CosmicRaffleFactoryArtifact from '@/contracts/CosmicRaffleFactory.json'
 import { Button } from '@/components/ui/button'
 
 interface Step3Props {
@@ -27,7 +27,7 @@ interface Step3Props {
   onPrev: () => void
 }
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS || '0x3ea7ed77795acad23e414daea25af690810d6dbb') as `0x${string}`
+const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_FACTORY_ADDRESS || '0x972c84ede4e2f1d9cd9cb1181b99a5e0643f2d39') as `0x${string}`
 
 export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
   const activeWallet = useActiveWallet()
@@ -49,11 +49,12 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
         })
 
         const gas = await publicClient.estimateContractGas({
-          address: CONTRACT_ADDRESS,
-          abi: CosmicRaffleArtifact.abi,
+          address: FACTORY_ADDRESS,
+          abi: CosmicRaffleFactoryArtifact.abi,
           functionName: 'createRaffle',
           account: activeWallet.address as `0x${string}`,
           args: [
+            '0xafe6dd950dc2cf561e8daba1725e0e6840f70549', // operator
             infoData.title,
             listData.merkleRoot,
             BigInt(listData.totalEntries),
@@ -119,9 +120,10 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
       // 4. Encode contract call data
       setStatusText('Encoding transaction call data...')
       const callData = encodeFunctionData({
-        abi: CosmicRaffleArtifact.abi,
+        abi: CosmicRaffleFactoryArtifact.abi,
         functionName: 'createRaffle',
         args: [
+          '0xafe6dd950dc2cf561e8daba1725e0e6840f70549', // operator
           infoData.title,
           listData.merkleRoot,
           BigInt(listData.totalEntries),
@@ -134,7 +136,7 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
       setStatusText('Please sign the transaction in your wallet...');
       const txHash = await walletClient.sendTransaction({
         account: wallet.address as `0x${string}`,
-        to: CONTRACT_ADDRESS,
+        to: FACTORY_ADDRESS,
         data: callData,
       })
 
@@ -150,15 +152,28 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
         throw new Error('On-chain transaction failed or was reverted.')
       }
 
-      // 7. Get the generated on-chain raffle id
-      setStatusText('Querying raffle ID from Smart Contract...')
-      const raffleCount = await publicClient.readContract({
-        address: CONTRACT_ADDRESS,
-        abi: CosmicRaffleArtifact.abi,
-        functionName: 'getRaffleCount',
-      }) as bigint
+      // 7. Get the generated on-chain raffle contract address from events
+      setStatusText('Extracting raffle address from events...')
+      let deployedContractAddress: `0x${string}` = FACTORY_ADDRESS // fallback
 
-      const onChainRaffleId = Number(raffleCount) - 1
+      // Iterate through logs to find RaffleCreated event
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: CosmicRaffleFactoryArtifact.abi,
+            data: log.data,
+            topics: log.topics,
+          })
+          if (decoded.eventName === 'RaffleCreated' && decoded.args) {
+            const args = decoded.args as any
+            deployedContractAddress = args.raffleAddress as `0x${string}`
+            console.log('🎉 Extracted standalone raffle contract address:', deployedContractAddress)
+            break
+          }
+        } catch (e) {
+          // skip non-matching logs
+        }
+      }
 
       // 8. Store finalized raffle record in database cache
       setStatusText('Saving raffle details in database...')
@@ -173,9 +188,9 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
           totalEntries: listData.totalEntries,
           merkleRoot: listData.merkleRoot,
           commitBlock: listData.commitBlock,
-          onChainRaffleId,
+          onChainRaffleId: 0, // standalone doesn't use shared id anymore
           txHash,
-          contractAddress: CONTRACT_ADDRESS,
+          contractAddress: deployedContractAddress,
           rawEntries: listData.rawInput,
         }),
       })
