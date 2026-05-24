@@ -1,11 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Sparkles, Loader2, ArrowLeft } from 'lucide-react'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { usePrivy } from '@privy-io/react-auth'
 import { Button } from '@/components/ui/button'
+import { createPublicClient, http } from 'viem'
+import { arcTestnet } from '@/lib/chain/arcTestnet'
+import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
+import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
 
 interface Step3Props {
   infoData: {
@@ -34,6 +38,53 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
   const [loading, setLoading] = useState(false)
   const [statusText, setStatusText] = useState('')
   const [error, setError] = useState('')
+  const [estimatedFee, setEstimatedFee] = useState<string>('')
+
+  useEffect(() => {
+    async function estimateGas() {
+      if (!activeWallet) return
+      try {
+        const publicClient = createPublicClient({
+          chain: arcTestnet,
+          transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
+        })
+
+        // Reconstruct Merkle Tree to get proofs for gas estimation simulation
+        const mockSeed = '0x0000000000000000000000000000000000000000000000000000000000000001' as `0x${string}`
+        const winnerCount = infoData.winnerCount
+        const entries = listData.entries
+        const tree = new MerkleTree(entries)
+        
+        // Take the first N entries as mock winners
+        const mockWinners = entries.slice(0, winnerCount)
+        const mockProofs = mockWinners.map((_, idx) => tree.getProof(idx))
+
+        const gas = await publicClient.estimateContractGas({
+          address: COSMIC_RAFFLE_ADDRESS,
+          abi: CosmicRaffleArtifact.abi,
+          functionName: 'drawRaffle',
+          account: activeWallet.address as `0x${string}`,
+          args: [
+            listData.merkleRoot,
+            BigInt(listData.totalEntries),
+            BigInt(infoData.winnerCount),
+            BigInt(listData.commitBlock),
+            mockSeed,
+            mockWinners,
+            mockProofs,
+          ],
+        })
+
+        const gasPrice = await publicClient.getGasPrice()
+        const totalFee = gas * gasPrice
+        setEstimatedFee((Number(totalFee) / 1e18).toFixed(6))
+      } catch (err) {
+        console.warn('Gas estimation failed:', err)
+        setEstimatedFee('0.000350') // fallback
+      }
+    }
+    estimateGas()
+  }, [activeWallet, infoData, listData])
 
   const handleCreate = async () => {
     setError('')
@@ -71,9 +122,9 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
           totalEntries: listData.totalEntries,
           merkleRoot: listData.merkleRoot,
           commitBlock: listData.commitBlock,
-          onChainRaffleId: null, // assigned during drawRaffle call
-          txHash: null, // no creation tx hash
-          contractAddress: COSMIC_RAFFLE_ADDRESS, // using single shared contract address
+          onChainRaffleId: null,
+          txHash: null,
+          contractAddress: COSMIC_RAFFLE_ADDRESS,
           rawEntries: listData.rawInput,
         }),
       })
@@ -125,9 +176,9 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
             <strong className="text-cyan-400 font-mono block truncate">{listData.merkleRoot}</strong>
           </div>
           <div className="space-y-1 md:col-span-2 border-t border-white/5 pt-2.5 flex justify-between items-center text-xs">
-            <span className="text-slate-500 font-semibold uppercase tracking-wider text-[9px]">Estimated Gas Fee:</span>
-            <strong className="text-green-400 font-mono">
-              0.00 ARC (Free & Off-chain Creation)
+            <span className="text-slate-500 font-semibold uppercase tracking-wider text-[9px]">Est. Draw Gas Fee:</span>
+            <strong className="text-cyan-400 font-mono">
+              {estimatedFee ? `~${estimatedFee} ARC` : 'Estimating gas fee...'}
             </strong>
           </div>
         </div>
@@ -139,8 +190,6 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
           </div>
         )}
       </div>
-
-
 
       {error && (
         <div className="p-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-md">
