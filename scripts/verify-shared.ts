@@ -32,19 +32,34 @@ async function main() {
   const sourceCode = fs.readFileSync(solPath, 'utf8')
   console.log(`   Source file loaded: ${sourceCode.length} bytes`)
 
+  // Prepare standard JSON input to match the solc compile settings (especially viaIR: true)
+  const standardJsonInput = {
+    language: 'Solidity',
+    sources: {
+      'contracts/CosmicRaffle.sol': { content: sourceCode },
+    },
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      viaIR: true,
+      outputSelection: {
+        '*': {
+          '*': ['abi', 'evm.bytecode.object'],
+        },
+      },
+    },
+  }
+
   // Prepare standard urlencoded payload for Etherscan-compatible verification
   const params = new URLSearchParams()
   params.append('apikey', 'NONE')
   params.append('module', 'contract')
   params.append('action', 'verifysourcecode')
   params.append('contractaddress', CONTRACT_ADDRESS)
-  params.append('sourceCode', sourceCode)
-  params.append('codeformat', 'solidity-single-file')
-  params.append('contractname', 'CosmicRaffle')
+  params.append('sourceCode', JSON.stringify(standardJsonInput))
+  params.append('codeformat', 'solidity-standard-json-input')
+  params.append('contractname', 'contracts/CosmicRaffle.sol:CosmicRaffle')
   params.append('compilerversion', 'v0.8.28+commit.7893614a')
-  params.append('optimizationUsed', '1')
-  params.append('runs', '200')
-  params.append('constructorArguements', '') // No constructor arguments!
+  params.append('constructorArguements', '')
 
   const apiUrl = `${EXPLORER.replace(/\/$/, '')}/api`
   console.log(`📡 Submitting verification request to API: ${apiUrl}...`)

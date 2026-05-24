@@ -58,7 +58,7 @@ export async function POST(
             data: log.data,
             topics: log.topics,
           })
-          if (decoded.eventName === 'RaffleCreated' && decoded.args) {
+          if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
             const args = decoded.args as any
             finalOnChainRaffleId = Number(args.raffleId)
             break
@@ -69,7 +69,7 @@ export async function POST(
       }
 
       if (finalOnChainRaffleId === null) {
-        return NextResponse.json({ error: 'Could not find RaffleCreated event in transaction logs.' }, { status: 400 })
+        return NextResponse.json({ error: 'Could not find RaffleDrawn event in transaction logs.' }, { status: 400 })
       }
 
       console.log(`📥 Querying single shared contract for winning indices for raffleId: ${finalOnChainRaffleId}...`)
