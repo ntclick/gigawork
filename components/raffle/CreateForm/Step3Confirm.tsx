@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, Sparkles, Loader2, ArrowLeft } from 'lucide-react'
+import { Sparkles, Loader2, ArrowLeft } from 'lucide-react'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { usePrivy } from '@privy-io/react-auth'
 import { Button } from '@/components/ui/button'
@@ -140,13 +140,7 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
         )}
       </div>
 
-      <div className="p-4 border border-green-500/20 bg-green-500/5 rounded-lg flex items-start gap-2.5 text-xs text-green-300">
-        <ShieldCheck className="h-4.5 w-4.5 shrink-0 text-green-400 mt-0.5" />
-        <div className="leading-relaxed">
-          <strong>Instant Off-chain Setup:</strong> Creating this raffle campaign is completely free, instant, and does not require gas.
-          You will only sign a single blockchain transaction at the very end when you trigger the draw and determine the winners.
-        </div>
-      </div>
+
 
       {error && (
         <div className="p-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-md">
