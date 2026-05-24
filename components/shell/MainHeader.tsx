@@ -60,6 +60,12 @@ export function MainHeader() {
   const wallet = walletAddr ?? null
   const usdc = useUSDCBalance(wallet)
 
+  const isAdmin = walletAddr === '0xafe6dd950dc2cf561e8daba1725e0e6840f70549'
+  const activeNav = [
+    ...NAV,
+    ...(isAdmin ? [{ label: 'Admin', href: '/admin', glyph: '🛡️' }] : []),
+  ]
+
   // Sync Privy wallet → server-side session cookie. Without this, every
   // /api/me, /api/workflows, /api/me/topup call returns 401 because the
   // cookie was never set after Privy login. Resets the synced ref on
@@ -136,7 +142,7 @@ export function MainHeader() {
         </Link>
 
         <nav className="hidden items-center gap-2 text-base lg:flex">
-          {NAV.map((it) => {
+          {activeNav.map((it) => {
             const isActive = it.match ? it.match(pathname) : pathname.startsWith(it.href)
             return (
               <Link
@@ -287,7 +293,7 @@ export function MainHeader() {
           </div>
 
           <nav className="flex flex-1 flex-col gap-2 p-4">
-            {NAV.map((it) => {
+            {activeNav.map((it) => {
               const isActive = it.match ? it.match(pathname) : pathname.startsWith(it.href)
               return (
                 <Link
