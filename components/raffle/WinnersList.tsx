@@ -99,46 +99,46 @@ export function WinnersList({ drawn, winners, prizeDescription, currentBlock, co
   }
 
   return (
-    <div className="border border-cyan-500/10 bg-slate-950/60 rounded-2xl p-5 space-y-4 shadow-lg shadow-cyan-950/5 animate-fadeIn">
-      <div className="flex items-center justify-between pb-3 border-b border-white/5">
-        <h4 className="text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5 font-pixel-body">
-          <Trophy className="h-4.5 w-4.5 text-amber-400 animate-pulse" />
+    <div className="border border-white/10 bg-slate-950/75 backdrop-blur-md rounded-2xl p-5 space-y-4 shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-300 hover:border-cyan-500/20 animate-fadeIn">
+      <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        <h4 className="text-sm font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2 font-pixel-body">
+          <Trophy className="h-4.5 w-4.5 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]" />
           Official Winner Board
         </h4>
-        <span className="text-[10px] text-slate-400 font-semibold bg-cyan-950/60 border border-cyan-500/20 px-2.5 py-0.5 rounded uppercase tracking-wider">
+        <span className="text-[10px] text-amber-400 font-bold bg-amber-950/40 border border-amber-500/25 px-2.5 py-1 rounded uppercase tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.1)]">
           {winners.length} Winners
         </span>
       </div>
 
       {prizeDescription && (
-        <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl flex items-start gap-2">
+        <div className="text-xs text-amber-300 bg-gradient-to-r from-amber-950/20 to-yellow-950/15 border border-amber-500/20 p-3 rounded-xl flex items-start gap-2.5 shadow-[inset_0_0_12px_rgba(245,158,11,0.03)]">
           <Trophy className="h-4 w-4 shrink-0 text-amber-400 mt-0.5 animate-bounce" />
           <div>
             <span className="text-slate-500 block text-[10px] uppercase font-semibold">Prize Reward:</span>
-            <strong className="tracking-wide">{prizeDescription}</strong>
+            <strong className="tracking-wide text-amber-400 text-sm">{prizeDescription}</strong>
           </div>
         </div>
       )}
 
       {/* Winners list */}
-      <div className="space-y-2 max-h-80 overflow-y-auto pr-1 scrollbar-thin">
+      <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1 scrollbar-thin">
         {winners.map((winner, idx) => (
           <div
             key={winner.id}
-            className="flex items-center justify-between p-3.5 rounded-xl border border-white/5 bg-slate-950/80 text-xs font-mono transition-all duration-300 hover:border-cyan-500/20 hover:bg-slate-900/50"
+            className="flex items-center justify-between p-4 rounded-xl border border-amber-500/20 bg-gradient-to-r from-slate-950 to-amber-950/5 text-xs font-mono transition-all duration-300 hover:border-amber-400/40 hover:bg-amber-950/10 shadow-[0_2px_8px_rgba(0,0,0,0.2)]"
           >
             <div className="flex items-center gap-3">
-              <span className="h-5.5 w-5.5 rounded-full bg-gradient-to-br from-amber-500 to-yellow-500 text-slate-950 font-bold flex items-center justify-center text-[10px]">
+              <span className="h-6 w-6 rounded-full bg-gradient-to-br from-amber-500 to-yellow-500 text-slate-950 font-bold flex items-center justify-center text-[10.5px] shadow-[0_0_8px_rgba(245,158,11,0.3)]">
                 {idx + 1}
               </span>
               <div>
-                <span className="text-slate-200 text-sm font-semibold block">{winner.username}</span>
+                <span className="text-slate-100 text-sm font-semibold block tracking-wide">{winner.username}</span>
                 <span className="text-[10px] text-slate-500">Ticket Index #{winner.index}</span>
               </div>
             </div>
             
             <div className="text-right">
-              <span className="text-[10px] text-emerald-400 font-medium bg-emerald-950/40 border border-emerald-500/20 px-2.5 py-0.5 rounded tracking-wide uppercase">
+              <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-500/20 px-2.5 py-0.5 rounded tracking-wide uppercase shadow-[0_0_8px_rgba(52,211,153,0.05)]">
                 Verified
               </span>
             </div>

@@ -61,13 +61,13 @@ export function VerifyPanel({ raffleId, drawn }: VerifyPanelProps) {
   }
 
   return (
-    <div className="border border-white/5 bg-slate-950/60 rounded-2xl p-5 space-y-5">
-      <div className="pb-3 border-b border-white/5">
-        <h4 className="text-sm font-bold uppercase tracking-wider text-slate-200 font-pixel-body flex items-center gap-1.5">
-          <ShieldCheck className="h-4.5 w-4.5 text-cyan-400" />
+    <div className="border border-white/10 bg-slate-950/75 backdrop-blur-md rounded-2xl p-5 space-y-5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-300 hover:border-cyan-500/20">
+      <div className="pb-3 border-b border-white/10">
+        <h4 className="text-sm font-bold uppercase tracking-wider text-slate-100 font-pixel-body flex items-center gap-2">
+          <ShieldCheck className="h-4.5 w-4.5 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.5)]" />
           Check Winning Tickets
         </h4>
-        <p className="text-slate-500 text-[11px] leading-relaxed mt-1">
+        <p className="text-slate-400 text-[11px] leading-relaxed mt-1">
           Enter your wallet address or username to generate a cryptographic Merkle Proof and check prize eligibility.
         </p>
       </div>
@@ -120,7 +120,7 @@ export function VerifyPanel({ raffleId, drawn }: VerifyPanelProps) {
               {/* Winner Status Banner */}
               {drawn ? (
                 result.isWinner ? (
-                  <div className="p-4 border border-amber-500/30 bg-amber-500/10 rounded-xl flex items-start gap-3 text-xs text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.08)]">
+                  <div className="p-4 border border-amber-500/30 bg-gradient-to-r from-slate-950 to-amber-950/20 rounded-xl flex items-start gap-3 text-xs text-amber-300 shadow-[0_0_25px_rgba(245,158,11,0.12)]">
                     <Trophy className="h-6 w-6 shrink-0 text-amber-400 animate-bounce" />
                     <div>
                       <strong className="text-amber-400 text-sm block mb-0.5">Congratulations! You Won!</strong>
@@ -128,7 +128,7 @@ export function VerifyPanel({ raffleId, drawn }: VerifyPanelProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 border border-slate-700 bg-slate-900/50 rounded-xl flex items-start gap-3 text-xs text-slate-400">
+                  <div className="p-4 border border-slate-800 bg-gradient-to-r from-slate-950 to-slate-900/50 rounded-xl flex items-start gap-3 text-xs text-slate-400">
                     <Award className="h-5 w-5 shrink-0 text-slate-500" />
                     <div>
                       <strong className="text-slate-300 block mb-0.5">Ticket Validated!</strong>
@@ -137,7 +137,7 @@ export function VerifyPanel({ raffleId, drawn }: VerifyPanelProps) {
                   </div>
                 )
               ) : (
-                <div className="p-4 border border-cyan-500/20 bg-cyan-950/25 rounded-xl flex items-start gap-3 text-xs text-cyan-300">
+                <div className="p-4 border border-cyan-500/20 bg-gradient-to-r from-slate-950 to-cyan-950/20 rounded-xl flex items-start gap-3 text-xs text-cyan-300 shadow-[0_0_25px_rgba(6,182,212,0.05)]">
                   <ShieldCheck className="h-5 w-5 shrink-0 text-cyan-400" />
                   <div>
                     <strong className="text-cyan-200 block mb-0.5">Ticket Valid &amp; Ready for Draw!</strong>
@@ -147,27 +147,27 @@ export function VerifyPanel({ raffleId, drawn }: VerifyPanelProps) {
               )}
 
               {/* Merkle Proof Details */}
-              <div className="bg-slate-950/70 border border-white/5 rounded-xl p-3.5 space-y-2.5">
+              <div className="bg-slate-950/90 border border-white/10 rounded-xl p-4 space-y-2.5 shadow-[inset_0_0_15px_rgba(0,0,0,0.4)]">
                 <span className="text-slate-500 block text-[10px] uppercase font-semibold">Cryptographic Merkle Proof:</span>
                 
                 <div className="space-y-1 font-mono text-[10px]">
-                  <div className="flex justify-between py-0.5 text-slate-400 border-b border-white/5 pb-1 mb-1">
+                  <div className="flex justify-between py-0.5 text-slate-400 border-b border-white/10 pb-1 mb-1">
                     <span>Level / Sibling</span>
                     <span>Hash Value (Bytes32)</span>
                   </div>
                   {result.proof && result.proof.map((p, idx) => (
                     <div key={idx} className="flex justify-between py-0.5 text-slate-400 hover:bg-white/5 px-1.5 rounded">
-                      <span className="text-slate-600">Proof Path [{idx}]</span>
-                      <span className="text-cyan-400 truncate w-60 block text-right" title={p}>{p}</span>
+                      <span className="text-slate-500 font-semibold">Proof Path [{idx}]</span>
+                      <span className="text-cyan-400 truncate w-60 block text-right font-medium" title={p}>{p}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between py-1 text-slate-400 border-t border-white/5 mt-2 pt-1.5">
-                    <span className="text-slate-500">Resolved Merkle Root</span>
+                  <div className="flex justify-between py-1 text-slate-400 border-t border-white/10 mt-2 pt-1.5">
+                    <span className="text-slate-500 font-semibold">Resolved Merkle Root</span>
                     <span className="text-emerald-400 truncate w-60 block text-right font-bold" title={result.merkleRoot}>{result.merkleRoot}</span>
                   </div>
                 </div>
                 
-                <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1 pt-1.5 border-t border-white/5">
+                <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1 pt-1.5 border-t border-white/10">
                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
                   <span>Cryptographic Integrity Verification: </span>
                   <strong className={result.isValid ? "text-emerald-400" : "text-rose-400"}>
