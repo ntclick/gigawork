@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles, raffleWinners } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { getWinningIndicesFromContract, getWinningIndicesFromStandaloneContract } from '@/lib/cosmic-raffle/contract'
+import { getWinningIndicesFromContract, getWinningIndicesFromStandaloneContract, publicClient } from '@/lib/cosmic-raffle/contract'
 import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
 import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
+import { decodeEventLog } from 'viem'
+import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,20 +37,55 @@ export async function POST(
       return NextResponse.json({ error: 'Raffle has already been drawn.' }, { status: 400 })
     }
 
-    // 2. Retrieve winning indices from the smart contract (populated on-chain by drawWinners transaction)
+    // 2. Retrieve winning indices from the smart contract
     let winningIndices: number[]
-    const isStandalone = raffle.contractAddress && 
-      raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+    let finalOnChainRaffleId: number | null = raffle.onChainRaffleId
 
-    if (isStandalone) {
-      console.log(`📥 Querying standalone contract for winning indices at address: ${raffle.contractAddress}...`)
-      winningIndices = await getWinningIndicesFromStandaloneContract(raffle.contractAddress as `0x${string}`)
-    } else {
-      if (raffle.onChainRaffleId === null) {
-        return NextResponse.json({ error: 'Raffle is not registered on-chain.' }, { status: 400 })
+    const isNewShared = raffle.contractAddress && 
+      raffle.contractAddress.toLowerCase() === '0x46c6c3e07a96227a9834cfc60a387bc96c66872a'
+
+    if (isNewShared) {
+      console.log(`📡 Decoding transaction receipt logs to find raffleId for tx: ${txHash}...`)
+      const receipt = await publicClient.getTransactionReceipt({ hash: txHash })
+      
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: CosmicRaffleArtifact.abi,
+            data: log.data,
+            topics: log.topics,
+          })
+          if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
+            const args = decoded.args as any
+            finalOnChainRaffleId = Number(args.raffleId)
+            break
+          }
+        } catch (e) {
+          // skip log
+        }
       }
-      console.log(`📥 Querying shared smart contract for winning indices for raffleId: ${raffle.onChainRaffleId}...`)
-      winningIndices = await getWinningIndicesFromContract(raffle.onChainRaffleId)
+
+      if (finalOnChainRaffleId === null) {
+        return NextResponse.json({ error: 'Could not find RaffleDrawn event in transaction logs.' }, { status: 400 })
+      }
+
+      console.log(`📥 Querying single shared contract for winning indices for raffleId: ${finalOnChainRaffleId}...`)
+      winningIndices = await getWinningIndicesFromContract(finalOnChainRaffleId)
+    } else {
+      // Legacy or Standalone flow
+      const isStandalone = raffle.contractAddress && 
+        raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+
+      if (isStandalone) {
+        console.log(`📥 Querying standalone contract for winning indices at address: ${raffle.contractAddress}...`)
+        winningIndices = await getWinningIndicesFromStandaloneContract(raffle.contractAddress as `0x${string}`)
+      } else {
+        if (raffle.onChainRaffleId === null) {
+          return NextResponse.json({ error: 'Raffle is not registered on-chain.' }, { status: 400 })
+        }
+        console.log(`📥 Querying shared smart contract for winning indices for raffleId: ${raffle.onChainRaffleId}...`)
+        winningIndices = await getWinningIndicesFromContract(raffle.onChainRaffleId)
+      }
     }
 
     // 3. Parse and rebuild Merkle tree of entries
@@ -77,6 +114,7 @@ export async function POST(
         drawn: true,
         seed: seed,
         txHash: txHash,
+        onChainRaffleId: finalOnChainRaffleId,
       })
       .where(eq(raffles.id, raffle.id))
       .returning()

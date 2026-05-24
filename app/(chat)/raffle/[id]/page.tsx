@@ -17,7 +17,7 @@ import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
 import CosmicRaffleInstanceArtifact from '@/contracts/CosmicRaffleInstance.json'
 import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS || '0x3ea7ed77795acad23e414daea25af690810d6dbb') as `0x${string}`
+const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS || '0x46c6c3e07a96227a9834cfc60a387bc96c66872a') as `0x${string}`
 
 interface Raffle {
   id: string
@@ -262,26 +262,45 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
         transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
       })
 
-      const isStandalone = raffle.contractAddress && 
-        raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+      const isNewShared = raffle.contractAddress && 
+        raffle.contractAddress.toLowerCase() === '0x46c6c3e07a96227a9834cfc60a387bc96c66872a'
 
       let abi: any
       let args: any[]
       let targetAddress: `0x${string}`
+      let functionName = 'drawWinners'
 
-      if (isStandalone) {
-        abi = CosmicRaffleInstanceArtifact.abi
-        args = [seed, winningUsernames, proofs]
+      if (isNewShared) {
+        abi = CosmicRaffleArtifact.abi
+        functionName = 'drawRaffle'
+        args = [
+          raffle.merkleRoot as `0x${string}`,
+          BigInt(raffle.totalEntries),
+          BigInt(raffle.winnerCount),
+          BigInt(raffle.commitBlock),
+          seed,
+          winningUsernames,
+          proofs
+        ]
         targetAddress = raffle.contractAddress as `0x${string}`
       } else {
-        abi = CosmicRaffleArtifact.abi
-        args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
-        targetAddress = CONTRACT_ADDRESS
+        const isStandalone = raffle.contractAddress && 
+          raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
+
+        if (isStandalone) {
+          abi = CosmicRaffleInstanceArtifact.abi
+          args = [seed, winningUsernames, proofs]
+          targetAddress = raffle.contractAddress as `0x${string}`
+        } else {
+          abi = CosmicRaffleArtifact.abi
+          args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
+          targetAddress = CONTRACT_ADDRESS
+        }
       }
 
       const callData = encodeFunctionData({
         abi,
-        functionName: 'drawWinners',
+        functionName,
         args,
       })
 

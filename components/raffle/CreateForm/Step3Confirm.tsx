@@ -1,13 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ShieldAlert, Sparkles, Loader2, ArrowLeft, Send } from 'lucide-react'
-import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, decodeEventLog } from 'viem'
+import { ShieldCheck, Sparkles, Loader2, ArrowLeft } from 'lucide-react'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { usePrivy } from '@privy-io/react-auth'
-import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
-import CosmicRaffleFactoryArtifact from '@/contracts/CosmicRaffleFactory.json'
 import { Button } from '@/components/ui/button'
 
 interface Step3Props {
@@ -27,7 +24,7 @@ interface Step3Props {
   onPrev: () => void
 }
 
-const FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_FACTORY_ADDRESS || '0x972c84ede4e2f1d9cd9cb1181b99a5e0643f2d39') as `0x${string}`
+const COSMIC_RAFFLE_ADDRESS = (process.env.NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS || '0x46c6c3e07a96227a9834cfc60a387bc96c66872a') as `0x${string}`
 
 export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
   const activeWallet = useActiveWallet()
@@ -37,44 +34,8 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
   const [loading, setLoading] = useState(false)
   const [statusText, setStatusText] = useState('')
   const [error, setError] = useState('')
-  const [estimatedFee, setEstimatedFee] = useState<string>('')
 
-  useEffect(() => {
-    async function estimateGas() {
-      if (!activeWallet) return
-      try {
-        const publicClient = createPublicClient({
-          chain: arcTestnet,
-          transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
-        })
-
-        const gas = await publicClient.estimateContractGas({
-          address: FACTORY_ADDRESS,
-          abi: CosmicRaffleFactoryArtifact.abi,
-          functionName: 'createRaffle',
-          account: activeWallet.address as `0x${string}`,
-          args: [
-            '0xafe6dd950dc2cf561e8daba1725e0e6840f70549', // operator
-            infoData.title,
-            listData.merkleRoot,
-            BigInt(listData.totalEntries),
-            BigInt(infoData.winnerCount),
-            BigInt(listData.commitBlock),
-          ],
-        })
-
-        const gasPrice = await publicClient.getGasPrice()
-        const totalFee = gas * gasPrice
-        setEstimatedFee((Number(totalFee) / 1e18).toFixed(6))
-      } catch (err) {
-        console.warn('Gas estimation failed:', err)
-        setEstimatedFee('0.00085')
-      }
-    }
-    estimateGas()
-  }, [activeWallet, infoData, listData])
-
-  const handleDeploy = async () => {
+  const handleCreate = async () => {
     setError('')
     setLoading(true)
 
@@ -97,86 +58,8 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
         }),
       })
 
-      // 2. Ensure we are connected to the Arc Testnet
-      setStatusText('Requesting network switch to Arc Testnet...')
-      try {
-        await wallet.switchChain(ARC_CHAIN_ID)
-      } catch (err) {
-        console.warn('switchChain failed, user might have declined or chain already active', err)
-      }
-
-      // 3. Initialize Viem Clients
-      const provider = await wallet.getEthereumProvider()
-      const walletClient = createWalletClient({
-        chain: arcTestnet,
-        transport: custom(provider),
-      })
-
-      const publicClient = createPublicClient({
-        chain: arcTestnet,
-        transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
-      })
-
-      // 4. Encode contract call data
-      setStatusText('Encoding transaction call data...')
-      const callData = encodeFunctionData({
-        abi: CosmicRaffleFactoryArtifact.abi,
-        functionName: 'createRaffle',
-        args: [
-          '0xafe6dd950dc2cf561e8daba1725e0e6840f70549', // operator
-          infoData.title,
-          listData.merkleRoot,
-          BigInt(listData.totalEntries),
-          BigInt(infoData.winnerCount),
-          BigInt(listData.commitBlock),
-        ],
-      })
-
-      // 5. Submit transaction via user wallet
-      setStatusText('Please sign the transaction in your wallet...');
-      const txHash = await walletClient.sendTransaction({
-        account: wallet.address as `0x${string}`,
-        to: FACTORY_ADDRESS,
-        data: callData,
-      })
-
-      // 6. Wait for transaction block receipt confirmation
-      setStatusText('Waiting for transaction confirmation (~3-5s)...')
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: txHash,
-        confirmations: 1,
-        timeout: 90_000,
-      })
-
-      if (receipt.status !== 'success') {
-        throw new Error('On-chain transaction failed or was reverted.')
-      }
-
-      // 7. Get the generated on-chain raffle contract address from events
-      setStatusText('Extracting raffle address from events...')
-      let deployedContractAddress: `0x${string}` = FACTORY_ADDRESS // fallback
-
-      // Iterate through logs to find RaffleCreated event
-      for (const log of receipt.logs) {
-        try {
-          const decoded = decodeEventLog({
-            abi: CosmicRaffleFactoryArtifact.abi,
-            data: log.data,
-            topics: log.topics,
-          })
-          if (decoded.eventName === 'RaffleCreated' && decoded.args) {
-            const args = decoded.args as any
-            deployedContractAddress = args.raffleAddress as `0x${string}`
-            console.log('🎉 Extracted standalone raffle contract address:', deployedContractAddress)
-            break
-          }
-        } catch (e) {
-          // skip non-matching logs
-        }
-      }
-
-      // 8. Store finalized raffle record in database cache
-      setStatusText('Saving raffle details in database...')
+      // 2. Store finalized raffle record in database cache (100% off-chain creation!)
+      setStatusText('Registering raffle campaign...')
       const res = await fetch('/api/raffles/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,9 +71,9 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
           totalEntries: listData.totalEntries,
           merkleRoot: listData.merkleRoot,
           commitBlock: listData.commitBlock,
-          onChainRaffleId: 0, // standalone doesn't use shared id anymore
-          txHash,
-          contractAddress: deployedContractAddress,
+          onChainRaffleId: null, // assigned during drawRaffle call
+          txHash: null, // no creation tx hash
+          contractAddress: COSMIC_RAFFLE_ADDRESS, // using single shared contract address
           rawEntries: listData.rawInput,
         }),
       })
@@ -243,8 +126,8 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
           </div>
           <div className="space-y-1 md:col-span-2 border-t border-white/5 pt-2.5 flex justify-between items-center text-xs">
             <span className="text-slate-500 font-semibold uppercase tracking-wider text-[9px]">Estimated Gas Fee:</span>
-            <strong className="text-cyan-400 font-mono">
-              {estimatedFee ? `~${estimatedFee} ETH` : 'Estimating gas fee...'}
+            <strong className="text-green-400 font-mono">
+              0.00 ARC (Free & Off-chain Creation)
             </strong>
           </div>
         </div>
@@ -257,12 +140,11 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
         )}
       </div>
 
-      <div className="p-4 border border-amber-500/20 bg-amber-500/5 rounded-lg flex items-start gap-2.5 text-xs text-amber-300">
-        <ShieldAlert className="h-4.5 w-4.5 shrink-0 text-amber-400 mt-0.5" />
+      <div className="p-4 border border-green-500/20 bg-green-500/5 rounded-lg flex items-start gap-2.5 text-xs text-green-300">
+        <ShieldCheck className="h-4.5 w-4.5 shrink-0 text-green-400 mt-0.5" />
         <div className="leading-relaxed">
-          <strong>Important Safety Information:</strong> This action will request you to sign a transaction on the Arc Testnet. 
-          Gas fees will be automatically deducted from your wallet balance. The Merkle Root and settings will be permanently stored on-chain, 
-          ensuring they can never be modified or tampered with.
+          <strong>Instant Off-chain Setup:</strong> Creating this raffle campaign is completely free, instant, and does not require gas.
+          You will only sign a single blockchain transaction at the very end when you trigger the draw and determine the winners.
         </div>
       </div>
 
@@ -293,12 +175,12 @@ export function Step3Confirm({ infoData, listData, onPrev }: Step3Props) {
 
         <Button
           type="button"
-          onClick={handleDeploy}
+          onClick={handleCreate}
           disabled={loading}
-          className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold uppercase tracking-wider text-xs px-6 py-2.5 rounded-lg shadow-lg disabled:opacity-50"
+          className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-slate-950 font-bold uppercase tracking-wider text-xs px-6 py-2.5 rounded-lg shadow-lg disabled:opacity-50"
         >
           <Sparkles className="h-4 w-4 text-slate-950" />
-          Deploy Smart Contract
+          Create Raffle Campaign
         </Button>
       </div>
     </div>

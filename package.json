@@ -27,7 +27,11 @@
     "raffle:compile": "tsx scripts/compile-raffle.ts",
     "raffle:deploy": "tsx scripts/deploy-raffle.ts",
     "raffle:test": "tsx scripts/test-raffle.ts",
-    "raffle:verify": "tsx scripts/verify-raffle.ts"
+    "raffle:verify": "tsx scripts/verify-raffle.ts",
+    "raffle:compile-shared": "tsx scripts/compile-shared.ts",
+    "raffle:deploy-shared": "tsx scripts/deploy-shared.ts",
+    "raffle:verify-shared": "tsx scripts/verify-shared.ts",
+    "raffle:test-shared": "tsx scripts/test-shared-raffle.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",
