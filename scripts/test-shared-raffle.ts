@@ -8,7 +8,7 @@ import CosmicRaffleArtifact from '../contracts/CosmicRaffle.json'
 import { encodeFunctionData, keccak256, encodePacked, decodeEventLog } from 'viem'
 
 async function main() {
-  console.log('\n🏁 Starting End-to-End Cosmic Raffle Stateful Shared Contract Test...\n')
+  console.log('\n🏁 Starting End-to-End Cosmic Raffle Single-Transaction Draw Test...\n')
   console.log(`🏡 Shared Contract Address: ${CONTRACT_ADDRESS}`)
 
   if (!CONTRACT_ADDRESS) {
@@ -31,63 +31,16 @@ async function main() {
   const root = tree.getRoot()
   console.log(`🌳 Merkle Root computed: ${root}`)
 
-  // 3. Create Raffle campaign on-chain
+  // 3. Select commit block for fast testing
   const wallet = getAdminWallet()
   const currentBlock = await publicClient.getBlockNumber()
   const commitBlock = Number(currentBlock) + 2
   const winnerCount = 2
 
-  console.log(`📡 Sending createRaffle transaction to shared contract...`)
+  console.log(`📡 Setting up campaign target parameters:`)
   console.log(`   - Total Entries: ${entries.length}`)
   console.log(`   - Winner Count: ${winnerCount}`)
   console.log(`   - Commit Block: ${commitBlock} (Current Block: ${currentBlock})`)
-
-  const createCallData = encodeFunctionData({
-    abi: CosmicRaffleArtifact.abi,
-    functionName: 'createRaffle',
-    args: [
-      'E2E Shared Contract Raffle Campaign',
-      root,
-      BigInt(entries.length),
-      BigInt(winnerCount),
-      BigInt(commitBlock),
-    ]
-  })
-
-  const createTx = await wallet.sendTransaction({
-    account: wallet.account,
-    to: CONTRACT_ADDRESS,
-    data: createCallData,
-  })
-
-  console.log(`⏳ Waiting for createRaffle transaction receipt (tx: ${createTx})...`)
-  const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createTx })
-  console.log(`✅ createRaffle confirmed in block ${createReceipt.blockNumber}!`)
-
-  // Extract raffleId from event log
-  let raffleId: number | null = null
-  for (const log of createReceipt.logs) {
-    try {
-      const decoded = decodeEventLog({
-        abi: CosmicRaffleArtifact.abi,
-        data: log.data,
-        topics: log.topics,
-      })
-      if (decoded.eventName === 'RaffleCreated' && decoded.args) {
-        const args = decoded.args as any
-        raffleId = Number(args.raffleId)
-        break
-      }
-    } catch (e) {
-      // skip
-    }
-  }
-
-  if (raffleId === null) {
-    throw new Error('❌ Failed to extract raffleId from createRaffle receipt logs.')
-  }
-
-  console.log(`🚀 Extracted Registered Raffle ID: ${raffleId}`)
 
   // 4. Wait for commit block to be mined
   console.log(`⏳ Waiting for block ${commitBlock} to be mined...`)
@@ -129,13 +82,16 @@ async function main() {
   const winningUsernames = winningIndicesArray.map(idx => entries[idx])
   const proofs = winningIndicesArray.map(idx => tree.getProof(idx))
 
-  // 6. Draw winners on-chain
-  console.log(`📡 Sending drawWinners transaction to shared contract...`)
+  // 6. Draw winners in a single transaction on the shared contract
+  console.log(`📡 Sending drawRaffle transaction to single shared contract...`)
   const drawData = encodeFunctionData({
     abi: CosmicRaffleArtifact.abi,
-    functionName: 'drawWinners',
+    functionName: 'drawRaffle',
     args: [
-      BigInt(raffleId),
+      root,
+      BigInt(entries.length),
+      BigInt(winnerCount),
+      BigInt(commitBlock),
       seed,
       winningUsernames,
       proofs
@@ -148,11 +104,36 @@ async function main() {
     data: drawData,
   })
 
-  console.log(`⏳ Waiting for drawWinners confirmation receipt (tx: ${drawTx})...`)
+  console.log(`⏳ Waiting for drawRaffle confirmation receipt (tx: ${drawTx})...`)
   const drawReceipt = await publicClient.waitForTransactionReceipt({ hash: drawTx })
-  console.log(`✅ drawWinners successfully confirmed in block ${drawReceipt.blockNumber}!`)
+  console.log(`✅ On-chain draw successfully confirmed in block ${drawReceipt.blockNumber}!`)
 
-  // 7. Verify winners on-chain
+  // 7. Extract raffleId from logs
+  let raffleId: number | null = null
+  for (const log of drawReceipt.logs) {
+    try {
+      const decoded = decodeEventLog({
+        abi: CosmicRaffleArtifact.abi,
+        data: log.data,
+        topics: log.topics,
+      })
+      if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
+        const args = decoded.args as any
+        raffleId = Number(args.raffleId)
+        break
+      }
+    } catch (e) {
+      // skip
+    }
+  }
+
+  if (raffleId === null) {
+    throw new Error('❌ Failed to extract raffleId from receipt logs.')
+  }
+
+  console.log(`🚀 Extracted On-Chain Raffle ID: ${raffleId}`)
+
+  // 8. Verify winners on-chain
   console.log(`📥 Fetching winning indices from Shared Smart Contract...`)
   const winningIndices = await getWinningIndicesFromContract(raffleId)
   console.log(`🏆 Winning indices drawn by contract:`, winningIndices)
@@ -168,7 +149,7 @@ async function main() {
   })
   console.log(`------------------------------------\n`)
 
-  console.log(`🏁 End-to-End Stateful Shared Contract Integration Test completed successfully!`)
+  console.log(`🏁 End-to-End Single-Transaction Draw E2E Test completed successfully!`)
 }
 
 main().catch((e) => {
