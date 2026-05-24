@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles } from '@/lib/db/schema'
 import { getCurrentUser } from '@/lib/auth/session'
+import { withDbRetry } from '@/lib/db/retry'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required parameters.' }, { status: 400 })
     }
 
-    const [inserted] = await db
+    const [inserted] = await withDbRetry(() => db
       .insert(raffles)
       .values({
         userId: user.id,
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
         rawEntries,
       })
       .returning()
+    )
 
     return NextResponse.json({ success: true, raffle: inserted })
   } catch (error) {

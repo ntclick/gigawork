@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles, raffleWinners } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { getWinningIndicesFromContract, getWinningIndicesFromStandaloneContract, publicClient } from '@/lib/cosmic-raffle/contract'
+import { getWinningIndicesFromContract, getWinningIndicesFromStandaloneContract, publicClient, CONTRACT_ADDRESS } from '@/lib/cosmic-raffle/contract'
 import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
 import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
 import { decodeEventLog } from 'viem'
 import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
+import { withDbRetry } from '@/lib/db/retry'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,12 +23,13 @@ export async function POST(
       return NextResponse.json({ error: 'Missing required parameters: txHash and seed.' }, { status: 400 })
     }
 
-    // 1. Fetch raffle details
-    const [raffle] = await db
+    // 1. Fetch raffle details (with retry protection)
+    const [raffle] = await withDbRetry(() => db
       .select()
       .from(raffles)
       .where(eq(raffles.id, id))
       .limit(1)
+    )
 
     if (!raffle) {
       return NextResponse.json({ error: 'Raffle not found.' }, { status: 404 })
@@ -41,8 +43,9 @@ export async function POST(
     let winningIndices: number[]
     let finalOnChainRaffleId: number | null = raffle.onChainRaffleId
 
+    // Compare with the active CONTRACT_ADDRESS dynamically
     const isNewShared = raffle.contractAddress && 
-      raffle.contractAddress.toLowerCase() === '0x46c6c3e07a96227a9834cfc60a387bc96c66872a'
+      raffle.contractAddress.toLowerCase() === CONTRACT_ADDRESS.toLowerCase()
 
     if (isNewShared) {
       console.log(`📡 Decoding transaction receipt logs to find raffleId for tx: ${txHash}...`)
@@ -55,7 +58,7 @@ export async function POST(
             data: log.data,
             topics: log.topics,
           })
-          if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
+          if (decoded.eventName === 'RaffleCreated' && decoded.args) {
             const args = decoded.args as any
             finalOnChainRaffleId = Number(args.raffleId)
             break
@@ -66,7 +69,7 @@ export async function POST(
       }
 
       if (finalOnChainRaffleId === null) {
-        return NextResponse.json({ error: 'Could not find RaffleDrawn event in transaction logs.' }, { status: 400 })
+        return NextResponse.json({ error: 'Could not find RaffleCreated event in transaction logs.' }, { status: 400 })
       }
 
       console.log(`📥 Querying single shared contract for winning indices for raffleId: ${finalOnChainRaffleId}...`)
@@ -92,7 +95,7 @@ export async function POST(
     const entries = parseEntries(raffle.rawEntries)
     const tree = new MerkleTree(entries)
 
-    // 4. Store winners and proofs in DB
+    // 4. Store winners and proofs in DB (with retry protection)
     const winnersToInsert = winningIndices.map((index) => {
       const username = entries[index]
       const merkleProof = tree.getProof(index)
@@ -105,10 +108,10 @@ export async function POST(
     })
 
     console.log(`💾 Caching ${winnersToInsert.length} winners in database...`)
-    await db.insert(raffleWinners).values(winnersToInsert)
+    await withDbRetry(() => db.insert(raffleWinners).values(winnersToInsert))
 
-    // 5. Update raffle state in DB
-    const [updatedRaffle] = await db
+    // 5. Update raffle state in DB (with retry protection)
+    const [updatedRaffle] = await withDbRetry(() => db
       .update(raffles)
       .set({
         drawn: true,
@@ -118,6 +121,7 @@ export async function POST(
       })
       .where(eq(raffles.id, raffle.id))
       .returning()
+    )
 
     return NextResponse.json({
       success: true,

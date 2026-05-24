@@ -262,45 +262,27 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
         transport: http(process.env.NEXT_PUBLIC_ARC_RPC || 'https://rpc.testnet.arc.network'),
       })
 
-      const isNewShared = raffle.contractAddress && 
-        raffle.contractAddress.toLowerCase() === '0x46c6c3e07a96227a9834cfc60a387bc96c66872a'
+      const isStandalone = raffle.contractAddress && 
+        raffle.contractAddress.toLowerCase() !== CONTRACT_ADDRESS.toLowerCase() &&
+        raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
 
       let abi: any
       let args: any[]
       let targetAddress: `0x${string}`
-      let functionName = 'drawWinners'
 
-      if (isNewShared) {
-        abi = CosmicRaffleArtifact.abi
-        functionName = 'drawRaffle'
-        args = [
-          raffle.merkleRoot as `0x${string}`,
-          BigInt(raffle.totalEntries),
-          BigInt(raffle.winnerCount),
-          BigInt(raffle.commitBlock),
-          seed,
-          winningUsernames,
-          proofs
-        ]
+      if (isStandalone) {
+        abi = CosmicRaffleInstanceArtifact.abi
+        args = [seed, winningUsernames, proofs]
         targetAddress = raffle.contractAddress as `0x${string}`
       } else {
-        const isStandalone = raffle.contractAddress && 
-          raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
-
-        if (isStandalone) {
-          abi = CosmicRaffleInstanceArtifact.abi
-          args = [seed, winningUsernames, proofs]
-          targetAddress = raffle.contractAddress as `0x${string}`
-        } else {
-          abi = CosmicRaffleArtifact.abi
-          args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
-          targetAddress = CONTRACT_ADDRESS
-        }
+        abi = CosmicRaffleArtifact.abi
+        args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
+        targetAddress = (raffle.contractAddress || CONTRACT_ADDRESS) as `0x${string}`
       }
 
       const callData = encodeFunctionData({
         abi,
-        functionName,
+        functionName: 'drawWinners',
         args,
       })
 

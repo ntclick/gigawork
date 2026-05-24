@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles } from '@/lib/db/schema'
 import { desc } from 'drizzle-orm'
+import { withDbRetry } from '@/lib/db/retry'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,10 +12,11 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET() {
   try {
-    const list = await db
+    const list = await withDbRetry(() => db
       .select()
       .from(raffles)
       .orderBy(desc(raffles.createdAt))
+    )
 
     return NextResponse.json({ raffles: list })
   } catch (error) {
