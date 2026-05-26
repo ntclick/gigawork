@@ -31,6 +31,7 @@ const NAV = [
   { label: 'Raffle', href: '/raffle', glyph: '🛰️', match: (p: string) => p.startsWith('/raffle') },
   { label: 'Docs', href: '/docs', glyph: '?' },
   { label: 'Finance', href: '/finance', glyph: '$' },
+  { label: 'Faucet', href: 'https://faucet.circle.com/', glyph: '🚰', external: true },
   { label: 'Profile', href: '/profile', glyph: '👤' },
   { label: 'Settings', href: '/settings', glyph: '⚙' },
 ]
@@ -142,8 +143,22 @@ export function MainHeader() {
         </Link>
 
         <nav className="hidden items-center gap-2 text-base lg:flex">
-          {activeNav.map((it) => {
+          {activeNav.map((it: any) => {
             const isActive = it.match ? it.match(pathname) : pathname.startsWith(it.href)
+            if (it.external) {
+              return (
+                <a
+                  key={it.label}
+                  href={it.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 px-3 py-1 text-base transition-colors text-[var(--giga-text)] hover:text-white"
+                >
+                  <span className="opacity-50">{it.glyph}</span>
+                  {it.label}
+                </a>
+              )
+            }
             return (
               <Link
                 key={it.label}
@@ -293,8 +308,23 @@ export function MainHeader() {
           </div>
 
           <nav className="flex flex-1 flex-col gap-2 p-4">
-            {activeNav.map((it) => {
+            {activeNav.map((it: any) => {
               const isActive = it.match ? it.match(pathname) : pathname.startsWith(it.href)
+              if (it.external) {
+                return (
+                  <a
+                    key={it.label}
+                    href={it.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setMobileNavOpen(false)}
+                    className="flex items-center gap-3 border-2 border-black px-4 py-3 text-base transition bg-[var(--giga-panel)] text-white/85 hover:bg-[#2c294e]"
+                  >
+                    <span className="text-lg opacity-70">{it.glyph}</span>
+                    <span className="font-pixel-body uppercase tracking-wider">{it.label}</span>
+                  </a>
+                )
+              }
               return (
                 <Link
                   key={it.label}
