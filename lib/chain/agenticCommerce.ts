@@ -144,6 +144,13 @@ const agenticCommerceAbi = [
     outputs: [],
   },
   {
+    type: 'function',
+    name: 'claimRefund',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'jobId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
     type: 'event',
     name: 'JobCreated',
     inputs: [
@@ -279,6 +286,7 @@ export async function settleJob(args: {
   jobId: string
   deliverableSeed: string
   reasonSeed?: string
+  fundTx?: string | null
 }): Promise<SettleResult | null> {
   if (!ERC8183_ENABLED || !adminAccount) return null
 
@@ -291,6 +299,24 @@ export async function settleJob(args: {
   const completeData = encodeComplete(jobId, reasonHash)
 
   if (status === 3) {
+    if (args.fundTx) {
+      try {
+        const found = await findExistingSettlementTxs({
+          jobId,
+          fundTx: args.fundTx as Hex,
+        })
+        if (found) {
+          return {
+            submitTx: found.submitTx,
+            completeTx: found.completeTx,
+            deliverableHash,
+            reasonHash,
+          }
+        }
+      } catch (err) {
+        console.warn('[settleJob] Failed to find existing settlement txs on chain:', err)
+      }
+    }
     return {
       submitTx: null,
       completeTx: null,
@@ -301,8 +327,18 @@ export async function settleJob(args: {
 
   if (status === 2) {
     const complete = await adminSend(AGENTIC_COMMERCE, completeData)
+    let submitTx: Hex | null = null
+    if (args.fundTx) {
+      try {
+        const found = await findExistingSettlementTxs({
+          jobId,
+          fundTx: args.fundTx as Hex,
+        })
+        if (found) submitTx = found.submitTx
+      } catch {}
+    }
     return {
-      submitTx: null,
+      submitTx,
       completeTx: complete.hash,
       deliverableHash,
       reasonHash,
@@ -321,6 +357,49 @@ export async function settleJob(args: {
     completeTx: complete.hash,
     deliverableHash,
     reasonHash,
+  }
+}
+
+async function findExistingSettlementTxs(args: {
+  jobId: bigint
+  fundTx: Hex
+}): Promise<{ submitTx: Hex | null; completeTx: Hex | null } | null> {
+  try {
+    const fundReceipt = await publicClient.getTransactionReceipt({ hash: args.fundTx })
+    const latest = await publicClient.getBlockNumber()
+    const from = fundReceipt.blockNumber
+    const to = latest < from + 500n ? latest : from + 500n
+    let submitTx: Hex | null = null
+    let completeTx: Hex | null = null
+
+    for (let blockNumber = from; blockNumber <= to; blockNumber++) {
+      try {
+        const block = await publicClient.getBlock({ blockNumber, includeTransactions: true })
+        for (const tx of block.transactions) {
+          if (tx.to?.toLowerCase() !== AGENTIC_COMMERCE.toLowerCase()) continue
+          try {
+            const decoded = decodeFunctionData({ abi: agenticCommerceAbi, data: tx.input })
+            if (decoded.args && decoded.args[0] === args.jobId) {
+              if (decoded.functionName === 'submit') {
+                submitTx = tx.hash
+              }
+              if (decoded.functionName === 'complete') {
+                completeTx = tx.hash
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore block error
+      }
+      if (submitTx && completeTx) break
+    }
+    return { submitTx, completeTx }
+  } catch (err) {
+    console.warn('[findExistingSettlementTxs] Error', err)
+    return null
   }
 }
 
@@ -648,4 +727,45 @@ async function verifyUserTx(args: {
     throw new Error(`${args.label} tx signer mismatch: ${tx.from} != ${args.expectedClient}`)
   }
   return tx
+}
+
+export async function getJobDetails(jobId: bigint) {
+  const job = await publicClient.readContract({
+    address: AGENTIC_COMMERCE,
+    abi: agenticCommerceAbi,
+    functionName: 'getJob',
+    args: [jobId],
+  })
+  return {
+    id: job.id.toString(),
+    client: job.client,
+    provider: job.provider,
+    evaluator: job.evaluator,
+    description: job.description,
+    budget: job.budget,
+    expiredAt: Number(job.expiredAt),
+    status: Number(job.status),
+    hook: job.hook,
+  }
+}
+
+export async function claimRefundJob(jobId: string): Promise<Hex | null> {
+  if (!ERC8183_ENABLED || !adminAccount) return null
+
+  const id = BigInt(jobId)
+  const status = await readJobStatus(id)
+  
+  // EIP-8183 claimRefund is only valid for Funded (1) or Submitted (2) states
+  if (status !== 1 && status !== 2) {
+    throw new Error(`job ${jobId} status is not refundable; current status=${status}`)
+  }
+
+  const data = encodeFunctionData({
+    abi: agenticCommerceAbi,
+    functionName: 'claimRefund',
+    args: [id],
+  })
+
+  const res = await adminSend(AGENTIC_COMMERCE, data)
+  return res.hash
 }

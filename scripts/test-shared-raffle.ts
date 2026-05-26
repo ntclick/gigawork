@@ -1,4 +1,7 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
+import { resolve } from 'path'
+dotenv.config({ path: resolve(process.cwd(), '.env') })
+dotenv.config({ path: resolve(process.cwd(), '.env.local'), override: true })
 
 import { parseEntries } from '../lib/cosmic-raffle/parseEntries'
 import { MerkleTree } from '../lib/cosmic-raffle/merkle'

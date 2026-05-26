@@ -6,6 +6,15 @@ import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, workflows } from '@/lib/db/schema'
 
+import { readJobStatus, ERC8183_CONTRACT } from '@/lib/chain/agenticCommerce'
+import { publicClient } from '@/lib/chain/client'
+import { decodeFunctionData, parseAbi, type Hex } from 'viem'
+
+const settleAbi = parseAbi([
+  'function submit(uint256 jobId, bytes32 deliverable, bytes optParams)',
+  'function complete(uint256 jobId, bytes32 reason, bytes optParams)',
+])
+
 type RouteCtx = { params: Promise<{ id: string }> }
 
 type ToolPart = {
@@ -36,15 +45,99 @@ export async function GET(_req: Request, ctx: RouteCtx) {
     }
     throw e
   }
-  const [wf] = await withDbRetry(
-    () => db
-      .select()
-      .from(workflows)
-      .where(and(eq(workflows.id, id), eq(workflows.userId, u.id)))
-      .limit(1),
-    { label: 'workflow-messages:wf' },
-  )
+  const [[wf], rows] = await Promise.all([
+    withDbRetry(
+      () => db
+        .select()
+        .from(workflows)
+        .where(and(eq(workflows.id, id), eq(workflows.userId, u.id)))
+        .limit(1),
+      { label: 'workflow-messages:wf' },
+    ),
+    withDbRetry(
+      () => db
+        .select()
+        .from(messages)
+        .where(eq(messages.workflowId, id))
+        .orderBy(asc(messages.createdAt)),
+      { label: 'workflow-messages:rows' },
+    )
+  ])
+
   if (!wf) return NextResponse.json({ error: 'not found' }, { status: 404 })
+
+  // Self-heal: If EIP-8183 job is active but completeTx is missing in DB
+  if (wf.erc8183JobId && !wf.erc8183CompleteTx && wf.erc8183FundTx) {
+    try {
+      const jobId = BigInt(wf.erc8183JobId)
+      const onChainStatus = await readJobStatus(jobId)
+      if (onChainStatus === 3) {
+        const fundTx = wf.erc8183FundTx as Hex
+        const latestBlock = await publicClient.getBlockNumber()
+
+        let fromBlock = 0n
+        try {
+          const fundReceipt = await publicClient.getTransactionReceipt({ hash: fundTx })
+          fromBlock = fundReceipt.blockNumber
+        } catch {
+          fromBlock = latestBlock > 200n ? latestBlock - 200n : 0n
+        }
+
+        let submitTx: Hex | null = null
+        let completeTx: Hex | null = null
+        let deliverableHash: Hex | null = null
+
+        // Scan from fromBlock to latestBlock (cap at fromBlock + 300 blocks for quick responses)
+        const toBlock = latestBlock < fromBlock + 300n ? latestBlock : fromBlock + 300n
+        for (let b = fromBlock; b <= toBlock; b++) {
+          try {
+            const block = await publicClient.getBlock({ blockNumber: b, includeTransactions: true })
+            for (const tx of block.transactions) {
+              if (tx.to?.toLowerCase() !== ERC8183_CONTRACT.toLowerCase()) continue
+              try {
+                const decoded = decodeFunctionData({ abi: settleAbi, data: tx.input })
+                if (decoded.args[0] === jobId) {
+                  if (decoded.functionName === 'submit') {
+                    submitTx = tx.hash
+                    deliverableHash = decoded.args[1]
+                  }
+                  if (decoded.functionName === 'complete') {
+                    completeTx = tx.hash
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            }
+          } catch {
+            // ignore block error
+          }
+          if (submitTx && completeTx) break
+        }
+
+        if (submitTx && completeTx) {
+          await db
+            .update(workflows)
+            .set({
+              erc8183SubmitTx: submitTx,
+              erc8183CompleteTx: completeTx,
+              erc8183DeliverableHash: deliverableHash,
+              status: 'completed',
+            })
+            .where(eq(workflows.id, id))
+
+          // Update local mutable object for immediate response
+          wf.erc8183SubmitTx = submitTx
+          wf.erc8183CompleteTx = completeTx
+          wf.erc8183DeliverableHash = deliverableHash
+          wf.status = 'completed'
+          console.log(`[Self-Heal] Successfully synced EIP-8183 settlement in route for job #${jobId}`)
+        }
+      }
+    } catch (err) {
+      console.warn('[Self-Heal] on-demand sync failed', err)
+    }
+  }
 
   const hasErc8183Trail = !!(
     wf.erc8183JobId ||
@@ -55,15 +148,6 @@ export async function GET(_req: Request, ctx: RouteCtx) {
     wf.erc8183SubmitTx ||
     wf.erc8183CompleteTx ||
     wf.erc8183ReputationTx
-  )
-
-  const rows = await withDbRetry(
-    () => db
-      .select()
-      .from(messages)
-      .where(eq(messages.workflowId, id))
-      .orderBy(asc(messages.createdAt)),
-    { label: 'workflow-messages:rows' },
   )
 
   const out: UIMessageOut[] = []

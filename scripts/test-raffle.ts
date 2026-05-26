@@ -1,18 +1,21 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
+import { resolve } from 'path'
+dotenv.config({ path: resolve(process.cwd(), '.env') })
+dotenv.config({ path: resolve(process.cwd(), '.env.local'), override: true })
 
 import { parseEntries } from '../lib/cosmic-raffle/parseEntries'
 import { MerkleTree } from '../lib/cosmic-raffle/merkle'
 import { fetchCosmicSeed } from '../lib/cosmic-raffle/fetchCosmicSeed'
 import { getAdminWallet, publicClient, CONTRACT_ADDRESS, getWinningIndicesFromContract } from '../lib/cosmic-raffle/contract'
 import CosmicRaffleArtifact from '../contracts/CosmicRaffle.json'
-import { encodeFunctionData, keccak256, encodePacked } from 'viem'
+import { encodeFunctionData, keccak256, encodePacked, decodeEventLog } from 'viem'
 
 async function main() {
-  console.log('\n🏁 Starting End-to-End Cosmic Raffle Integration Test...\n')
-  console.log(`🏡 Contract Address: ${CONTRACT_ADDRESS}`)
+  console.log('\n🏁 Starting End-to-End Cosmic Raffle Single-Transaction Draw Test...\n')
+  console.log(`🏡 Shared Contract Address: ${CONTRACT_ADDRESS}`)
 
   if (!CONTRACT_ADDRESS) {
-    throw new Error('COSMIC_RAFFLE_ADDRESS / NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS is missing in environment variables.')
+    throw new Error('NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS is missing in environment variables.')
   }
 
   // 1. Prepare raw input list
@@ -31,50 +34,18 @@ async function main() {
   const root = tree.getRoot()
   console.log(`🌳 Merkle Root computed: ${root}`)
 
-  // 3. Create raffle on-chain
+  // 3. Select commit block for fast testing
   const wallet = getAdminWallet()
   const currentBlock = await publicClient.getBlockNumber()
-  // Set commitBlock to currentBlock + 2 for fast testing
   const commitBlock = Number(currentBlock) + 2
   const winnerCount = 2
 
-  console.log(`📡 Creating raffle on-chain...`)
-  console.log(`   - Title: E2E Test Raffle`)
+  console.log(`📡 Setting up campaign target parameters:`)
   console.log(`   - Total Entries: ${entries.length}`)
   console.log(`   - Winner Count: ${winnerCount}`)
   console.log(`   - Commit Block: ${commitBlock} (Current Block: ${currentBlock})`)
 
-  const callData = encodeFunctionData({
-    abi: CosmicRaffleArtifact.abi,
-    functionName: 'createRaffle',
-    args: [
-      'E2E Test Raffle',
-      root,
-      BigInt(entries.length),
-      BigInt(winnerCount),
-      BigInt(commitBlock)
-    ]
-  })
-
-  const txHash = await wallet.sendTransaction({
-    account: wallet.account,
-    to: CONTRACT_ADDRESS,
-    data: callData,
-  })
-
-  console.log(`⏳ Waiting for createRaffle transaction receipt (tx: ${txHash})...`)
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
-  console.log(`✅ Raffle transaction confirmed in block ${receipt.blockNumber}!`)
-
-  const count = await publicClient.readContract({
-    address: CONTRACT_ADDRESS,
-    abi: CosmicRaffleArtifact.abi,
-    functionName: 'getRaffleCount',
-  }) as bigint
-  const raffleId = Number(count) - 1
-  console.log(`🆔 Resolved On-Chain Raffle ID: ${raffleId}`)
-
-  // 4. Wait for commit block
+  // 4. Wait for commit block to be mined
   console.log(`⏳ Waiting for block ${commitBlock} to be mined...`)
   while (true) {
     const blockNum = await publicClient.getBlockNumber()
@@ -86,7 +57,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 2000))
   }
 
-  // 5. Fetch Cosmic Seed
+  // 5. Fetch Cosmic Seed via SpaceComputer SDK cTRNG
   console.log(`🛰️ Fetching Cosmic Seed from SpaceComputer cTRNG setup...`)
   const seed = await fetchCosmicSeed(commitBlock)
   console.log(`🔮 Derived Verifiable Cosmic Seed: ${seed}`)
@@ -114,13 +85,16 @@ async function main() {
   const winningUsernames = winningIndicesArray.map(idx => entries[idx])
   const proofs = winningIndicesArray.map(idx => tree.getProof(idx))
 
-  // 6. Draw winners on-chain
-  console.log(`📡 Sending drawWinners transaction to blockchain...`)
+  // 6. Draw winners in a single transaction on the shared contract
+  console.log(`📡 Sending drawRaffle transaction to single shared contract...`)
   const drawData = encodeFunctionData({
     abi: CosmicRaffleArtifact.abi,
-    functionName: 'drawWinners',
+    functionName: 'drawRaffle',
     args: [
-      BigInt(raffleId),
+      root,
+      BigInt(entries.length),
+      BigInt(winnerCount),
+      BigInt(commitBlock),
       seed,
       winningUsernames,
       proofs
@@ -133,12 +107,37 @@ async function main() {
     data: drawData,
   })
 
-  console.log(`⏳ Waiting for drawWinners confirmation receipt (tx: ${drawTx})...`)
+  console.log(`⏳ Waiting for drawRaffle confirmation receipt (tx: ${drawTx})...`)
   const drawReceipt = await publicClient.waitForTransactionReceipt({ hash: drawTx })
   console.log(`✅ On-chain draw successfully confirmed in block ${drawReceipt.blockNumber}!`)
 
-  // 7. Verify winners
-  console.log(`📥 Fetching winning indices from Smart Contract...`)
+  // 7. Extract raffleId from logs
+  let raffleId: number | null = null
+  for (const log of drawReceipt.logs) {
+    try {
+      const decoded = decodeEventLog({
+        abi: CosmicRaffleArtifact.abi,
+        data: log.data,
+        topics: log.topics,
+      })
+      if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
+        const args = decoded.args as any
+        raffleId = Number(args.raffleId)
+        break
+      }
+    } catch (e) {
+      // skip
+    }
+  }
+
+  if (raffleId === null) {
+    throw new Error('❌ Failed to extract raffleId from receipt logs.')
+  }
+
+  console.log(`🚀 Extracted On-Chain Raffle ID: ${raffleId}`)
+
+  // 8. Verify winners on-chain
+  console.log(`📥 Fetching winning indices from Shared Smart Contract...`)
   const winningIndices = await getWinningIndicesFromContract(raffleId)
   console.log(`🏆 Winning indices drawn by contract:`, winningIndices)
 
@@ -153,7 +152,7 @@ async function main() {
   })
   console.log(`------------------------------------\n`)
 
-  console.log(`🏁 End-to-End Cosmic Raffle Integration Test completed successfully!`)
+  console.log(`🏁 End-to-End Single-Transaction Draw E2E Test completed successfully!`)
 }
 
 main().catch((e) => {

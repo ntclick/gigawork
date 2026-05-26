@@ -54,14 +54,23 @@ export default function WorkflowPage() {
       window.dispatchEvent(new CustomEvent('gw:credits-changed'))
       // settleJob fires admin-side from finalizeReport once the brain emits
       // the report tool. The submit/complete tx hashes write to DB ~1s after
-      // onFinish here. Re-fetch snapshot once shortly after to pick up the
-      // new tx hashes for the ERC-8183 trail panel without forcing a reload.
-      setTimeout(() => {
+      // onFinish here. Re-fetch snapshot shortly after and then periodically
+      // to pick up the new tx hashes for the ERC-8183 trail panel without forcing a reload.
+      const fetchLatest = () => {
         fetch(`/api/workflow/${id}/messages`)
           .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
-          .then((j: Snapshot) => setSnapshot(j))
+          .then((j: Snapshot) => {
+            setSnapshot(j)
+            if (j.workflow?.erc8183?.completeTx) {
+              // Successfully received transaction hashes, no further staggered polls needed
+              return
+            }
+          })
           .catch(() => {})
-      }, 2500)
+      }
+      setTimeout(fetchLatest, 2000)
+      setTimeout(fetchLatest, 5000)
+      setTimeout(fetchLatest, 10000)
       // Surface non-stop finish reasons as warning. (finishReason is on the
       // streaming chunk, not the final message — we just signal completion.)
       const text = (message.parts ?? [])
@@ -149,6 +158,32 @@ export default function WorkflowPage() {
       cancelled = true
     }
   }, [id, status, setMessages, messages.length])
+
+  // Periodic polling for settlement transactions when they are pending/missing
+  useEffect(() => {
+    if (!id || status === 'streaming' || status === 'submitted') return
+    const completeTx = snapshot?.workflow?.erc8183?.completeTx
+    const hasErc8183 = !!snapshot?.workflow?.erc8183
+    const isWfCompleted = snapshot?.workflow?.status === 'completed' || snapshot?.workflow?.status === 'failed'
+    const isWfSettling = snapshot?.workflow?.status === 'settling'
+
+    // If we have an escrow trail but it's not fully settled yet (completeTx is missing),
+    // and the workflow is either settling, running, or completed, poll for updates.
+    if (hasErc8183 && !completeTx && (isWfSettling || isWfCompleted || snapshot?.workflow?.status === 'running')) {
+      const interval = setInterval(() => {
+        fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
+          .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
+          .then((j: Snapshot) => {
+            setSnapshot(j)
+            if (j.messages && j.messages.length > 0) {
+              setMessages(j.messages)
+            }
+          })
+          .catch(() => {})
+      }, 3000)
+      return () => clearInterval(interval)
+    }
+  }, [id, status, snapshot?.workflow?.erc8183?.completeTx, snapshot?.workflow?.erc8183, snapshot?.workflow?.status, setMessages])
 
   // Auto-send only when this workflow has never streamed.
   // Includes retry logic for race condition where DB status is still
@@ -477,12 +512,9 @@ export default function WorkflowPage() {
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-4 py-2.5 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--giga-accent)]" />
                 <span className="text-[var(--giga-accent)]">
-                  {escrow.step === 'preparing' && 'Preparing escrow…'}
-                  {escrow.step === 'signing-create' && 'Sign createJob in wallet…'}
-                  {escrow.step === 'posting-create' && 'Posting createJob tx…'}
-                  {escrow.step === 'signing-approve' && 'Sign USDC approval…'}
-                  {escrow.step === 'signing-fund' && 'Sign fund tx…'}
-                  {escrow.step === 'confirming' && 'Confirming on-chain…'}
+                  {escrow.step === 'preparing' && 'Preparing payment…'}
+                  {escrow.step === 'signing-fund' && 'Sign native USDC transfer in wallet…'}
+                  {escrow.step === 'confirming' && 'Confirming native payment & backend escrow…'}
                 </span>
               </div>
             )}

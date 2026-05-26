@@ -1,3 +1,8 @@
+import dotenv from 'dotenv'
+import { resolve } from 'path'
+dotenv.config({ path: resolve(process.cwd(), '.env') })
+dotenv.config({ path: resolve(process.cwd(), '.env.local'), override: true })
+
 import { createPublicClient, createWalletClient, http, defineChain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import CosmicRaffleArtifact from '../../contracts/CosmicRaffle.json'

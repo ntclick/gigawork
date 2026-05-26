@@ -32,9 +32,13 @@ import {
 
 import {
   adminAccount,
+  providerAccount,
+  validatorAccount,
   pollingClient,
   publicClient,
   sendAdminTransaction,
+  sendProviderTransaction,
+  sendValidatorTransaction,
 } from './client'
 
 const VALIDATION_REGISTRY_ADDRESS = process.env
@@ -95,14 +99,15 @@ async function attestOne(
     passed: false,
   }
 
-  if (!VALIDATION_REGISTRY_ADDRESS || !adminAccount) {
+  if (!VALIDATION_REGISTRY_ADDRESS || !adminAccount || !providerAccount || !validatorAccount) {
     result.skipped = 'validation_registry_not_configured'
     return result
   }
 
-  const reviewer = getAddress(adminAccount.address).toLowerCase()
+  const requester = getAddress(providerAccount.address).toLowerCase()
+  const reviewer = getAddress(validatorAccount.address).toLowerCase()
 
-  // Confirm admin actually owns this agentId — required for the
+  // Confirm provider actually owns this agentId — required for the
   // ownership-gated `validationRequest`. If the user owns it, we skip.
   if (IDENTITY_REGISTRY_ADDRESS) {
     try {
@@ -112,7 +117,7 @@ async function attestOne(
         functionName: 'ownerOf',
         args: [BigInt(agentId)],
       })) as `0x${string}`
-      if (owner.toLowerCase() !== reviewer) {
+      if (owner.toLowerCase() !== requester) {
         result.skipped = `owner_mismatch:${owner}`
         return result
       }
@@ -122,19 +127,19 @@ async function attestOne(
     }
   }
 
-  // ── Step 1: validationRequest (owner = admin) ────────────────────
+  // ── Step 1: validationRequest (owner = provider) ────────────────────
   try {
     const data = encodeFunctionData({
       abi: validationAbi,
       functionName: 'validationRequest',
       args: [
-        getAddress(adminAccount.address),
+        getAddress(validatorAccount.address), // Validator designated to review
         BigInt(agentId),
         requestURI,
         requestHash,
       ],
     })
-    const hash = await sendAdminTransaction({
+    const hash = await sendProviderTransaction({
       to: VALIDATION_REGISTRY_ADDRESS,
       data,
     })
@@ -154,7 +159,7 @@ async function attestOne(
     return result
   }
 
-  // ── Step 2: validationResponse (validator = admin) ───────────────
+  // ── Step 2: validationResponse (validator = reviewer) ───────────────
   // responseHash mirrors requestHash so the indexer can join request ↔ response.
   const responseHash = requestHash
   try {
@@ -169,7 +174,7 @@ async function attestOne(
         VALIDATION_TAG,
       ],
     })
-    const hash = await sendAdminTransaction({
+    const hash = await sendValidatorTransaction({
       to: VALIDATION_REGISTRY_ADDRESS,
       data,
     })

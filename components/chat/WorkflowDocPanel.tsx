@@ -48,7 +48,7 @@ export function WorkflowDocPanel({
   status: string
   erc8183?: Erc8183Trail | null
 }) {
-  const { plan, finalReport, dispatchStats, dispatches, reputationTx, reputationStatus, reputationReason } = useMemo(() => extract(messages, status), [messages, status])
+  const { plan, finalReport, dispatchStats, dispatches, reputationTx, reputationStatus, reputationReason, validationAttests } = useMemo(() => extract(messages, status), [messages, status])
 
   const busy = status === 'streaming' || status === 'submitted'
 
@@ -129,6 +129,7 @@ export function WorkflowDocPanel({
               reputationTx={reputationTx}
               reputationStatus={reputationStatus}
               reputationReason={reputationReason}
+              validationAttests={validationAttests}
             />
           </section>
         )}
@@ -177,6 +178,7 @@ function UnifiedTrail({
   reputationTx,
   reputationStatus,
   reputationReason,
+  validationAttests,
 }: {
   planCount: number
   dispatchStats: { running: number; completed: number; failed: number; total: number }
@@ -193,6 +195,7 @@ function UnifiedTrail({
   reputationTx: string | null
   reputationStatus: string | null
   reputationReason: string | null
+  validationAttests: Array<{ agentId: string; requestTx: string | null; responseTx: string | null; passed: boolean; skipped?: string | null }>
 }) {
   const agentDone =
     dispatchStats.total > 0 &&
@@ -253,6 +256,21 @@ function UnifiedTrail({
               detail={d.skill}
               tx={d.tx}
               state={d.status === 'completed' ? 'done' : d.status === 'failed' ? 'failed' : d.status === 'running' ? 'active' : 'idle'}
+            />
+          ))}
+        </div>
+      )}
+
+      {validationAttests.length > 0 && (
+        <div className="space-y-1.5 border-t border-white/10 pt-3">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Validation proofs</p>
+          {validationAttests.map((v) => (
+            <TrailTxRow
+              key={v.agentId}
+              label={`Agent #${v.agentId}`}
+              tx={v.responseTx}
+              state={v.passed ? 'done' : v.skipped ? 'idle' : 'failed'}
+              detail={v.skipped ? `skipped (${v.skipped.split(':')[0]})` : undefined}
             />
           ))}
         </div>
@@ -380,6 +398,8 @@ function TrailTxRow({
         </a>
       ) : tx === '0x0' ? (
         <span className="shrink-0 font-mono text-[10px] text-white/35">allowance ok</span>
+      ) : state === 'done' || state === 'failed' || (state === 'idle' && detail?.includes('skipped')) ? (
+        null
       ) : (
         <span className="shrink-0 font-mono text-[10px] text-white/25">pending</span>
       )}
@@ -500,6 +520,7 @@ function extract(messages: UIMessage[], workflowStatus: string) {
     string,
     { planId: string; label: string; skill: string; status: 'pending' | 'running' | 'completed' | 'failed'; tx: string | null }
   >()
+  const validationAttests: Array<{ agentId: string; requestTx: string | null; responseTx: string | null; passed: boolean; skipped?: string | null }> = []
 
   for (const m of messages) {
     for (const part of m.parts) {
@@ -532,11 +553,14 @@ function extract(messages: UIMessage[], workflowStatus: string) {
           tx: null,
         }
         if (part.state === 'output-available') {
-          const out = part.output as { ok?: boolean } | undefined
+          const out = part.output as { ok?: boolean; dispatch_tx?: string | null } | undefined
           if (out?.ok === false) {
             current.status = 'failed'
           } else {
             current.status = 'completed'
+            if (out?.dispatch_tx) {
+              current.tx = out.dispatch_tx
+            }
           }
         } else if (part.state === 'input-streaming' || part.state === 'input-available') {
           current.status = 'running'
@@ -558,6 +582,19 @@ function extract(messages: UIMessage[], workflowStatus: string) {
         if (output.status) reputationStatus = output.status
         if (output.reason) reputationReason = output.reason
       }
+      if (toolName === 'validationAttest' && part.state === 'output-available') {
+        const output = (part.output || {}) as { attestations?: Array<{ agentId: string; requestTx: string | null; responseTx: string | null; passed: boolean; skipped?: string | null }> }
+        if (output.attestations && output.attestations.length > 0) {
+          for (const att of output.attestations) {
+            const idx = validationAttests.findIndex((a) => a.agentId === att.agentId)
+            if (idx >= 0) {
+              validationAttests[idx] = att
+            } else {
+              validationAttests.push(att)
+            }
+          }
+        }
+      }
     }
   }
 
@@ -574,6 +611,7 @@ function extract(messages: UIMessage[], workflowStatus: string) {
     reputationTx,
     reputationStatus,
     reputationReason,
+    validationAttests,
   }
 }
 

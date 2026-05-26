@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles, raffleWinners } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { fetchCosmicSeed } from '@/lib/cosmic-raffle/fetchCosmicSeed'
+import { fetchCosmicSeed, getCosmicProof } from '@/lib/cosmic-raffle/fetchCosmicSeed'
 import { publicClient, drawWinnersOnChain, getWinningIndicesFromContract } from '@/lib/cosmic-raffle/contract'
 import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
 import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
@@ -85,12 +85,14 @@ export async function POST(
     await db.insert(raffleWinners).values(winnersToInsert)
 
     // 8. Update raffle state in DB
+    const cosmicProof = getCosmicProof(raffle.commitBlock) ?? null
     const [updatedRaffle] = await db
       .update(raffles)
       .set({
         drawn: true,
         seed: seed,
         txHash: txHash, // update with the draw tx hash
+        cosmicProof: cosmicProof,
       })
       .where(eq(raffles.id, raffle.id))
       .returning()

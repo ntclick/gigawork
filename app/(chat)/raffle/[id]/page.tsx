@@ -8,7 +8,7 @@ import { WinnersList } from '@/components/raffle/WinnersList'
 import { VerifyPanel } from '@/components/raffle/VerifyPanel'
 import { DrawModal } from '@/components/raffle/DrawModal'
 import { Button } from '@/components/ui/button'
-import { Orbit, Compass, Trophy, ExternalLink, ShieldCheck, ArrowLeft, RefreshCw, Loader2, Search } from 'lucide-react'
+import { Orbit, Compass, Trophy, ExternalLink, ShieldCheck, ArrowLeft, RefreshCw, Loader2, Search, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
 import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, keccak256, encodePacked } from 'viem'
@@ -65,9 +65,20 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
   const [activeTab, setActiveTab] = useState<'draw' | 'contestants'>('draw')
   const [estimatedDrawFee, setEstimatedDrawFee] = useState<string>('')
 
+  // cTRNG collapsible proof states
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [showSpaceProof, setShowSpaceProof] = useState(false)
+
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedKey(label)
+    setTimeout(() => setCopiedKey(null), 2000)
+  }
+
   useEffect(() => {
     async function estimateDrawGas() {
       if (!raffle || !activeWallet || raffle.drawn) return
+      if (estimatedDrawFee) return
       
       const blockNumber = BigInt(raffle.commitBlock)
       const blocksRemaining = blockNumber - BigInt(currentBlock)
@@ -437,99 +448,260 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           {/* Title Banner */}
-          <div className="border border-white/5 bg-slate-950/50 rounded-2xl p-6 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="border border-white/5 bg-slate-950/50 rounded-2xl p-6 relative overflow-hidden flex flex-col gap-6">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(8,145,178,0.06),transparent_60%)] pointer-events-none" />
             
-            <div className="space-y-2 z-10">
-              <h1 className="text-2xl font-extrabold uppercase tracking-wide text-slate-100 font-pixel-body">
-                {raffle.title}
-              </h1>
-              {raffle.prizeDescription && (
-                <p className="text-sm text-amber-400 font-medium flex items-center gap-1.5">
-                  <Trophy className="h-4 w-4 text-amber-400" />
-                  Prize reward: {raffle.prizeDescription}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-400 pt-1 font-mono">
-                {raffle.contractAddress && (
-                  <a
-                    href={`${process.env.NEXT_PUBLIC_ARC_EXPLORER || 'https://testnet.arcscan.app'}/address/${raffle.contractAddress}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 hover:text-cyan-400 transition-colors bg-slate-900/60 border border-white/5 px-2 py-0.5 rounded"
-                  >
-                    <span>Contract: <span className="underline">{raffle.contractAddress.slice(0, 6)}...{raffle.contractAddress.slice(-4)}</span></span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 z-10 w-full">
+              <div className="space-y-2">
+                <h1 className="text-2xl font-extrabold uppercase tracking-wide text-slate-100 font-pixel-body">
+                  {raffle.title}
+                </h1>
+                {raffle.prizeDescription && (
+                  <p className="text-sm text-amber-400 font-medium flex items-center gap-1.5">
+                    <Trophy className="h-4 w-4 text-amber-400" />
+                    Prize reward: {raffle.prizeDescription}
+                  </p>
                 )}
-                {raffle.drawn && raffle.txHash && (
-                  <a
-                    href={`${process.env.NEXT_PUBLIC_ARC_EXPLORER || 'https://testnet.arcscan.app'}/tx/${raffle.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 hover:text-amber-400 transition-colors bg-slate-900/60 border border-white/5 px-2 py-0.5 rounded"
-                  >
-                    <span>Draw Tx: <span className="underline">{raffle.txHash.slice(0, 6)}...{raffle.txHash.slice(-4)}</span></span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-            </div>
-
-            {/* Main Action Trigger button */}
-            <div className="z-10 w-full md:w-auto">
-              {raffle.drawn ? (
-                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 z-10 w-full md:w-auto">
-                  <div className="flex items-center justify-center gap-1.5 text-emerald-400 text-xs font-semibold bg-emerald-950/60 border border-emerald-500/20 px-4 py-2.5 rounded-xl uppercase tracking-wider">
-                    <ShieldCheck className="h-4 w-4" />
-                    Results announced
-                  </div>
-                  {raffle.txHash && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-400 pt-1 font-mono">
+                  {raffle.contractAddress && (
+                    <a
+                      href={`${process.env.NEXT_PUBLIC_ARC_EXPLORER || 'https://testnet.arcscan.app'}/address/${raffle.contractAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 hover:text-cyan-400 transition-colors bg-slate-900/60 border border-white/5 px-2 py-0.5 rounded"
+                    >
+                      <span>Contract: <span className="underline">{raffle.contractAddress.slice(0, 6)}...{raffle.contractAddress.slice(-4)}</span></span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  {raffle.drawn && raffle.txHash && (
                     <a
                       href={`${process.env.NEXT_PUBLIC_ARC_EXPLORER || 'https://testnet.arcscan.app'}/tx/${raffle.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-1 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-400 hover:text-cyan-300 font-bold uppercase tracking-wider text-[10px] px-3.5 py-2.5 rounded-xl transition-all duration-200 animate-fadeIn"
+                      className="inline-flex items-center gap-1 hover:text-amber-400 transition-colors bg-slate-900/60 border border-white/5 px-2 py-0.5 rounded"
                     >
-                      Verify On ArcScan
-                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span>Draw Tx: <span className="underline">{raffle.txHash.slice(0, 6)}...{raffle.txHash.slice(-4)}</span></span>
+                      <ExternalLink className="h-3 w-3" />
                     </a>
                   )}
                 </div>
-              ) : isHost ? (
-                readyToDraw ? (
-                  <div className="flex flex-col gap-1.5 w-full md:w-auto">
-                    <Button
-                      onClick={handleTriggerDraw}
-                      className="w-full md:w-auto bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold uppercase tracking-wider text-xs px-6 py-3.5 rounded-xl shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 transition-transform duration-200 hover:scale-[1.02]"
-                    >
-                      <Orbit className="h-4.5 w-4.5 text-slate-950 animate-spin" style={{ animationDuration: '4s' }} />
-                      Trigger Raffle Draw (Space Random)
-                    </Button>
-                    <span className="text-[10px] text-cyan-400 text-center font-mono block mt-1 animate-pulse">
-                      Estimated Gas: {estimatedDrawFee ? `~${estimatedDrawFee} USDC` : 'Estimating gas...'}
-                    </span>
+              </div>
+
+              {/* Main Action Trigger button */}
+              <div className="w-full md:w-auto">
+                {raffle.drawn ? (
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full md:w-auto">
+                    <div className="flex items-center justify-center gap-1.5 text-emerald-400 text-xs font-semibold bg-emerald-950/60 border border-emerald-500/20 px-4 py-2.5 rounded-xl uppercase tracking-wider">
+                      <ShieldCheck className="h-4 w-4" />
+                      Results announced
+                    </div>
+                    {raffle.txHash && (
+                      <a
+                        href={`${process.env.NEXT_PUBLIC_ARC_EXPLORER || 'https://testnet.arcscan.app'}/tx/${raffle.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1 bg-cyan-950/40 hover:bg-cyan-950/60 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-400 hover:text-cyan-300 font-bold uppercase tracking-wider text-[10px] px-3.5 py-2.5 rounded-xl transition-all duration-200 animate-fadeIn"
+                      >
+                        Verify On ArcScan
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
                   </div>
+                ) : isHost ? (
+                  readyToDraw ? (
+                    <div className="flex flex-col gap-1.5 w-full md:w-auto">
+                      <Button
+                        onClick={handleTriggerDraw}
+                        className="w-full md:w-auto bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold uppercase tracking-wider text-xs px-6 py-3.5 rounded-xl shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 transition-transform duration-200 hover:scale-[1.02]"
+                      >
+                        <Orbit className="h-4.5 w-4.5 text-slate-950 animate-spin" style={{ animationDuration: '4s' }} />
+                        Trigger Raffle Draw (Space Random)
+                      </Button>
+                      <span className="text-[10px] text-cyan-400 text-center font-mono block mt-1 animate-pulse">
+                        Estimated Gas: {estimatedDrawFee ? `~${estimatedDrawFee} USDC` : 'Estimating gas...'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1 w-full md:w-auto">
+                      <Button
+                        disabled
+                        className="w-full md:w-auto bg-slate-900 border border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-xs px-6 py-3.5 rounded-xl flex items-center justify-center gap-2"
+                      >
+                        <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
+                        Waiting for Block #{raffle.commitBlock}
+                      </Button>
+                      <span className="text-[10px] text-slate-500 text-center font-mono block mt-1">
+                        Remaining ~{Number(blocksRemaining)} blocks (~{Number(blocksRemaining) * 2} seconds)
+                      </span>
+                    </div>
+                  )
                 ) : (
-                  <div className="flex flex-col gap-1 w-full md:w-auto">
-                    <Button
-                      disabled
-                      className="w-full md:w-auto bg-slate-900 border border-slate-800 text-slate-500 font-bold uppercase tracking-wider text-xs px-6 py-3.5 rounded-xl flex items-center justify-center gap-2"
-                    >
-                      <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
-                      Waiting for Block #{raffle.commitBlock}
-                    </Button>
-                    <span className="text-[10px] text-slate-500 text-center font-mono block mt-1">
-                      Remaining ~{Number(blocksRemaining)} blocks (~{Number(blocksRemaining) * 2} seconds)
-                    </span>
+                  <div className="text-xs text-slate-500 bg-slate-950/60 border border-white/5 p-3 rounded-xl">
+                    Awaiting event host to trigger draw after block #{raffle.commitBlock}.
                   </div>
-                )
-              ) : (
-                <div className="text-xs text-slate-500 bg-slate-950/60 border border-white/5 p-3 rounded-xl">
-                  Awaiting event host to trigger draw after block #{raffle.commitBlock}.
-                </div>
-              )}
+                )}
+              </div>
             </div>
+
+            {/* Collapsible cTRNG Proof Section directly inside the Banner! */}
+            {raffle.drawn && (raffle as any).cosmicProof && (
+              <div className="border-t border-white/5 pt-4 z-10 w-full animate-fadeIn">
+                <div className="border border-emerald-500/20 bg-emerald-950/5 rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => setShowSpaceProof(!showSpaceProof)}
+                    className="w-full py-2.5 px-4 hover:bg-emerald-950/15 text-[11px] font-bold text-emerald-400 flex items-center justify-between transition-colors border-b border-emerald-500/10"
+                  >
+                    <span className="flex items-center gap-1.5 uppercase tracking-wider">
+                      <ShieldCheck className="h-4 w-4 text-emerald-400 animate-pulse" />
+                      SpaceComputer cTRNG Cryptographic Satellite Proof
+                    </span>
+                    {showSpaceProof ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4 animate-bounce" />}
+                  </button>
+
+                  {showSpaceProof && (
+                    <div className="p-4 bg-slate-950/90 space-y-3 animate-slideDown">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-3 text-[10px]">
+                        <div>
+                          <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Hardware (src)</span>
+                          <span className="text-slate-300 font-bold font-mono">{(raffle as any).cosmicProof.src || 'Aptos Orbital Gateway'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[8px] uppercase font-semibold">Service Type</span>
+                          <span className="text-slate-300 font-bold font-mono">{(raffle as any).cosmicProof.service || 'cTRNG'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[8px] uppercase font-semibold">Verification Mode</span>
+                          <span className="text-emerald-400 font-bold font-mono uppercase">{(raffle as any).cosmicProof.verificationMode || 'authenticated_sdk'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[8px] uppercase font-semibold">Timestamp</span>
+                          <span className="text-slate-300 font-bold font-mono">
+                            {(raffle as any).cosmicProof.timestamp ? new Date((raffle as any).cosmicProof.timestamp).toLocaleString('en-US') : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="md:col-span-4 border-t border-white/5 pt-2">
+                          <span className="text-slate-500 block text-[8px] uppercase font-semibold">Physical Cosmic Entropy (Satellite Chip)</span>
+                          <div className="font-mono text-[9px] text-cyan-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
+                            <span className="truncate flex-1">{(raffle as any).cosmicProof.spaceComputerEntropy || 'Unable to retrieve'}</span>
+                            {(raffle as any).cosmicProof.spaceComputerEntropy && (
+                              <button 
+                                onClick={() => handleCopy((raffle as any).cosmicProof.spaceComputerEntropy || '', 'entropy')}
+                                className="ml-2 p-1 text-slate-500 hover:text-cyan-400 transition-colors"
+                              >
+                                {copiedKey === 'entropy' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="md:col-span-4 border-t border-white/5 pt-2">
+                          <span className="text-slate-500 block text-[8px] uppercase font-semibold">Blockchain Anchor Block Hash</span>
+                          <div className="font-mono text-[9px] text-indigo-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
+                            <span className="truncate flex-1">{(raffle as any).cosmicProof.blockHash || 'Unable to retrieve'}</span>
+                            {(raffle as any).cosmicProof.blockHash && (
+                              <button 
+                                onClick={() => handleCopy((raffle as any).cosmicProof.blockHash || '', 'blockHash')}
+                                className="ml-2 p-1 text-slate-500 hover:text-indigo-400 transition-colors"
+                              >
+                                {copiedKey === 'blockHash' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {(raffle as any).cosmicProof.signature && (
+                          <>
+                            <div className="md:col-span-4 border-t border-white/5 pt-2">
+                              <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Signature ({(raffle as any).cosmicProof.signature.algo || 'RSA'})</span>
+                              <div className="font-mono text-[9px] text-emerald-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
+                                <span className="truncate flex-1">{(raffle as any).cosmicProof.signature.value}</span>
+                                <button 
+                                  onClick={() => handleCopy((raffle as any).cosmicProof.signature?.value || '', 'signatureValue')}
+                                  className="ml-2 p-1 text-slate-500 hover:text-emerald-400 transition-colors"
+                                >
+                                  {copiedKey === 'signatureValue' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="md:col-span-4 border-t border-white/5 pt-2">
+                              <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Hardware Public Key (PEM)</span>
+                              <div className="font-mono text-[9px] text-slate-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
+                                <span className="truncate flex-1">{(raffle as any).cosmicProof.signature.pk}</span>
+                                <button 
+                                  onClick={() => handleCopy((raffle as any).cosmicProof.signature?.pk || '', 'publicKey')}
+                                  className="ml-2 p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                                >
+                                  {copiedKey === 'publicKey' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="border-t border-white/5 pt-3 mt-1 space-y-1.5">
+                        <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Verify IPNS Beacon Mirrors (Bypass DNS blocks):</span>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1.5 font-mono text-[10px]">
+                          <a
+                            href="https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors hover:underline"
+                          >
+                            ipfs.io <ExternalLink className="h-3 w-3" />
+                          </a>
+                          <span className="text-slate-700">|</span>
+                          <a
+                            href="https://dweb.link/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors hover:underline"
+                          >
+                            dweb.link (path) <ExternalLink className="h-3 w-3" />
+                          </a>
+                          <span className="text-slate-700">|</span>
+                          <a
+                            href="https://gateway.ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors hover:underline"
+                          >
+                            gateway.ipfs <ExternalLink className="h-3 w-3" />
+                          </a>
+                          <span className="text-slate-700">|</span>
+                          <a
+                            href="https://trustless-gateway.link/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors hover:underline"
+                          >
+                            trustless <ExternalLink className="h-3 w-3" />
+                          </a>
+                          <span className="text-slate-700">|</span>
+                          <a
+                            href="https://k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f.ipns.dweb.link/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors hover:underline"
+                          >
+                            dweb (subdomain) <ExternalLink className="h-3 w-3" />
+                          </a>
+                          <span className="text-slate-700">|</span>
+                          <a
+                            href="https://k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f.ipns.4everland.io/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition-colors hover:underline"
+                          >
+                            4everland <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 3-Column layout */}
@@ -543,6 +715,7 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                 drawn={raffle.drawn}
                 txHash={raffle.txHash}
                 contractAddress={raffle.contractAddress}
+                cosmicProof={(raffle as any).cosmicProof}
               />
             </div>
 

@@ -73,19 +73,22 @@ export async function POST(_req: Request, ctx: RouteCtx) {
       ),
     ] as string[]
 
-    const uniqueSkillIds = [...new Set(completedRows.map((r) => r.skillId))]
-    for (const skillId of uniqueSkillIds) {
-      await db
-        .update(skills)
-        .set({ reputationScore: sql`reputation_score + 1` })
-        .where(eq(skills.id, skillId))
-    }
+    // Only increment database cached scores if the workflow succeeded (outcome === 'completed')
+    if (outcome === 'completed') {
+      const uniqueSkillIds = [...new Set(completedRows.map((r) => r.skillId))]
+      for (const skillId of uniqueSkillIds) {
+        await db
+          .update(skills)
+          .set({ reputationScore: sql`reputation_score + 1` })
+          .where(eq(skills.id, skillId))
+      }
 
-    if (user.id) {
-      await db
-        .update(users)
-        .set({ reputationScore: sql`reputation_score + 1` })
-        .where(eq(users.id, user.id))
+      if (user.id) {
+        await db
+          .update(users)
+          .set({ reputationScore: sql`reputation_score + 1` })
+          .where(eq(users.id, user.id))
+      }
     }
 
     if (tokenIds.length === 0) {
@@ -106,6 +109,14 @@ export async function POST(_req: Request, ctx: RouteCtx) {
     }
 
     const repTx = await incrementReputationBatch(tokenIds, outcome, id)
+
+    // Save the tx hash back to the workflows table so the UI and APIs can cache it properly
+    if (repTx) {
+      await db
+        .update(workflows)
+        .set({ erc8183ReputationTx: repTx })
+        .where(eq(workflows.id, id))
+    }
 
     await db.insert(messages).values({
       workflowId: id,

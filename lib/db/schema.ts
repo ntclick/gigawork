@@ -145,6 +145,7 @@ export const raffles = pgTable('raffles', {
   onChainRaffleId: integer('on_chain_raffle_id'),
   txHash: text('tx_hash'),
   contractAddress: text('contract_address'),
+  cosmicProof: jsonb('cosmic_proof'),
   rawEntries: text('raw_entries').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

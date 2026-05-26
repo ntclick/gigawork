@@ -248,6 +248,7 @@ async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
       jobId: wf.erc8183JobId,
       deliverableSeed: `${workflowId}:${finalMarkdown.slice(0, 256)}`,
       reasonSeed: 'workflow-completed',
+      fundTx: wf.erc8183FundTx,
     })
     if (!res) return false
     await db

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { raffles } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { fetchCosmicSeed } from '@/lib/cosmic-raffle/fetchCosmicSeed'
+import { fetchCosmicSeed, getCosmicProof } from '@/lib/cosmic-raffle/fetchCosmicSeed'
 import { publicClient } from '@/lib/cosmic-raffle/contract'
 
 export const dynamic = 'force-dynamic'
@@ -42,12 +42,14 @@ export async function GET(
       }, { status: 423 })
     }
 
-    // Fetch seed from SpaceComputer public beacon mixed with block hash
+    // Fetch seed from SpaceComputer mixed with block hash
     const seed = await fetchCosmicSeed(raffle.commitBlock)
+    const cosmicProof = getCosmicProof(raffle.commitBlock) ?? null
 
     return NextResponse.json({
       success: true,
       seed,
+      cosmicProof,
     })
   } catch (error) {
     console.error('❌ [/api/raffles/[id]/cosmic-seed] Error:', error)

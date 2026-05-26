@@ -1,5 +1,47 @@
+import dotenv from 'dotenv'
+import { resolve } from 'path'
+dotenv.config({ path: resolve(process.cwd(), '.env') })
+dotenv.config({ path: resolve(process.cwd(), '.env.local'), override: true })
+
 import { createPublicClient, http, defineChain, keccak256, encodePacked } from 'viem'
 import { OrbitportSDK } from '@spacecomputer-io/orbitport-sdk-ts'
+
+// ─── Interfaces & Caches ────────────────────────────────────────
+export interface CosmicProofDetails {
+  blockHash: `0x${string}`
+  spaceComputerEntropy: string | null
+  verificationMode: 'authenticated_sdk' | 'public_sdk_ipfs' | 'fallback_ipfs' | 'rpc_fallback'
+  sourceUrl?: string
+  timestamp: number
+  src?: string | null
+  service?: string | null
+  sequence?: number | null
+  signature?: {
+    algo?: string
+    value: string
+    pk: string
+  } | null
+}
+
+interface SpaceComputerFetchResult {
+  entropy: string | null
+  verificationMode: CosmicProofDetails['verificationMode']
+  src?: string | null
+  service?: string | null
+  signature?: CosmicProofDetails['signature']
+  sourceUrl?: string
+  sequence?: number | null
+}
+
+const seedCache = new Map<number, `0x${string}`>()
+export const proofCache = new Map<number, CosmicProofDetails>()
+
+/**
+ * Helper to retrieve proof metadata for a given commit block.
+ */
+export function getCosmicProof(commitBlock: number): CosmicProofDetails | undefined {
+  return proofCache.get(commitBlock)
+}
 
 // ─── viem setup ────────────────────────────────────────────────
 const ARC_RPC = process.env.ARC_RPC_URL ?? process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.testnet.arc.network'
@@ -15,18 +57,16 @@ const publicClient = createPublicClient({
   transport: http(ARC_RPC),
 })
 
-// In-memory cache for fetched seeds
-const seedCache = new Map<number, `0x${string}`>()
-
 /**
- * Fetches the cosmic entropy from SpaceComputer's cTRNG service.
- * First attempts to query via the authenticated Orbitport SDK.
- * Falls back to the public IPFS beacon gateways in case of credentials missing or API outages.
+ * Fetches the cosmic entropy and cryptographic proofs from SpaceComputer cTRNG.
+ * First attempts authenticated SDK request, then falls back to public SDK IPFS mode,
+ * and finally to direct IPFS gateway manual HTTP requests.
  */
-async function fetchSpaceComputerEntropy(): Promise<string | null> {
+async function fetchSpaceComputerEntropy(): Promise<SpaceComputerFetchResult> {
   const clientId = process.env.ORBITPORT_CLIENT_ID?.trim()
   const clientSecret = process.env.ORBITPORT_CLIENT_SECRET?.trim()
 
+  // 1. Authenticated SDK Request (Satellite cTRNG Gateway)
   if (clientId && clientSecret) {
     try {
       console.log('🛰️ Initiating authenticated SpaceComputer cTRNG request via SDK...')
@@ -40,14 +80,20 @@ async function fetchSpaceComputerEntropy(): Promise<string | null> {
       if (result?.success && result?.data?.data) {
         const entropy = result.data.data
         console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy via SDK: ${entropy}`)
-        return entropy
+        return {
+          entropy,
+          verificationMode: 'authenticated_sdk',
+          src: result.data.src || null,
+          service: result.data.service || null,
+          signature: result.data.signature || null,
+        }
       }
     } catch (e) {
-      console.warn('⚠️ Authenticated SDK cTRNG request failed, falling back to public IPFS beacon via SDK:', e instanceof Error ? e.message : e)
+      console.warn('⚠️ Authenticated SDK cTRNG request failed, falling back to public IPFS beacon:', e instanceof Error ? e.message : e)
     }
   }
 
-  // Fallback 1: Try using the OrbitportSDK without credentials (public IPFS beacon mode)
+  // 2. Fallback 1: Try using the OrbitportSDK without credentials (public IPFS beacon mode)
   try {
     console.log('🛰️ Initiating public SpaceComputer cTRNG request via SDK (unauthenticated IPFS mode)...')
     const publicSdk = new OrbitportSDK({ config: {} })
@@ -55,13 +101,17 @@ async function fetchSpaceComputerEntropy(): Promise<string | null> {
     if (result?.success && result?.data?.data) {
       const entropy = result.data.data
       console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy via public SDK (IPFS): ${entropy}`)
-      return entropy
+      return {
+        entropy,
+        verificationMode: 'public_sdk_ipfs',
+        sequence: (result.data as any).sequence || null,
+      }
     }
   } catch (e) {
     console.warn('⚠️ Public SDK IPFS request failed, falling back to manual HTTP IPFS gateways:', e instanceof Error ? e.message : e)
   }
 
-  // Fallback 2: Direct HTTP fetch from public IPFS beacon gateways (no dependencies)
+  // 3. Fallback 2: Direct HTTP fetch from public IPFS beacon gateways
   const gateways = [
     "https://ipfs.io/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
     "https://cloudflare-ipfs.com/ipns/k2k4r8lvomw737sajfnpav0dpeernugnryng50uheyk1k39lursmn09f",
@@ -74,26 +124,33 @@ async function fetchSpaceComputerEntropy(): Promise<string | null> {
       const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
       if (res.ok) {
         const json = await res.json()
-        if (json?.data?.ctrng && json.data.ctrng.length > 0) {
-          const value = json.data.ctrng[0]
+        const beacon = json?.data || json
+        if (beacon?.ctrng && beacon.ctrng.length > 0) {
+          const value = beacon.ctrng[0]
           console.log(`🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy via fallback IPFS: ${value}`)
-          return value
+          return {
+            entropy: value,
+            verificationMode: 'fallback_ipfs',
+            sourceUrl: url,
+            sequence: beacon.sequence || null,
+          }
         }
       }
     } catch (e) {
       console.warn(`⚠️ Failed to fetch cTRNG from fallback gateway ${url}:`, e instanceof Error ? e.message : e)
     }
   }
-  return null
+
+  return {
+    entropy: null,
+    verificationMode: 'rpc_fallback',
+  }
 }
 
 /**
  * Fetches the Cosmic Randomness Seed for the given `commitBlock`.
  * Integrates SpaceComputer cTRNG with Arc Testnet block hash:
  * finalSeed = keccak256(block.hash + spaceComputerEntropy)
- *
- * This dual-entropy model ensures the raffle is 100% ungameable,
- * verifiable, and provably fair.
  */
 export async function fetchCosmicSeed(commitBlock: number): Promise<`0x${string}`> {
   if (seedCache.has(commitBlock)) {
@@ -113,7 +170,8 @@ export async function fetchCosmicSeed(commitBlock: number): Promise<`0x${string}
     console.log(`✓ Blockchain block hash resolved: ${block.hash}`)
 
     // 2. Fetch SpaceComputer cosmic physical entropy
-    const spaceComputerEntropy = await fetchSpaceComputerEntropy()
+    const result = await fetchSpaceComputerEntropy()
+    const spaceComputerEntropy = result.entropy
 
     let finalSeed: `0x${string}`
 
@@ -143,13 +201,26 @@ export async function fetchCosmicSeed(commitBlock: number): Promise<`0x${string}
       console.log(`🔮 Block-hash mixed fallback seed derived: ${finalSeed}`)
     }
 
+    // Save proof metadata in global cache for API routes to read
+    const proofDetails: CosmicProofDetails = {
+      blockHash: block.hash,
+      spaceComputerEntropy,
+      verificationMode: result.verificationMode,
+      sourceUrl: result.sourceUrl,
+      sequence: result.sequence ?? null,
+      src: result.src ?? null,
+      service: result.service ?? null,
+      signature: result.signature ?? null,
+      timestamp: Date.now(),
+    }
+    proofCache.set(commitBlock, proofDetails)
+
     seedCache.set(commitBlock, finalSeed)
     return finalSeed
   } catch (error) {
     console.error(`⚠️ Error fetching cosmic seed for block ${commitBlock} via RPC:`, error)
     
     // In case of RPC outage, generate a deterministic fallback hash
-    // using a unique string so local dev flow never halts.
     const fallbackSeed = keccak256(
       encodePacked(
         ['string'],

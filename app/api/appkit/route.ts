@@ -15,6 +15,26 @@ import { getCurrentUser, AuthRequiredError } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
+// Module-level cache for heavy dynamic imports to optimize API response speed
+let cachedAppKit: any = null
+let cachedAdapter: any = null
+
+async function getAppKit() {
+  if (!cachedAppKit) {
+    const mod = await import('@circle-fin/app-kit')
+    cachedAppKit = mod.AppKit
+  }
+  return cachedAppKit
+}
+
+async function getAdapter() {
+  if (!cachedAdapter) {
+    const mod = await import('@circle-fin/adapter-viem-v2')
+    cachedAdapter = mod.createViemAdapterFromPrivateKey
+  }
+  return cachedAdapter
+}
+
 // ── Arc Testnet chain definition ────────────────────────────────
 // Use shared definition (chain id 5042002, USDC native gas).
 // See lib/chain/arcTestnet.ts + AGENTS.md §1.
@@ -256,11 +276,11 @@ export async function POST(req: Request) {
     }
 
     // ── Non-USYC operations use App-Kit ─────────────────────
-    const { AppKit } = await import('@circle-fin/app-kit')
-    const { createViemAdapterFromPrivateKey } = await import('@circle-fin/adapter-viem-v2')
+    const AppKitClass = await getAppKit()
+    const createViemAdapter = await getAdapter()
 
-    const kit = new AppKit()
-    const adapter = createViemAdapterFromPrivateKey({ privateKey: pk })
+    const kit = new AppKitClass()
+    const adapter = createViemAdapter({ privateKey: pk })
 
     // ── BRIDGE ──────────────────────────────────────────────
     if (action === 'bridge') {

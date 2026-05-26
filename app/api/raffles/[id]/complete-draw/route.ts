@@ -8,6 +8,7 @@ import { MerkleTree } from '@/lib/cosmic-raffle/merkle'
 import { decodeEventLog } from 'viem'
 import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
 import { withDbRetry } from '@/lib/db/retry'
+import { getCosmicProof } from '@/lib/cosmic-raffle/fetchCosmicSeed'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,6 +112,7 @@ export async function POST(
     await withDbRetry(() => db.insert(raffleWinners).values(winnersToInsert))
 
     // 5. Update raffle state in DB (with retry protection)
+    const cosmicProof = getCosmicProof(raffle.commitBlock) ?? null
     const [updatedRaffle] = await withDbRetry(() => db
       .update(raffles)
       .set({
@@ -118,6 +120,7 @@ export async function POST(
         seed: seed,
         txHash: txHash,
         onChainRaffleId: finalOnChainRaffleId,
+        cosmicProof: cosmicProof,
       })
       .where(eq(raffles.id, raffle.id))
       .returning()
