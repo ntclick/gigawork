@@ -1031,8 +1031,8 @@ function SwapTab() {
           EURC: ARC_TOKENS.EURC,
           cirBTC: ARC_TOKENS.cirBTC,
         }
-        const resolvedIn  = tokenIn === 'USDC' ? '0x0000000000000000000000000000000000000000' : (TOKEN_MAP[tokenIn] ?? tokenIn)
-        const resolvedOut = tokenOut === 'USDC' ? '0x0000000000000000000000000000000000000000' : (TOKEN_MAP[tokenOut] ?? tokenOut)
+        const resolvedIn  = TOKEN_MAP[tokenIn] ?? tokenIn
+        const resolvedOut = TOKEN_MAP[tokenOut] ?? tokenOut
 
         const swapResult = await (kit as any).swap({
           from: { adapter, chain: 'Arc_Testnet' as any },
