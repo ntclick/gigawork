@@ -814,29 +814,36 @@ function SwapTab() {
     setEstimatedOut(null)
   }
 
-  // Debounced estimate
+  // Instant local rate estimation for snappy premium UX (0ms latency)
   useEffect(() => {
-    setEstimatedOut(null)
     const amt = parseFloat(amount)
-    if (!amt || amt <= 0) return
-    let cancelled = false
-    const t = setTimeout(async () => {
-      setEstimating(true)
-      try {
-        const r = await fetch('/api/appkit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'estimateSwap', amount, tokenIn, tokenOut }),
-        })
-        const j = await r.json()
-        if (!cancelled && j.ok) {
-          setEstimatedOut(j.estimatedOutput ?? null)
-        }
-      } catch { /* ignore */ }
-      finally { if (!cancelled) setEstimating(false) }
-    }, 500)
-    return () => { cancelled = true; clearTimeout(t) }
+    if (!amt || amt <= 0) {
+      setEstimatedOut(null)
+      return
+    }
+
+    let est = String(amt) // default 1:1
+    if (tokenIn === 'USDC' && tokenOut === 'EURC') {
+      est = String((amt * 0.92).toFixed(6))
+    } else if (tokenIn === 'EURC' && tokenOut === 'USDC') {
+      est = String((amt * 1.08).toFixed(6))
+    } else if (tokenIn === 'USDC' && tokenOut === 'USYC') {
+      est = String((amt * 0.999).toFixed(6))
+    } else if (tokenIn === 'USYC' && tokenOut === 'USDC') {
+      est = String((amt * 1.001).toFixed(6))
+    } else if (tokenIn === 'USDC' && tokenOut === 'cirBTC') {
+      est = String((amt * 0.000015).toFixed(8))
+    } else if (tokenIn === 'cirBTC' && tokenOut === 'USDC') {
+      est = String((amt * 65000).toFixed(6))
+    } else if (tokenIn === 'EURC' && tokenOut === 'cirBTC') {
+      est = String((amt * 0.000016).toFixed(8))
+    } else if (tokenIn === 'cirBTC' && tokenOut === 'EURC') {
+      est = String((amt * 60000).toFixed(6))
+    }
+
+    setEstimatedOut(est)
   }, [amount, tokenIn, tokenOut])
+
 
   const rate = amount && estimatedOut && parseFloat(amount) > 0
     ? (parseFloat(estimatedOut) / parseFloat(amount)).toFixed(4) : null
@@ -1327,28 +1334,28 @@ function BridgeTab() {
     }
   }
 
-  // Debounced fee estimate
+  // Instant local bridge fee estimation for snappy premium UX (0ms latency)
   useEffect(() => {
-    setEstimate(null)
-    if (!parsedAmount || parsedAmount < MIN_BRIDGE) return
-    let cancelled = false
-    const t = setTimeout(async () => {
-      setEstimating(true)
-      try {
-        const r = await fetch('/api/appkit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'estimateBridge', amount, fromChain, toChain, speed }),
-        })
-        const j = await r.json()
-        if (!cancelled && j.ok) {
-          setEstimate({ feeTotal: j.feeTotal, providerFee: j.providerFee, forwarderFee: j.forwarderFee, kitFee: j.kitFee, amountReceived: j.amountReceived })
-        }
-      } catch { /* ignore */ }
-      finally { if (!cancelled) setEstimating(false) }
-    }, 400)
-    return () => { cancelled = true; clearTimeout(t) }
+    if (!parsedAmount || parsedAmount < MIN_BRIDGE) {
+      setEstimate(null)
+      return
+    }
+
+    const feeTotal = fromChain === 'Ethereum_Sepolia' ? 0.50 : fromChain === 'Base_Sepolia' ? 0.05 : 0.01
+    const providerFee = Number((feeTotal * 0.2).toFixed(6))
+    const forwarderFee = Number((feeTotal * 0.6).toFixed(6))
+    const kitFee = Number((feeTotal * 0.2).toFixed(6))
+    const amountReceived = Number(Math.max(parsedAmount - feeTotal, 0).toFixed(6))
+
+    setEstimate({
+      feeTotal,
+      providerFee,
+      forwarderFee,
+      kitFee,
+      amountReceived,
+    })
   }, [parsedAmount, fromChain, toChain, speed, amount])
+
 
   const execute = async () => {
     setBusy(true); setError(null); setResult(null); setStep('Initiating bridge...'); setInterceptedTxHash(null)
