@@ -252,8 +252,15 @@ function getNodeBullets(skill: string, status: string, detailInput: any, detailO
 
 interface DialogueItem {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'agent'
   text: string
+  agentName?: string
+  agentColor?: string
+  agentIcon?: any
+  status?: 'running' | 'completed' | 'failed'
+  tx?: string
+  input?: any
+  output?: any
 }
 
 interface TerminalLine {
@@ -277,6 +284,7 @@ export function WorkflowInteraction({
   const [showSidebar, setShowSidebar] = useState(true)
   const terminalContainerRef = useRef<HTMLDivElement>(null)
   const terminalBottomRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll terminal to bottom when messages update
   useEffect(() => {
@@ -288,11 +296,30 @@ export function WorkflowInteraction({
     }
   }, [messages, consoleMode])
 
+  // Auto-scroll chat to bottom when dialogues update
+  useEffect(() => {
+    if (consoleMode === 'chat' && chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
+    }
+  }, [messages, consoleMode])
+
   // Extract clean dialogue messages safely matching the Vercel AI SDK parts structure
   const dialogues = useMemo<DialogueItem[]>(() => {
     const list: DialogueItem[] = []
+    
+    // Find matching plan nodes to map node_id -> plan_id
+    const findPlanNode = (nodeId: string | undefined) => {
+      if (!nodeId || !planNodes) return null
+      return planNodes.find((n) => n.id === nodeId || n.id === `node-${nodeId}`)
+    }
+
     messages.forEach((m) => {
       m.parts?.forEach((part, i) => {
+        const lineId = `${m.id}-${i}`
+
         if (part.type === 'text' && 'text' in part && part.text) {
           const txt = part.text as string
           if (
@@ -303,15 +330,74 @@ export function WorkflowInteraction({
             return
           }
           list.push({
-            id: `${m.id}-${i}`,
+            id: lineId,
             role: m.role as 'user' | 'assistant',
             text: txt,
           })
         }
+
+        // Interleave the active skill execution reports as chat messages from individual agents
+        if (part.type === 'tool-call') {
+          const p = part as any
+          const toolName = p.type.replace(/^tool-/, '')
+          const state = p.state
+
+          if (toolName === 'dispatchSkill') {
+            const input = p.input || {}
+            const skillName = input.skill_name || 'unknown'
+            const meta = AGENT_META[skillName] || {
+              name: skillName,
+              icon: Bot,
+              color: '#d500f9',
+              bg: 'rgba(213,0,249,0.05)',
+              border: 'rgba(213,0,249,0.15)',
+            }
+
+            const label = findPlanNode(input.node_id)?.data?.label || skillName
+
+            if (state === 'input-streaming' || state === 'input-available') {
+              list.push({
+                id: `${lineId}-start`,
+                role: 'agent',
+                agentName: meta.name,
+                agentColor: meta.color,
+                agentIcon: meta.icon,
+                status: 'running',
+                text: `⚙️ [${label}] matches x402 payment challenge. Gasless EIP-3009 transfer signature received. Processing inputs...`,
+                input: input.input,
+              })
+            } else if (state === 'output-available') {
+              const out = p.output || {}
+              if (out.ok === false) {
+                list.push({
+                  id: `${lineId}-err`,
+                  role: 'agent',
+                  agentName: meta.name,
+                  agentColor: '#ff1744',
+                  agentIcon: XCircle,
+                  status: 'failed',
+                  text: `❌ [${label}] execution failed: ${out.error || 'Connection timed out'}`,
+                })
+              } else {
+                list.push({
+                  id: `${lineId}-ok`,
+                  role: 'agent',
+                  agentName: meta.name,
+                  agentColor: '#39ff14',
+                  agentIcon: meta.icon,
+                  status: 'completed',
+                  text: `✅ [${label}] completed successfully. Nanopayments settlement queued on-chain.`,
+                  tx: out.dispatch_tx,
+                  output: out.output,
+                })
+              }
+            }
+          }
+        }
       })
     })
     return list
-  }, [messages])
+  }, [messages, planNodes])
 
   // Generate live terminal log lines based on raw message parts
   const terminalLines = useMemo<TerminalLine[]>(() => {
@@ -589,8 +675,7 @@ export function WorkflowInteraction({
               </div>
             </div>
           ) : (
-            /* CONVERSATION CHAT DIALOGUE */
-            <div className="h-full overflow-y-auto p-4 space-y-4">
+              <div ref={chatContainerRef} className="h-full overflow-y-auto p-4 space-y-4">
               {dialogues.length === 0 ? (
                 <div className="flex items-center gap-2 text-xs text-white/35">
                   <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
@@ -599,6 +684,66 @@ export function WorkflowInteraction({
               ) : (
                 dialogues.map((d) => {
                   const isUser = d.role === 'user'
+                  const isAgent = d.role === 'agent'
+                  
+                  if (isAgent) {
+                    const Icon = d.agentIcon
+                    return (
+                      <div key={d.id} className="flex items-start gap-3 animate-fadeIn">
+                        <div 
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-sm"
+                          style={{
+                            borderColor: d.agentColor + '40',
+                            backgroundColor: d.agentColor + '15',
+                            color: d.agentColor,
+                            boxShadow: `0 0 8px ${d.agentColor}20`
+                          }}
+                        >
+                          {Icon ? <Icon className="w-4 h-4" /> : '🤖'}
+                        </div>
+                        
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-bold text-white tracking-wide">{d.agentName}</span>
+                            <span className="text-[7px] font-mono font-bold px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">ERC-8004</span>
+                            <span className="text-[7px] font-mono font-bold px-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">x402 PAID</span>
+                          </div>
+                          
+                          <div className="max-w-[90%] rounded-xl px-4 py-2.5 text-xs font-mono leading-relaxed bg-[#0b0818]/65 border border-white/5 text-white/85 shadow-lg space-y-2">
+                            <p className="whitespace-pre-wrap">{d.text}</p>
+                            
+                            {d.input && typeof d.input === 'object' && Object.keys(d.input).length > 0 && (
+                              <div className="bg-black/45 p-2 rounded border border-white/5 space-y-0.5 text-[10px]">
+                                <span className="text-white/45 block text-[8px] uppercase tracking-widest font-bold">Input Arguments</span>
+                                {Object.entries(d.input).map(([k, v]) => (
+                                  <div key={k} className="flex gap-1.5">
+                                    <span className="text-purple-400">{k}:</span>
+                                    <span className="text-slate-350">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {d.tx && (
+                              <div className="flex items-center gap-1.5 text-[9px] text-cyan-400 font-mono">
+                                <span>Attestation:</span>
+                                <a
+                                  href={`https://testnet.arcscan.app/tx/${d.tx}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline hover:text-cyan-300 font-bold"
+                                >
+                                  {d.tx.slice(0, 10)}...{d.tx.slice(-6)}
+                                </a>
+                                <span className="text-[8px] bg-cyan-500/10 text-cyan-400 px-1 rounded border border-cyan-500/20">Arc Testnet</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+
                   return (
                     <div key={d.id} className={`flex items-start gap-3 ${isUser ? 'justify-end' : ''}`}>
                       {!isUser && (
