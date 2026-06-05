@@ -31,7 +31,8 @@
     "raffle:compile-shared": "tsx scripts/compile-shared.ts",
     "raffle:deploy-shared": "tsx scripts/deploy-shared.ts",
     "raffle:verify-shared": "tsx scripts/verify-shared.ts",
-    "raffle:test-shared": "tsx scripts/test-shared-raffle.ts"
+    "raffle:test-shared": "tsx scripts/test-shared-raffle.ts",
+    "bench:workflow-fast": "tsx scripts/bench-fast-workflow.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",
