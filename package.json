@@ -34,7 +34,9 @@
     "raffle:test-shared": "tsx scripts/test-shared-raffle.ts",
     "bench:workflow-fast": "tsx scripts/bench-fast-workflow.ts",
     "test:phase2-bundles": "tsx scripts/test-phase2-bundles.ts",
-    "worker:chain": "tsx scripts/chain-worker.ts"
+    "worker:chain": "tsx scripts/chain-worker.ts",
+    "worker:workflow": "tsx scripts/workflow-worker.ts",
+    "smoke:workflow-fast": "tsx scripts/smoke-fast-workflow.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",

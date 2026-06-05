@@ -2,7 +2,6 @@ import { and, eq } from 'drizzle-orm'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
-import { executeWorkflowRun } from '@/lib/workflow/executor'
 
 export const maxDuration = 300 // allow up to 5 minutes for background processing
 export const dynamic = 'force-dynamic'
@@ -37,25 +36,20 @@ export async function POST(req: Request, ctx: RouteCtx) {
     })
   }
 
-  if (wf.status === 'completed' || wf.status === 'running' || wf.status === 'settling') {
-    return new Response(JSON.stringify({ ok: true, status: wf.status, message: 'Workflow already running or completed' }), {
+  if (wf.status === 'completed' || wf.status === 'running' || wf.status === 'settling' || wf.status === 'queued') {
+    return new Response(JSON.stringify({ ok: true, status: wf.status, message: 'Workflow already queued, running or completed' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   }
 
-  // Claim the workflow to running state
+  // Mark the workflow as queued for the worker
   await db
     .update(workflows)
-    .set({ status: 'running' })
+    .set({ status: 'queued' })
     .where(eq(workflows.id, workflowId))
 
-  // Run execution loop asynchronously in background to release browser in 100ms
-  executeWorkflowRun({ workflowId, userId: user.id }).catch((err) => {
-    console.error(`[executor:${workflowId}] fatal background execution crash:`, err)
-  })
-
-  return new Response(JSON.stringify({ ok: true, message: 'Workflow execution started in background' }), {
+  return new Response(JSON.stringify({ ok: true, message: 'Workflow queued for execution' }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })

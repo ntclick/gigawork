@@ -3,12 +3,15 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useParams } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUp } from 'lucide-react'
 
-import { WorkflowCanvas } from '@/components/chat/WorkflowCanvas'
+import { WorkflowCanvas, buildFromMessages } from '@/components/chat/WorkflowCanvas'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
+import { WorkflowInteraction } from '@/components/chat/AgentsTheater'
+import { NodeDetailSheet, type NodeDetail } from '@/components/chat/NodeDetailSheet'
 import { AppRail } from '@/components/shell/AppRail'
+import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
@@ -40,6 +43,10 @@ export default function WorkflowPage() {
   const id = params?.id ?? ''
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [isDeployOpen, setIsDeployOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'theater' | 'interaction' | 'canvas'>('theater')
+  const [showDocPanel, setShowDocPanel] = useState(false)
+  const [executing, setExecuting] = useState(false)
+  const [selectedNode, setSelectedNode] = useState<NodeDetail | null>(null)
   const autoSentRef = useRef(false)
   const autoEscrowRef = useRef<string | null>(null)
   const startRef = useRef<number | undefined>(undefined)
@@ -159,17 +166,23 @@ export default function WorkflowPage() {
     }
   }, [id, status, setMessages, messages.length])
 
-  // Periodic polling for settlement transactions when they are pending/missing
+  // Periodic polling for status and logs during execution or settlement.
+  // We poll when the workflow is actively running, settling, or when we have
+  // a pending escrow trail that is not fully completed yet.
   useEffect(() => {
     if (!id || status === 'streaming' || status === 'submitted') return
     const completeTx = snapshot?.workflow?.erc8183?.completeTx
     const hasErc8183 = !!snapshot?.workflow?.erc8183
     const isWfCompleted = snapshot?.workflow?.status === 'completed' || snapshot?.workflow?.status === 'failed'
     const isWfSettling = snapshot?.workflow?.status === 'settling'
+    const isWfRunning = snapshot?.workflow?.status === 'running' || snapshot?.workflow?.status === 'queued'
 
-    // If we have an escrow trail but it's not fully settled yet (completeTx is missing),
-    // and the workflow is either settling, running, or completed, poll for updates.
-    if (hasErc8183 && !completeTx && (isWfSettling || isWfCompleted || snapshot?.workflow?.status === 'running')) {
+    const shouldPoll =
+      isWfRunning ||
+      isWfSettling ||
+      (hasErc8183 && !completeTx && (isWfCompleted || isWfSettling || isWfRunning))
+
+    if (shouldPoll) {
       const interval = setInterval(() => {
         fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
           .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json() })
@@ -228,11 +241,11 @@ export default function WorkflowPage() {
     }
   }, [snapshot, sendMessage, id, setMessages, messages.length])
 
-  // Crash recovery: workflow stuck at 'running' but useChat is idle
-  // (brain crashed, server restarted, Kimi timed out). The stream route
-  // detects staleness (>3 min no activity), wipes partial nodes/messages,
-  // resets to 'planning', and re-claims. We clear local messages first
-  // so useChat sends a clean prompt.
+  // NOTE: Disabled client-side crash recovery hook in GigaWork v2.
+  // Under the Plan-First model, the planning stream completes in 1.5s (idle chat status 'ready')
+  // while backend execution runs asynchronously. Keeping this hook enabled would falsely trigger
+  // recovery (wiping messages and re-submitting planning prompts) every 1.5s during a healthy execution run.
+  /*
   const recoverRef = useRef<string | null>(null)
   useEffect(() => {
     if (
@@ -246,12 +259,10 @@ export default function WorkflowPage() {
     }
     recoverRef.current = id
     const timer = setTimeout(() => {
-      // Re-fetch snapshot to get fresh status before attempting recovery
       fetch(`/api/workflow/${id}/messages`, { cache: 'no-store' })
         .then((r) => r.ok ? r.json() : null)
         .then((fresh: Snapshot | null) => {
           if (!fresh) return
-          // Abort if the workflow has finished by the time we checked
           if (fresh.isFinished || fresh.workflow?.status === 'completed' || fresh.workflow?.status === 'failed') {
             setSnapshot(fresh)
             if (fresh.messages.length > 0 && messages.length === 0) setMessages(fresh.messages)
@@ -266,6 +277,26 @@ export default function WorkflowPage() {
     }, 1500)
     return () => clearTimeout(timer)
   }, [snapshot, status, id, sendMessage, setMessages, messages.length])
+  */
+
+  const { details } = useMemo(() => buildFromMessages(messages), [messages])
+
+  const triggerExecution = useCallback(async () => {
+    setExecuting(true)
+    try {
+      const res = await fetch(`/api/workflow/${id}/execute`, { method: 'POST' })
+      if (res.ok) {
+        toast.success('Khởi chạy hệ thống Multi-Agent!', 'Các Agent đã bắt đầu tự trị lập luận và xử lý.')
+        refreshMessages()
+      } else {
+        throw new Error(await res.text())
+      }
+    } catch (e) {
+      toast.error('Lỗi khi chạy Workflow', e instanceof Error ? e.message : String(e))
+    } finally {
+      setExecuting(false)
+    }
+  }, [id, refreshMessages])
 
   const busy = status === 'streaming' || status === 'submitted'
   const displayStatus = busy ? status : snapshot?.workflow?.status ?? status
@@ -463,44 +494,153 @@ export default function WorkflowPage() {
       {/* Top header — always visible */}
       <MainHeader />
 
-      {/* Main shell: thin AppRail · canvas · doc panel */}
-      <div className="giga-theme flex flex-1 overflow-hidden bg-[var(--giga-dark)]">
+      {/* Main shell: thin AppRail · history sidebar · canvas · doc panel */}
+      <div className="giga-theme gw-main-shell">
         <AppRail />
+        <HistorySidebar />
 
         {/* CANVAS COLUMN */}
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-[var(--giga-dark)]">
+        <main className="gw-canvas-column bg-[#030208]">
+          {/* Deep space floating auroras */}
+          <div className="gw-aurora" />
           {/* Workflow header */}
-          <div className="flex items-center justify-between gap-3 border-b border-white/[0.05] bg-[#12101f] px-4 py-3 sm:px-6">
+          <div className="gw-workflow-header">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex shrink-0 items-center gap-2 rounded border border-[var(--giga-accent)]/30 bg-[var(--giga-accent)]/10 px-2 py-1">
+              <div className="flex shrink-0 items-center gap-2 rounded border border-[var(--giga-accent)]/30 bg-[var(--giga-accent)]/10 px-2 py-0.5">
                 <span className={`h-2 w-2 rounded-full bg-[var(--giga-accent)] ${busy ? 'animate-pulse' : ''}`} />
-                <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--giga-accent)]">
-                  Hermes Orchestrator
+                <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--giga-accent)]">
+                  {viewMode === 'interaction' ? 'Tương tác' : 'Sơ đồ'}
                 </span>
               </div>
-              <h1 className="font-pixel-body inline truncate text-xl uppercase text-white sm:text-2xl lg:text-3xl">
+              <h1 className="font-pixel-body inline truncate text-lg uppercase text-white sm:text-xl lg:text-2xl">
                 {title}
               </h1>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsDeployOpen(true)}
-              className="pixel-border-sm flex shrink-0 items-center gap-2 bg-[var(--giga-accent)] px-4 py-2 font-pixel-body text-base text-black transition hover:bg-yellow-300 sm:px-6 sm:text-xl"
-            >
-              <span className="text-sm">📉</span>
-              <span className="hidden sm:inline">DEPLOY</span>
-            </button>
+
+            {/* View Mode Toggle & Actions */}
+            <div className="flex flex-wrap items-center gap-3 font-mono">
+              <div className="flex items-center gap-1 rounded bg-white/[0.04] p-0.5 border border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('theater')}
+                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider transition ${
+                    viewMode === 'theater' ? 'bg-[var(--giga-accent)] text-black font-bold' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  🎬 Theater Mode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('interaction')}
+                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider transition ${
+                    viewMode === 'interaction' ? 'bg-[var(--giga-accent)] text-black font-bold' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  💻 CLI Terminal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('canvas')}
+                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider transition ${
+                    viewMode === 'canvas' ? 'bg-[var(--giga-accent)] text-black font-bold' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  🕸️ DAG Graph
+                </button>
+              </div>
+
+              {/* TOGGLE DOC PANEL BUTTON */}
+              <button
+                type="button"
+                onClick={() => setShowDocPanel(!showDocPanel)}
+                className={`px-2.5 py-1 border rounded text-[9px] uppercase tracking-wider transition flex items-center gap-1.5 ${
+                  showDocPanel 
+                    ? 'border-purple-500/40 bg-purple-500/10 text-purple-300' 
+                    : 'border-white/10 bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <span>{showDocPanel ? '📖 Hide Docs' : '📘 Show Docs'}</span>
+              </button>
+
+              {/* RUN BUTTON */}
+              {['planning', 'failed', 'completed'].includes(snapshot?.workflow?.status ?? '') && !busy && (
+                <button
+                  type="button"
+                  onClick={triggerExecution}
+                  disabled={executing}
+                  className={`pixel-border-sm flex shrink-0 items-center gap-1.5 px-3 py-1.5 font-pixel-body text-xs uppercase transition shadow-md ${
+                    snapshot?.workflow?.status === 'planning'
+                      ? 'bg-[#ffe082] hover:bg-yellow-300 text-black shadow-[0_0_20px_rgba(255,204,77,0.45)] border border-yellow-400/40 animate-pulse'
+                      : 'bg-[#ffe082] hover:bg-yellow-300 text-black'
+                  }`}
+                >
+                  <span>▶</span>
+                  <span>{executing ? 'Starting...' : snapshot?.workflow?.status === 'planning' ? 'Run Workflow' : 'Re-run Workflow'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsDeployOpen(true)}
+                className="pixel-border-sm flex shrink-0 items-center gap-2 bg-[var(--giga-accent)] px-3 py-1.5 font-pixel-body text-xs text-black transition hover:bg-yellow-300"
+              >
+                <span className="text-xs">📉</span>
+                <span className="hidden sm:inline">DEPLOY</span>
+              </button>
+            </div>
           </div>
 
-          {/* Canvas */}
-          <div className="giga-grid-bg relative flex-1 overflow-hidden">
-            <WorkflowCanvas
-              messages={messages}
-              status={displayStatus}
-              workflowId={id}
-              erc8183={snapshot?.workflow?.erc8183 ?? null}
-              onNodeUpdated={refreshMessages}
-            />
+          {/* Main workspace */}
+          <div className="gw-grid-bg gw-main-workspace bg-transparent">
+            {viewMode === 'theater' && (
+              <WorkflowInteraction
+                messages={messages}
+                status={displayStatus}
+                onNodeClick={(planId, label, skill, nodeStatus) => {
+                  const det = details.get(planId)
+                  setSelectedNode({
+                    id: planId,
+                    label: label,
+                    skill: skill,
+                    status: nodeStatus as NodeDetail['status'],
+                    input: det?.input,
+                    output: det?.output,
+                    startedAt: det?.startedAt ?? null,
+                    finishedAt: det?.finishedAt ?? null,
+                  })
+                }}
+              />
+            )}
+
+            {viewMode === 'interaction' && (
+              <WorkflowInteraction
+                messages={messages}
+                status={displayStatus}
+                onNodeClick={(planId, label, skill, nodeStatus) => {
+                  const det = details.get(planId)
+                  setSelectedNode({
+                    id: planId,
+                    label: label,
+                    skill: skill,
+                    status: nodeStatus as NodeDetail['status'],
+                    input: det?.input,
+                    output: det?.output,
+                    startedAt: det?.startedAt ?? null,
+                    finishedAt: det?.finishedAt ?? null,
+                  })
+                }}
+              />
+            )}
+
+            {viewMode === 'canvas' && (
+              <WorkflowCanvas
+                messages={messages}
+                status={displayStatus}
+                workflowId={id}
+                erc8183={snapshot?.workflow?.erc8183 ?? null}
+                onNodeUpdated={refreshMessages}
+              />
+            )}
             {busy && (
               <div className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs font-pixel-body">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]" />
@@ -546,16 +686,16 @@ export default function WorkflowPage() {
               snapshot?.workflow?.status === 'completed' &&
               validate.step !== 'done' &&
               validate.pendingCount > 0 && (
-                <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2 border border-cyan-400/30 bg-[#12101f]/95 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
-                  <span className="text-cyan-300">Agent Proofs</span>
-                  <span className="text-white/40">·</span>
-                  <span className="text-white/60">
-                    {validate.step === 'preparing' && 'Preparing…'}
-                    {validate.step === 'signing' && 'Sign in wallet…'}
-                    {validate.step === 'responding' && 'Server attesting…'}
-                    {validate.step === 'error' && (validate.error ?? 'Failed')}
+                <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2.5 border border-cyan-400/40 bg-[#0d091a]/95 px-4 py-2.5 text-xs text-white/95 shadow-[0_8px_25px_rgba(0,0,0,0.55)] rounded-xl backdrop-blur-md">
+                  <span className="text-cyan-300 font-bold tracking-wider">Nghiệm Thu Kết Quả (ERC-8004)</span>
+                  <span className="text-white/20">·</span>
+                  <span className="text-white/70">
+                    {validate.step === 'preparing' && 'Đang khởi tạo chứng chỉ…'}
+                    {validate.step === 'signing' && 'Ký chứng thực trong ví…'}
+                    {validate.step === 'responding' && 'Đang xác thực on-chain…'}
+                    {validate.step === 'error' && `Lỗi: ${validate.error ?? 'Thao tác thất bại'}`}
                     {validate.step === 'idle' &&
-                      'Sign on-chain proof for each skill agent (ERC-8004)'}
+                      'Ký nhận báo cáo & cộng điểm Uy tín cho AI Agent đã hỗ trợ.'}
                   </span>
                   <button
                     type="button"
@@ -565,30 +705,37 @@ export default function WorkflowPage() {
                       validate.step === 'responding'
                     }
                     onClick={() => validate.attest(id).catch(() => {})}
-                    className="ml-1 inline-flex items-center bg-cyan-400 px-2 py-1 font-pixel-body text-[10px] uppercase text-black transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="ml-1 inline-flex items-center rounded bg-cyan-400 px-3 py-1.5 font-pixel-body text-[10px] uppercase text-black font-bold transition hover:bg-cyan-300 active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.25)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {validate.step === 'idle' && 'Sign proofs'}
+                    {validate.step === 'idle' && 'Ký nghiệm thu'}
                     {validate.step !== 'idle' &&
                       validate.step !== 'error' &&
                       `${validate.items.filter((i) => i.status === 'done').length}/${validate.items.length}`}
-                    {validate.step === 'error' && 'Retry'}
+                    {validate.step === 'error' && 'Thử lại'}
                   </button>
                 </div>
               )}
           </div>
 
           {/* Bottom prompt bar */}
-          <BottomPromptBar busy={busy} onSend={(text) => sendMessage({ text })} />
+          <BottomPromptBar 
+            busy={busy} 
+            status={displayStatus ?? ''} 
+            onSend={(text) => sendMessage({ text })} 
+            onActivate={triggerExecution} 
+          />
         </main>
 
         {/* RIGHT DOC PANEL */}
-        <WorkflowDocPanel
-          title={title}
-          prompt={snapshot?.workflow?.prompt}
-          messages={messages}
-          status={displayStatus}
-          erc8183={snapshot?.workflow?.erc8183 ?? null}
-        />
+        {showDocPanel && (
+          <WorkflowDocPanel
+            title={title}
+            prompt={snapshot?.workflow?.prompt}
+            messages={messages}
+            status={displayStatus}
+            erc8183={snapshot?.workflow?.erc8183 ?? null}
+          />
+        )}
       </div>
       <DeployModal
         isOpen={isDeployOpen}
@@ -596,11 +743,27 @@ export default function WorkflowPage() {
         workflowId={id}
         workflowTitle={title}
       />
+      <NodeDetailSheet
+        detail={selectedNode}
+        onClose={() => setSelectedNode(null)}
+        workflowId={id}
+        onNodeUpdated={refreshMessages}
+      />
     </>
   )
 }
 
-function BottomPromptBar({ busy, onSend }: { busy: boolean; onSend: (text: string) => void }) {
+function BottomPromptBar({ 
+  busy, 
+  status, 
+  onSend, 
+  onActivate 
+}: { 
+  busy: boolean; 
+  status: string; 
+  onSend: (text: string) => void;
+  onActivate?: () => void;
+}) {
   const [v, setV] = useState('')
   const send = () => {
     const t = v.trim()
@@ -608,9 +771,68 @@ function BottomPromptBar({ busy, onSend }: { busy: boolean; onSend: (text: strin
     onSend(t)
     setV('')
   }
+
+  const isPlanning = status === 'planning'
+  const isRunning = status === 'running' || status === 'settling' || status === 'queued'
+
+  if (isPlanning) {
+    return (
+      <div className="bg-[#030208] p-4 border-t border-white/5 flex flex-col sm:flex-row gap-3 items-center justify-between z-10 shrink-0">
+        <div className="flex flex-col font-mono text-xs text-white/50">
+          <span className="text-yellow-400 font-bold uppercase tracking-widest text-[9px]">🤖 SYSTEM STANDBY</span>
+          <span>Hermes planned successfully. Ready for autonomous activation.</span>
+        </div>
+        <div className="flex w-full sm:w-auto items-center gap-2">
+          {/* Quick Refine Input */}
+          <input
+            type="text"
+            value={v}
+            onChange={(e) => setV(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                send()
+              }
+            }}
+            placeholder="Or refine prompt here..."
+            className="bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-mono text-white outline-none rounded focus:border-purple-500 flex-1 sm:w-48"
+          />
+          <button
+            onClick={send}
+            disabled={!v.trim()}
+            className="bg-white/10 hover:bg-white/20 border border-white/15 px-3 py-1.5 font-pixel-body text-[10px] text-white transition rounded disabled:opacity-40"
+          >
+            Refine
+          </button>
+          {/* HUGE GLOWING ACTIVATION BUTTON */}
+          <button
+            onClick={onActivate}
+            className="pixel-border-sm flex items-center gap-1.5 bg-gradient-to-r from-yellow-400 to-[#ffe082] text-black px-5 py-2 font-pixel-body text-xs uppercase font-extrabold transition shadow-[0_0_20px_rgba(255,204,77,0.45)] border border-yellow-300 animate-pulse hover:scale-[1.03]"
+          >
+            🚀 Activate Workflow
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (isRunning) {
+    return (
+      <div className="bg-[#030208] p-4 border-t border-white/5 flex items-center justify-between font-mono text-xs z-10 shrink-0">
+        <div className="flex items-center gap-2 text-cyan-400 animate-pulse">
+          <span className="h-2 w-2 rounded-full bg-cyan-400" />
+          <span className="font-bold tracking-widest text-[9px] uppercase">
+            {status === 'queued' ? '⏳ WORKFLOW QUEUED IN BACKGROUND' : '⚡ AUTONOMOUS AGENTS OPERATING'}
+          </span>
+        </div>
+        <span className="text-white/40 text-[9px]">Prompt input disabled during execution logs sweep.</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-[var(--giga-dark)] p-4 sm:p-6">
-      <div className="flex items-end gap-2 border border-[#3e3b5e] bg-[var(--giga-panel)] p-3 transition-colors focus-within:border-purple-500">
+    <div className="bg-[var(--giga-dark)] p-4 sm:p-6 z-10 shrink-0">
+      <div className="flex items-end gap-2 border border-[#3e3b5e] bg-[var(--giga-panel)] p-3 transition-colors gw-prompt-glow-focus rounded-xl">
         <textarea
           value={v}
           onChange={(e) => setV(e.target.value)}
