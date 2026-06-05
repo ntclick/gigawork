@@ -22,7 +22,7 @@ export function AppRail() {
   const { toggleHistory } = useUI()
 
   return (
-    <aside className="giga-theme z-10 hidden w-24 shrink-0 flex-col items-center space-y-7 border-r border-black bg-[var(--giga-sidebar)] py-6 md:flex">
+    <aside className="gw-app-rail space-y-7">
       <Link
         href="/"
         className="group flex flex-col items-center text-center"

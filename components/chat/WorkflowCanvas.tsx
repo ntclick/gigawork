@@ -58,74 +58,221 @@ interface PixelNodeData extends Record<string, unknown> {
 // ════════════════════════════════════════════════════════════════
 // CUSTOM PIXEL NODE
 // ════════════════════════════════════════════════════════════════
+const SWEEP_COLORS: Record<NodeKind, string> = {
+  trigger: '#00e5ff',
+  query: '#00e5ff',
+  compute: '#ffcc4d',
+  decision: '#00e5ff',
+  success: '#00e676',
+  fail: '#ff1744',
+  notify: '#f472b6',
+  synthesis: '#d500f9',
+}
+
+// ════════════════════════════════════════════════════════════════
+// CUSTOM PIXEL NODE
+// ════════════════════════════════════════════════════════════════
+const AGENT_META: Record<string, { name: string; icon: any; color: string; bg: string; border: string }> = {
+  'crypto-scanner': { name: 'Birdeye Scanner', icon: Search, color: '#00e5ff', bg: 'rgba(0, 229, 255, 0.08)', border: 'rgba(0, 229, 255, 0.25)' },
+  'whale-tracker': { name: 'Whale Tracker', icon: Cpu, color: '#3d5afe', bg: 'rgba(61, 90, 254, 0.08)', border: 'rgba(61, 90, 254, 0.25)' },
+  'trading-signals': { name: 'Trading Signals', icon: Cpu, color: '#ffc400', bg: 'rgba(255, 196, 0, 0.08)', border: 'rgba(255, 196, 0, 0.25)' },
+  'social-sentiment': { name: 'Social Sentiment', icon: Cpu, color: '#ff1744', bg: 'rgba(255, 23, 68, 0.08)', border: 'rgba(255, 23, 68, 0.25)' },
+  'defi-yields': { name: 'DeFi Yields', icon: Cpu, color: '#00e676', bg: 'rgba(0, 230, 118, 0.08)', border: 'rgba(0, 230, 118, 0.25)' },
+  'web-intel': { name: 'Web Intel', icon: Cpu, color: '#eceff1', bg: 'rgba(236, 239, 241, 0.08)', border: 'rgba(236, 239, 241, 0.25)' },
+  'document-digest': { name: 'Document Digest', icon: FileText, color: '#00e5ff', bg: 'rgba(0, 229, 255, 0.08)', border: 'rgba(0, 229, 255, 0.25)' },
+  'dca-executor': { name: 'DCA Executor', icon: Cpu, color: '#ff9100', bg: 'rgba(255, 145, 0, 0.08)', border: 'rgba(255, 145, 0, 0.25)' },
+  'polymarket-pulse': { name: 'Polymarket Pulse', icon: Cpu, color: '#d500f9', bg: 'rgba(213, 0, 249, 0.08)', border: 'rgba(213, 0, 249, 0.25)' },
+  'nft-floor-watch': { name: 'NFT Floor Watch', icon: Cpu, color: '#00e676', bg: 'rgba(0, 230, 118, 0.08)', border: 'rgba(0, 230, 118, 0.25)' },
+  'report-composer': { name: 'Report Composer', icon: Cpu, color: '#d500f9', bg: 'rgba(213, 0, 249, 0.08)', border: 'rgba(213, 0, 249, 0.25)' },
+  'email-sender': { name: 'Email Sender', icon: Send, color: '#00b0ff', bg: 'rgba(0, 176, 255, 0.08)', border: 'rgba(0, 176, 255, 0.25)' },
+  'telegram-sender': { name: 'Hermes Telegram', icon: Send, color: '#2979ff', bg: 'rgba(41, 121, 255, 0.08)', border: 'rgba(41, 121, 255, 0.25)' },
+}
+
+function getNodeBullets(skill: string, status: DispatchState): string[] {
+  if (status === 'running') {
+    switch (skill) {
+      case 'crypto-scanner':
+        return ['Scanning SOL Liquidity Pools', 'Analyzing contract security', 'Extracting holder counts']
+      case 'whale-tracker':
+        return ['Tracking transfer history', 'Filtering transaction size', 'Identifying whale addresses']
+      case 'trading-signals':
+        return ['Calculating RSI & MACD', 'Verifying kline timeframes', 'Analyzing market momentum']
+      case 'social-sentiment':
+        return ['Parsing Twitter engagement', 'Scanning social search volume', 'Evaluating brand sentiment']
+      case 'defi-yields':
+        return ['Scanning TVL thresholds', 'Hunting high APY pools', 'Checking stablecoin liquidity']
+      case 'web-intel':
+        return ['Searching general news', 'Digesting web research', 'Filtering macro updates']
+      case 'document-digest':
+        return ['Reading external document', 'Synthesizing with LLM', 'Generating brief outlines']
+      case 'dca-executor':
+        return ['Estimating token costs', 'Running DCA projections', 'Evaluating price averages']
+      case 'polymarket-pulse':
+        return ['Retrieving prediction odds', 'Measuring trading volumes', 'Evaluating market outcomes']
+      case 'nft-floor-watch':
+        return ['Fetching collection floor', 'Comparing OpenSea floor prices', 'Checking floor deviation']
+      case 'email-sender':
+        return ['Connecting to Resend API', 'Formatting markdown layout', 'Sending alert email']
+      case 'telegram-sender':
+        return ['Packaging Telegram text', 'Dispatched alerts to target chat', 'Pinging chat ID']
+      case 'report-composer':
+        return ['Compiling markdown synthesis', 'Assembling preceding data', 'Writing synthesis outline']
+      default:
+        return ['Executing dynamic agent tasks...', 'Synthesizing inputs']
+    }
+  }
+  if (status === 'completed') {
+    switch (skill) {
+      case 'crypto-scanner':
+        return ['Scanned SOL pools successfully', 'Price: $1.42 (+5.2%)', 'Market Cap: $140K / Holders: 2.1K']
+      case 'whale-tracker':
+        return ['Wallet transfer logs analyzed', 'Large transactions verified', 'Flow assessment complete']
+      case 'trading-signals':
+        return ['RSI/MACD calculations complete', 'Indicators successfully parsed', 'Technical status updated']
+      case 'social-sentiment':
+        return ['LunarCrush social metrics scanned', 'Sentiment Score: 85%', 'Trend: Strong Bullish']
+      case 'defi-yields':
+        return ['Top defi yields scanned', 'TVL requirements verified', 'APY metrics compiled']
+      case 'web-intel':
+        return ['Search query completed', 'Extracted relevant news articles', 'Synthesized macro data']
+      case 'document-digest':
+        return ['Digested external URL paper', 'LLM semantic analysis complete', 'Dynamic outline ready']
+      case 'dca-executor':
+        return ['DCA cost average simulated', 'Cost-basis schedules calculated', 'Projections saved']
+      case 'polymarket-pulse':
+        return ['Polymarket odds extracted', 'Prediction sentiment compiled', 'Highest-volume pools parsed']
+      case 'nft-floor-watch':
+        return ['OpenSea floor stats synced', 'NFT collections floor verified', 'Floor deviation checked']
+      case 'email-sender':
+        return ['Resend email dispatched', 'Delivery confirmed by API', 'Markdown alert delivered']
+      case 'telegram-sender':
+        return ['Message sent to GigaWork_Signals', 'Delivery confirmed to chat_id', 'Real-time telemetry dispatched']
+      case 'report-composer':
+        return ['Final report composed', 'Preceding outputs integrated', 'Synthesis report published']
+      default:
+        return ['Agent finished successfully.', 'Outputs recorded in database.']
+    }
+  }
+  return []
+}
+
 function PixelNode({ data }: NodeProps) {
   const d = data as PixelNodeData
   const { kind, status, label, skill } = d
   const decoration = NODE_DECOR[kind]
   const Icon = decoration.icon
-  const verifiedPill = status === 'completed'
-    ? VERIFIED_PILL[kind]
-    : status === 'running'
-      ? { bg: 'rgba(255, 204, 77, 0.12)', border: 'var(--giga-accent)', text: '#ffe082', label: 'Running' }
-      : status === 'failed'
-        ? { bg: 'rgba(239,68,68,0.15)', border: '#ef4444', text: '#fca5a5', label: 'Failed' }
-        : { bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.15)', text: 'rgba(255,255,255,0.5)', label: 'Pending' }
 
-  // Decision = diamond shape (rotate 45deg + un-rotate inner)
-  if (kind === 'decision') {
-    return (
-      <div className="flex cursor-grab flex-col items-center font-pixel-body active:cursor-grabbing">
-        <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-        <div className="giga-node-decision flex h-36 w-36 rotate-45 items-center justify-center">
-          <div className="-rotate-45 flex flex-col items-center px-2 text-center text-white">
-            <Icon className="mb-1 h-7 w-7" aria-hidden="true" />
-            <div className="text-[12px] font-bold uppercase leading-tight" style={{ wordBreak: 'break-word' }}>
-              {label}
+  // Find identity meta
+  const meta = AGENT_META[skill] ?? {
+    name: String(label || skill),
+    icon: Icon,
+    color: SWEEP_COLORS[kind] ?? '#d500f9',
+    bg: 'rgba(213,0,249,0.05)',
+    border: 'rgba(213,0,249,0.15)',
+  }
+
+  const statusColorCls = 
+    status === 'completed'
+      ? 'text-[#39ff14] gw-log-glow-emerald font-bold'
+      : status === 'running'
+        ? 'text-cyan-400 font-bold animate-pulse'
+        : status === 'failed'
+          ? 'text-red-400 font-bold'
+          : 'text-white/40 font-mono'
+
+  const borderCls = 
+    status === 'completed'
+      ? 'border-emerald-500/35 gw-node-glow-emerald'
+      : status === 'running'
+        ? 'border-cyan-400 gw-node-glow-cyan animate-pulse'
+        : status === 'failed'
+          ? 'border-red-500/35 gw-node-glow-red'
+          : 'border-white/5 bg-[rgba(10,8,20,0.65)] hover:border-white/10'
+
+  const bullets = getNodeBullets(skill, status)
+
+  return (
+    <div className="flex cursor-grab flex-col items-center active:cursor-grabbing font-mono text-xs select-none">
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        style={{ 
+          background: status === 'completed' ? '#39ff14' : status === 'running' ? '#00e5ff' : 'rgba(255,255,255,0.2)',
+          border: '1px solid rgba(0,0,0,0.5)',
+          width: 8,
+          height: 8,
+          boxShadow: status === 'running' || status === 'completed' ? '0 0 6px currentColor' : undefined
+        }} 
+      />
+      
+      {/* Sleek Glassmorphic Rounded Card Box */}
+      <div 
+        className={`w-64 border p-4 bg-[#0a0718]/90 rounded-2xl ${borderCls} transition-all duration-300 relative group`}
+        style={{
+          boxShadow: status === 'running' ? `0 0 20px ${meta.border}` : undefined,
+        }}
+      >
+        {/* Header Block */}
+        <div className="flex items-center gap-3">
+          {/* Avatar Icon Frame */}
+          <div 
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 group-hover:scale-105"
+            style={{
+              backgroundColor: meta.bg,
+              borderColor: meta.border,
+              color: meta.color,
+              boxShadow: status === 'running' ? `0 0 10px ${meta.color}60` : undefined,
+            }}
+          >
+            {(() => {
+              const IconComp = meta.icon
+              return <IconComp className="h-5 w-5" />
+            })()}
+          </div>
+          
+          {/* Details */}
+          <div className="min-w-0 flex-1">
+            <h4 className="truncate text-[11px] font-bold uppercase tracking-wider text-white group-hover:text-cyan-300 transition-colors">
+              {meta.name}
+            </h4>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`text-[9px] uppercase tracking-widest leading-none ${statusColorCls}`}>
+                [{status === 'completed' ? 'Completed' : status === 'running' ? 'Running' : status === 'failed' ? 'Failed' : 'Pending'}]
+              </span>
             </div>
           </div>
         </div>
-        <div
-          className="giga-verified-pill mt-7"
-          style={{ background: verifiedPill.bg, borderColor: verifiedPill.border, color: verifiedPill.text }}
-        >
-          {verifiedPill.label}
-        </div>
-        <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-      </div>
-    )
-  }
 
-  // Standard rectangular pixel node — wider so labels don't clip
-  const sizeCls = kind === 'compute' ? 'w-44 min-h-[9rem]' : 'w-40 min-h-[8.5rem]'
-  return (
-    <div className="flex cursor-grab flex-col items-center font-pixel-body active:cursor-grabbing">
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <div
-        className={`${decoration.cls} ${sizeCls} flex flex-col items-center justify-center p-3 text-center`}
-      >
-        <Icon className={`mb-2 h-7 w-7 ${kind === 'compute' ? 'text-black/80' : 'text-white/85'}`} aria-hidden="true" />
-        <div
-          className={`text-[13px] font-bold uppercase leading-tight ${kind === 'compute' ? 'text-black' : 'text-white'}`}
-          style={{ wordBreak: 'break-word', hyphens: 'auto' }}
-        >
-          {label}
-        </div>
-        {skill && (
-          <div
-            className={`mt-1 font-mono text-[10px] tracking-tight ${kind === 'compute' ? 'text-black/55' : 'text-white/55'}`}
-            style={{ wordBreak: 'break-all' }}
-          >
-            {skill}
+        {/* Live Telemetry Bullets list */}
+        {bullets.length > 0 && (
+          <div className="mt-3 space-y-1.5 pl-0.5 border-t border-white/5 pt-2.5 text-[9px] text-white/55">
+            {bullets.map((bullet, idx) => (
+              <div key={idx} className="flex items-center gap-2 pl-0.5">
+                <span 
+                  className="w-1.5 h-1.5 rounded-full shrink-0" 
+                  style={{ 
+                    backgroundColor: status === 'completed' ? '#39ff14' : status === 'running' ? meta.color : 'rgba(255,255,255,0.2)',
+                    boxShadow: status === 'completed' ? '0 0 4px #39ff14' : undefined 
+                  }}
+                />
+                <span className="truncate">{bullet}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
-      <div
-        className="giga-verified-pill mt-3 whitespace-nowrap"
-        style={{ background: verifiedPill.bg, borderColor: verifiedPill.border, color: verifiedPill.text }}
-      >
-        {verifiedPill.label}
-      </div>
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        style={{ 
+          background: status === 'completed' ? '#39ff14' : status === 'running' ? '#00e5ff' : 'rgba(255,255,255,0.2)',
+          border: '1px solid rgba(0,0,0,0.5)',
+          width: 8,
+          height: 8,
+          boxShadow: status === 'running' || status === 'completed' ? '0 0 6px currentColor' : undefined
+        }} 
+      />
     </div>
   )
 }
@@ -334,53 +481,107 @@ export function WorkflowCanvas({
         </div>
       )}
 
-      {/* Floating ERC-8183 Trail Panel */}
+      {/* Floating ERC-8183 Trail Panel (Bản đồ tiến trình bảo chứng) */}
       {erc8183 && (
-        <div className="pointer-events-auto absolute bottom-4 left-4 z-10 max-h-[56vh] w-80 overflow-y-auto rounded-lg border border-emerald-500/30 bg-[#0a0d14]/90 p-4 shadow-lg backdrop-blur-md">
+        <div className="pointer-events-auto absolute bottom-4 left-4 z-10 max-h-[58vh] w-80 overflow-y-auto rounded-xl border border-emerald-500/30 bg-[#0a0d14]/95 p-4 shadow-xl backdrop-blur-md">
           <div className="mb-3 flex items-center gap-2 border-b border-emerald-500/20 pb-2">
             <div className="flex h-6 w-6 items-center justify-center rounded bg-emerald-500/20 text-emerald-400">
               <Hexagon className="h-3.5 w-3.5" />
             </div>
-            <h3 className="font-pixel-body text-sm uppercase text-emerald-100">ERC-8183 Trail</h3>
-            <span className="ml-auto font-mono text-[10px] uppercase text-white/35">{trail.current}</span>
+            <h3 className="font-pixel-body text-xs uppercase tracking-wider text-emerald-100">Bảo Chứng ERC-8183</h3>
+            <span className="ml-auto font-mono text-[9px] uppercase text-white/35">Job {erc8183.jobId ? `#${erc8183.jobId}` : 'Khởi tạo'}</span>
           </div>
-          <div className="space-y-3 text-xs">
-            <div className="grid grid-cols-2 gap-1.5">
-              <CanvasStateRow label="Plan" state={trail.planState} detail={`${planNodes.length || 0} steps`} />
-              <CanvasStateRow label="Agents" state={trail.agentState} detail={`${trail.completed}/${trail.total || 0}`} />
-              <CanvasStateRow label="Report" state={trail.reportState} detail={trail.reportReady ? 'ready' : trail.reportDetail} />
-              <CanvasStateRow label="Settle" state={trail.settleState} detail={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
-              <CanvasStateRow label="Repute" state={trail.reputationState} detail={trail.reputationTx ? 'cached' : trail.reputationStatus === 'skipped' ? 'DB only' : trail.reputationStatus === 'recorded' ? 'done' : 'pending'} />
+
+          <div className="space-y-3.5 text-xs">
+            {/* Shipping-tracker Style Progress (Thanh tiến trình trực quan tối giản) */}
+            <div className="bg-black/30 p-2.5 rounded-lg border border-white/5 space-y-2">
+              <div className="flex items-center justify-between text-[10px] text-white/40 uppercase font-mono tracking-wider">
+                <span>Tiến trình xử lý</span>
+                {erc8183.budgetUsdc && (
+                  <span className="text-cyan-300 font-bold font-sans">{erc8183.budgetUsdc} USDC Locked</span>
+                )}
+              </div>
+
+              <div className="space-y-2 text-[11px]">
+                {/* Step 1: Secure Escrow */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] ${trail.settleState === 'active' || trail.settleState === 'done' || !!erc8183.fundTx ? 'text-emerald-400' : 'text-white/30'}`}>
+                    {trail.settleState === 'done' || !!erc8183.fundTx ? '🟢' : '🔄'}
+                  </span>
+                  <span className={(trail.settleState === 'active' || trail.settleState === 'done' || !!erc8183.fundTx) ? 'text-emerald-300 font-medium' : 'text-white/40'}>
+                    Nạp bảo chứng an toàn
+                  </span>
+                </div>
+
+                {/* Step 2: AI Dispatch */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] ${trail.agentState === 'done' ? 'text-emerald-400' : trail.agentState === 'active' ? 'text-cyan-400 animate-pulse' : 'text-white/30'}`}>
+                    {trail.agentState === 'done' ? '🟢' : trail.agentState === 'active' ? '🔄' : '⏳'}
+                  </span>
+                  <span className={trail.agentState === 'done' ? 'text-emerald-300/80' : trail.agentState === 'active' ? 'text-cyan-300 font-medium animate-pulse' : 'text-white/40'}>
+                    AI Expert đang làm việc
+                  </span>
+                </div>
+
+                {/* Step 3: Report & Delivery */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] ${trail.reportReady ? 'text-emerald-400' : trail.reportState === 'active' ? 'text-cyan-400' : 'text-white/30'}`}>
+                    {trail.reportReady ? '🟢' : '⏳'}
+                  </span>
+                  <span className={trail.reportReady ? 'text-emerald-300/80' : 'text-white/40'}>
+                    Bàn giao báo cáo nghiệm thu
+                  </span>
+                </div>
+
+                {/* Step 4: Release Payment & Reputation */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] ${trail.reputationState === 'done' ? 'text-emerald-400' : 'text-white/30'}`}>
+                    {trail.reputationState === 'done' ? '🟢' : '⏳'}
+                  </span>
+                  <span className={trail.reputationState === 'done' ? 'text-emerald-300/80 font-bold' : 'text-white/40'}>
+                    Giải ngân & Ghi nhận uy tín (+95)
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {trail.agentRows.length > 0 && (
-              <div className="space-y-1.5 border-t border-white/10 pt-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-white/40">Agent proofs</p>
-                {trail.agentRows.map((row) => (
-                  <CanvasProofRow key={row.id} label={row.label} tx={row.tx} state={row.state} />
-                ))}
-              </div>
-            )}
+            {/* Collapsible Developer Logs Accordion (Bảng chi tiết giao dịch blockchain ẩn đi) */}
+            <details className="group mt-2 border-t border-white/10 pt-2.5 text-[10px] font-mono">
+              <summary className="list-none flex items-center justify-between cursor-pointer text-white/35 hover:text-emerald-400 transition-colors select-none">
+                <span>[+] Log giao dịch On-chain</span>
+                <span className="group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              
+              <div className="space-y-2 mt-2 bg-black/40 p-2.5 rounded-lg border border-white/5">
+                <div className="grid grid-cols-2 gap-1 mb-1">
+                  <CanvasStateRow label="Lập kế hoạch" state={trail.planState} detail={`${planNodes.length || 0} bước`} />
+                  <CanvasStateRow label="Agent Proof" state={trail.agentState} detail={`${trail.completed}/${trail.total || 0}`} />
+                </div>
 
-            <div className="space-y-2 border-t border-white/10 pt-2">
-            <div className="flex items-center justify-between">
-              <span className="text-white/55">Job ID</span>
-              <span className="font-mono text-emerald-300">{erc8183.jobId ? `#${erc8183.jobId}` : 'pending'}</span>
-            </div>
-            {erc8183.budgetUsdc && (
-              <div className="flex items-center justify-between">
-                <span className="text-white/55">Budget</span>
-                <span className="font-mono text-cyan-300">{erc8183.budgetUsdc} USDC</span>
+                {trail.agentRows.length > 0 && (
+                  <div className="space-y-1 border-t border-white/5 pt-1.5 pb-1">
+                    <p className="text-[8px] uppercase tracking-widest text-white/30">Bằng chứng Agent (8004)</p>
+                    {trail.agentRows.map((row) => (
+                      <CanvasProofRow key={row.id} label={row.label} tx={row.tx} state={row.state} />
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-1.5 border-t border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between text-white/50">
+                    <span>Job ID</span>
+                    <span className="text-emerald-400 font-bold">{erc8183.jobId ? `#${erc8183.jobId}` : 'chờ...'}</span>
+                  </div>
+                  <CanvasTxRow label="Khởi tạo job" tx={erc8183.createTx} active={!erc8183.jobId && !!erc8183.createTx} />
+                  <CanvasTxRow label="Thiết lập quỹ" tx={erc8183.setBudgetTx} active={!!erc8183.jobId && !erc8183.setBudgetTx} />
+                  <CanvasTxRow label="Ủy quyền USDC" tx={erc8183.approveTx} active={!!erc8183.setBudgetTx && !erc8183.approveTx} />
+                  <CanvasTxRow label="Nạp tiền Escrow" tx={erc8183.fundTx} active={!!erc8183.approveTx && !erc8183.fundTx} />
+                  <CanvasTxRow label="Nộp sản phẩm" tx={erc8183.submitTx} active={trail.reportReady && !!erc8183.fundTx && !erc8183.submitTx} />
+                  <CanvasTxRow label="Giải phóng quỹ" tx={erc8183.completeTx} active={!!erc8183.submitTx && !erc8183.completeTx} />
+                  {trail.reputationTx && <CanvasTxRow label="Lưu điểm Uy tín" tx={trail.reputationTx} />}
+                </div>
               </div>
-            )}
-            <CanvasTxRow label="Create job" tx={erc8183.createTx} active={!erc8183.jobId && !!erc8183.createTx} />
-            <CanvasTxRow label="Set budget" tx={erc8183.setBudgetTx} active={!!erc8183.jobId && !erc8183.setBudgetTx} />
-            <CanvasTxRow label="Approve USDC" tx={erc8183.approveTx} active={!!erc8183.setBudgetTx && !erc8183.approveTx} />
-            <CanvasTxRow label="Fund escrow" tx={erc8183.fundTx} active={!!erc8183.approveTx && !erc8183.fundTx} />
-            <CanvasTxRow label="Submit deliverable" tx={erc8183.submitTx} active={trail.reportReady && !!erc8183.fundTx && !erc8183.submitTx} />
-            <CanvasTxRow label="Complete job" tx={erc8183.completeTx} active={!!erc8183.submitTx && !erc8183.completeTx} />
-            {trail.reputationTx && <CanvasTxRow label="Reputation cache" tx={trail.reputationTx} />}
-            </div>
+            </details>
           </div>
         </div>
       )}
@@ -406,7 +607,7 @@ interface DispatchDetail {
   finishedAt?: number | null
 }
 
-function buildFromMessages(messages: UIMessage[]): {
+export function buildFromMessages(messages: UIMessage[]): {
   nodes: Node[]
   edges: Edge[]
   hasPlan: boolean
@@ -500,17 +701,40 @@ function buildFromMessages(messages: UIMessage[]): {
   })
 
   const edges: Edge[] = plan.flatMap((n) =>
-    n.depends_on.map((dep) => ({
-      id: `${dep}->${n.plan_id}`,
-      source: dep,
-      target: n.plan_id,
-      animated: dispatchStatus.get(n.plan_id) === 'running',
-      style: {
-        stroke: '#4c648a',
-        strokeWidth: 3,
-        strokeDasharray: '4 4',
-      },
-    })),
+    n.depends_on.map((dep) => {
+      const nodeStatus = dispatchStatus.get(n.plan_id) ?? 'pending'
+      const isActive = nodeStatus === 'running'
+      const isCompleted = nodeStatus === 'completed'
+      
+      let strokeColor = '#2d2a4a'
+      let filterStyle = undefined
+      let width = 2
+      let animated = false
+      
+      if (isActive) {
+        strokeColor = '#00e5ff'
+        filterStyle = 'drop-shadow(0 0 6px #00e5ff)'
+        width = 3
+        animated = true
+      } else if (isCompleted) {
+        strokeColor = '#39ff14'
+        filterStyle = 'drop-shadow(0 0 6px rgba(57, 255, 20, 0.45))'
+        width = 2.5
+      }
+
+      return {
+        id: `${dep}->${n.plan_id}`,
+        source: dep,
+        target: n.plan_id,
+        animated,
+        style: {
+          stroke: strokeColor,
+          strokeWidth: width,
+          filter: filterStyle,
+          strokeDasharray: isActive ? '6 6' : undefined,
+        },
+      }
+    }),
   )
 
   return { nodes, edges, hasPlan: true, details }

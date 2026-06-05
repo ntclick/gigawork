@@ -277,18 +277,68 @@ function UnifiedTrail({
       )}
 
       {erc8183 && (
-        <div className="space-y-1.5 border-t border-white/10 pt-3">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Settlement signatures</p>
-          <MetaRow label="Job" value={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
-          {erc8183.budgetUsdc && <MetaRow label="Budget" value={`${erc8183.budgetUsdc} USDC`} />}
-          <TrailTxRow label="Create job" tx={erc8183.createTx} state={erc8183.jobId ? 'done' : erc8183.createTx ? 'active' : 'idle'} />
-          <TrailTxRow label="Set budget" tx={erc8183.setBudgetTx} state={erc8183.setBudgetTx ? 'done' : erc8183.jobId ? 'active' : 'idle'} />
-          <TrailTxRow label="Approve USDC" tx={erc8183.approveTx} state={erc8183.approveTx ? 'done' : erc8183.setBudgetTx ? 'active' : 'idle'} />
-          <TrailTxRow label="Fund escrow" tx={erc8183.fundTx} state={erc8183.fundTx ? 'done' : erc8183.approveTx ? 'active' : 'idle'} />
-          <TrailTxRow label="Submit deliverable" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : reportReady && erc8183.fundTx ? 'active' : 'idle'} />
-          <TrailTxRow label="Complete job" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
-          {erc8183.deliverableHash && <HashRow label="Deliverable" hash={erc8183.deliverableHash} />}
-          <TrailTxRow label="Reputation" tx={effectiveRepTx} state={reputationState} detail={reputationStatus === 'skipped' ? 'DB only' : reputationStatus === 'error' ? 'failed' : undefined} />
+        <div className="space-y-2 border-t border-white/10 pt-3">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Bản đồ tiến trình bảo chứng</p>
+          
+          {/* Shipping-tracker style visual list */}
+          <div className="bg-black/30 p-2.5 rounded-lg border border-white/5 space-y-2 text-[11px] leading-relaxed">
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] ${settleState === 'active' || settleState === 'done' || !!erc8183.fundTx ? 'text-emerald-400' : 'text-white/30'}`}>
+                {settleState === 'done' || !!erc8183.fundTx ? '🟢' : '🔄'}
+              </span>
+              <span className={(settleState === 'active' || settleState === 'done' || !!erc8183.fundTx) ? 'text-emerald-300 font-medium' : 'text-white/40'}>
+                Nạp bảo chứng an toàn
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] ${agentState === 'done' ? 'text-emerald-400' : agentState === 'active' ? 'text-cyan-400 animate-pulse' : 'text-white/30'}`}>
+                {agentState === 'done' ? '🟢' : agentState === 'active' ? '🔄' : '⏳'}
+              </span>
+              <span className={agentState === 'done' ? 'text-emerald-300/80' : agentState === 'active' ? 'text-cyan-300 font-medium' : 'text-white/40'}>
+                AI Expert đang làm việc
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] ${reportReady ? 'text-emerald-400' : reportState === 'active' ? 'text-cyan-400' : 'text-white/30'}`}>
+                {reportReady ? '🟢' : '⏳'}
+              </span>
+              <span className={reportReady ? 'text-emerald-300/80' : 'text-white/40'}>
+                Bàn giao báo cáo nghiệm thu
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] ${reputationState === 'done' ? 'text-emerald-400' : 'text-white/30'}`}>
+                {reputationState === 'done' ? '🟢' : '⏳'}
+              </span>
+              <span className={reputationState === 'done' ? 'text-emerald-300/80 font-bold' : 'text-white/40'}>
+                Giải ngân & Ghi nhận uy tín (+95)
+              </span>
+            </div>
+          </div>
+
+          {/* Collapsible details for on-chain logs */}
+          <details className="group text-[10px] font-mono mt-1">
+            <summary className="list-none flex items-center justify-between cursor-pointer text-white/35 hover:text-emerald-400 transition-colors select-none py-1">
+              <span>[+] Xem chi tiết log On-chain</span>
+              <span className="group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            
+            <div className="space-y-2 mt-2 bg-black/40 p-2.5 rounded-lg border border-white/5">
+              <MetaRow label="Job ID" value={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
+              {erc8183.budgetUsdc && <MetaRow label="Ngân sách" value={`${erc8183.budgetUsdc} USDC`} />}
+              <TrailTxRow label="Khởi tạo job" tx={erc8183.createTx} state={erc8183.jobId ? 'done' : erc8183.createTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Thiết lập quỹ" tx={erc8183.setBudgetTx} state={erc8183.setBudgetTx ? 'done' : erc8183.jobId ? 'active' : 'idle'} />
+              <TrailTxRow label="Ủy quyền USDC" tx={erc8183.approveTx} state={erc8183.approveTx ? 'done' : erc8183.setBudgetTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Nạp bảo chứng" tx={erc8183.fundTx} state={erc8183.fundTx ? 'done' : erc8183.approveTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Nộp sản phẩm" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : reportReady && erc8183.fundTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Giải phóng quỹ" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
+              {erc8183.deliverableHash && <HashRow label="Mã băm kết quả" hash={erc8183.deliverableHash} />}
+              <TrailTxRow label="Điểm Uy tín" tx={effectiveRepTx} state={reputationState} detail={reputationStatus === 'skipped' ? 'DB only' : reputationStatus === 'error' ? 'failed' : undefined} />
+            </div>
+          </details>
         </div>
       )}
 

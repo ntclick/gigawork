@@ -111,83 +111,65 @@ export function buildEnvelope(opts: {
 }
 
 // ════════════════════════════════════════════════════════════════
-// Templates
+// Templates (Multi-Agent Team Templates in Friendly Vietnamese)
 // ════════════════════════════════════════════════════════════════
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
-  // ─── POLYMARKET ───────────────────────────────────────────────
   {
-    id: 'polymarket-odds',
-    emoji: '🎯',
-    title: 'Polymarket Odds Monitor',
-    desc: 'YES/NO probabilities and 24h volume on prediction markets.',
+    id: 'token-scanner-telegram',
+    emoji: '🔍',
+    title: 'Token Scanner & Telegram Alert Team',
+    desc: 'Birdeye Scanner Agent analyzes on-chain metrics and transfers the alert to Hermes Telegram Agent for instant risk notification.',
     category: 'research',
-    skillName: 'polymarket-pulse',
+    skillName: 'crypto-scanner',
     defaults: {
-      query: 'US election 2026',
-      limit: 5,
+      token_address: '0x6982508145454ce325ddbe47a25d4ec3d2311933',
+      chain: 'ethereum',
+    },
+    followupSkills: ['report-composer', 'telegram-sender'],
+    uses: ['crypto-scanner', 'report-composer', 'telegram-sender'],
+    prompt:
+      'Scan on-chain metrics of token 0x6982508145454ce325ddbe47a25d4ec3d2311933 on ethereum using Birdeye Scanner Agent, compile a report and dispatch an automated alert to my phone via Telegram Agent.',
+  },
+  {
+    id: 'defi-yield-finder',
+    emoji: '🌾',
+    title: 'DeFi Yield APY Hunter Team',
+    desc: 'Yield Finder Agent scans DeFi protocols for high APY pools and hands over the yield analysis to Composer Agent for profit optimization reporting.',
+    category: 'analysis',
+    skillName: 'defi-yields',
+    defaults: {
+      top_n: 5,
+      min_tvl_usd: 1000000,
+      stablecoin_only: true,
     },
     followupSkills: ['report-composer'],
-    uses: ['polymarket-pulse', 'report-composer'],
+    uses: ['defi-yields', 'report-composer'],
     prompt:
-      'Scan Polymarket for top 5 markets matching "US election 2026". Show YES/NO probabilities, 24h volume, price drift.',
+      'Hunt DeFi pools for top 5 highest APY yields with TVL > 1M USD, stablecoins only, using Yield Finder Agent and compose a yield optimization report.',
   },
   {
-    id: 'polymarket-address',
-    emoji: '🪪',
-    title: 'Polymarket Address Monitor',
-    desc: 'Track positions + recent trades of a specific Polymarket trader.',
-    category: 'on-chain',
-    freeTextOnly: true,
-    uses: ['whale-tracker', 'polymarket-pulse', 'report-composer'],
-    prompt:
-      'Track Polymarket trader at wallet 0x... — pull their last 25 transfers via whale-tracker, cross-reference open Polymarket markets they touched, then compose a brief on their thesis.',
-    slottedPrompt:
-      'Track Polymarket trader at wallet ${wallet:0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503} — pull their last 25 transfers via whale-tracker on ${chain:ethereum}, cross-reference open Polymarket markets they touched, then compose a brief on their thesis.',
-  },
-
-  // ─── DCA / LADDER (scheduled buys) ────────────────────────────
-  {
-    id: 'daily-dca',
-    emoji: '📅',
-    title: 'DCA (Dollar Cost Averaging)',
-    desc: 'Scheduled tiered buys around live spot price — daily / weekly / hourly.',
+    id: 'trading-signals-email',
+    emoji: '📈',
+    title: 'Technical Signals Reporter Team',
+    desc: 'Binance Analyst Agent calculates RSI/MACD indicators for BTC/ETH and coordinates with Mailman Agent to email the signals report.',
     category: 'execution',
-    skillName: 'dca-executor',
+    skillName: 'trading-signals',
     defaults: {
-      asset: 'BTC',
-      budget_per_buy_usd: 50,
-      frequency: 'daily',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      exchange: 'binance',
     },
-    followupSkills: ['report-composer'],
-    uses: ['dca-executor', 'report-composer'],
+    followupSkills: ['report-composer', 'email-sender'],
+    uses: ['trading-signals', 'report-composer', 'email-sender'],
     prompt:
-      'Plan a daily DCA strategy for BTC: $50 base buy at 8AM UTC, scale up when price drops, scale down when it rips. Compose a one-page summary.',
+      'Analyze RSI/MACD technical indicators for BTC/USDT 4h chart on Binance using Analyst Agent, compile a signals report and send it to my email.',
   },
   {
-    id: 'ladder-buy-sell',
-    emoji: '🪜',
-    title: 'Ladder Buy & Sell',
-    desc: 'Layered limit orders across price tiers. Returns a ready-to-place ladder.',
-    category: 'execution',
-    skillName: 'dca-executor',
-    defaults: {
-      asset: 'ETH',
-      budget_per_buy_usd: 200,
-      frequency: 'weekly',
-    },
-    followupSkills: ['trading-signals', 'report-composer'],
-    uses: ['dca-executor', 'trading-signals', 'report-composer'],
-    prompt:
-      'Build a buy/sell ladder for ETH around live spot. Pair with 4h trading signals so each tier has a confidence note. Output a clean table.',
-  },
-
-  // ─── ON-CHAIN MONITOR ─────────────────────────────────────────
-  {
-    id: 'wallet-monitor',
-    emoji: '👁️',
-    title: 'Wallet Monitor',
-    desc: 'Watch a wallet — balances, top tokens, recent transfers, big-move alerts.',
+    id: 'whale-tracker-report',
+    emoji: '🐳',
+    title: 'Whale Tracker & Flow Analyst Team',
+    desc: 'Whale Tracker Agent tracks large on-chain transactions of a whale address to analyze accumulation or distribution behaviors.',
     category: 'on-chain',
     skillName: 'whale-tracker',
     defaults: {
@@ -198,49 +180,6 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     followupSkills: ['report-composer'],
     uses: ['whale-tracker', 'report-composer'],
     prompt:
-      'Monitor wallet 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on Ethereum: native + top ERC-20 balances, last 25 transfers, flag anything > $100k. Compose a plain-English digest.',
-  },
-  {
-    id: 'copy-trade',
-    emoji: '🔁',
-    title: 'Copy Trade',
-    desc: 'Detect a smart wallet\'s last buys; surface ones you could replicate.',
-    category: 'on-chain',
-    freeTextOnly: true,
-    uses: ['whale-tracker', 'crypto-scanner', 'report-composer'],
-    prompt:
-      'Track wallet 0xab5801a7d398351b8be11c439e05c5b3259aec9b — pull last 25 transfers, run crypto-scanner on each unique token they bought, then compose a verdict on which 2-3 are worth copying based on liquidity + holder concentration.',
-    slottedPrompt:
-      'Track wallet ${wallet:0xab5801a7d398351b8be11c439e05c5b3259aec9b} on ${chain:ethereum} — pull last 25 transfers, run crypto-scanner on each unique token they bought, then compose a verdict on which 2-3 are worth copying based on liquidity + holder concentration.',
-  },
-
-  // ─── NOTIFICATION ─────────────────────────────────────────────
-  {
-    id: 'send-alert',
-    emoji: '📨',
-    title: 'Send Alert',
-    desc: 'Run any analysis and push the result to your email or Telegram.',
-    category: 'execution',
-    freeTextOnly: true,
-    uses: ['trading-signals', 'report-composer', 'email-sender', 'telegram-sender'],
-    prompt:
-      'Scan BTC + ETH 4h technical signals, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
-    slottedPrompt:
-      'Scan $BTC + $ETH ${timeframe:24h} technical signals on ${chain:ethereum}, compose a casual brief, then send it to my saved email AND telegram with subject "Daily crypto pulse".',
-  },
-
-  // ─── Quick token + sentiment scan (slotted-first template) ────
-  {
-    id: 'token-pulse',
-    emoji: '📡',
-    title: 'Token Pulse',
-    desc: 'Pick any token + chain + timeframe — get price, on-chain activity, social sentiment.',
-    category: 'research',
-    freeTextOnly: true,
-    uses: ['crypto-scanner', 'social-sentiment', 'report-composer'],
-    prompt:
-      'Scan BTC on ethereum and check 24h sentiment + on-chain activity, then compose a one-page brief.',
-    slottedPrompt:
-      'Scan $BTC on ${chain:ethereum} and check ${timeframe:24h} sentiment + on-chain activity, then compose a one-page brief.',
+      'Track 25 recent transactions of wallet 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on eth-mainnet using Whale Tracker Agent, analyze buy/sell flows and compile a report.',
   },
 ]

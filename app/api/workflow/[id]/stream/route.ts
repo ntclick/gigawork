@@ -125,15 +125,42 @@ export async function POST(req: Request, ctx: RouteCtx) {
     { id: 'seed', role: 'user' as const, parts: [{ type: 'text' as const, text: wf.prompt }] },
   ]
 
-  try {
-    const result = await streamBrain({ workflowId: id, userId: user.id, uiMessages })
-    return result.toUIMessageStreamResponse()
-  } catch (e) {
+  const EMPTY_OUTPUT_RE = /model output must contain either output text or tool calls|empty.*output|no.*content.*returned/i
+  const MAX_RETRIES = 2
+
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await streamBrain({ workflowId: id, userId: user.id, uiMessages, _retry: attempt })
+      return result.toUIMessageStreamResponse()
+    } catch (e) {
+      lastErr = e
+      const msg = e instanceof Error ? e.message : String(e)
+      if (EMPTY_OUTPUT_RE.test(msg) && attempt < MAX_RETRIES) {
+        console.warn(`[stream] empty-output from brain on attempt ${attempt + 1}, retrying...`)
+        // Reset workflow status back to planning so the next attempt can claim it
+        await db
+          .update(workflows)
+          .set({ status: 'planning' })
+          .where(eq(workflows.id, id))
+        // Small pause before retry
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+        // Re-claim as running for next attempt
+        await db
+          .update(workflows)
+          .set({ status: 'running' })
+          .where(eq(workflows.id, id))
+        continue
+      }
+      break
+    }
+  }
+
+  const e = lastErr
+  {
     const msg = e instanceof Error ? e.message : String(e)
     const stack = e instanceof Error ? e.stack?.slice(0, 1500) : undefined
-    console.error('[/api/workflow/:id/stream] streamBrain failed', e)
-    // Persist the error as a brain message so debug-workflow + the UI
-    // surface what blew up instead of an empty 'planning…' placeholder.
+    console.error('[/api/workflow/:id/stream] streamBrain failed after retries', e)
     try {
       await db.insert(messages).values({
         workflowId: id,

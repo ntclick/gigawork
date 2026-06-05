@@ -90,6 +90,53 @@ async function sendTransactionForAccount(
       const hash = await wallet.sendTransaction({ ...args, nonce })
       return hash
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      
+      const isNonceError = 
+        (err instanceof Error && err.name === 'NonceTooLowError') ||
+        /nonce too low|nonce is too low|lower than the current nonce|gettransactioncount/i.test(errMsg)
+
+      // Self-healing retry mechanism for nonce too low errors
+      if (isNonceError) {
+        console.warn(`[nonce-recovery] Nonce ${nonce} too low for ${addr}. Attempting automatic recovery...`)
+        
+        // 1. Try to extract the expected next nonce from the error details first (fast path)
+        let freshNonce: number | null = null
+        const match = errMsg.match(/(?:next nonce|expected nonce|current nonce)\s*(\d+)/i)
+        if (match) {
+          freshNonce = parseInt(match[1], 10)
+          console.warn(`[nonce-recovery] Extracted next expected nonce ${freshNonce} from error message.`)
+        }
+        
+        // 2. Fall back to calling getTransactionCount on-chain if extraction failed
+        if (freshNonce === null || isNaN(freshNonce)) {
+          try {
+            freshNonce = await publicClient.getTransactionCount({
+              address: account.address,
+              blockTag: 'pending',
+            })
+            console.warn(`[nonce-recovery] Fetched fresh transaction count from chain: ${freshNonce}`)
+          } catch (fetchErr) {
+            console.error('[nonce-recovery] Failed to fetch transaction count from chain', fetchErr)
+          }
+        }
+        
+        // 3. If we obtained a fresh higher nonce, retry the transaction immediately!
+        if (freshNonce !== null && !isNaN(freshNonce) && freshNonce > nonce) {
+          console.warn(`[nonce-recovery] Retrying transaction for ${addr} using fresh nonce: ${freshNonce}`)
+          noncesByAddress[addr] = freshNonce + 1
+          try {
+            const hash = await wallet.sendTransaction({ ...args, nonce: freshNonce })
+            console.info(`[nonce-recovery] Transaction retry succeeded! Hash: ${hash}`)
+            return hash
+          } catch (retryErr) {
+            console.error('[nonce-recovery] Retry failed, resetting local cache', retryErr)
+            noncesByAddress[addr] = null
+            throw retryErr
+          }
+        }
+      }
+      
       // Reset localNonce on failure so next call re-fetches correct state
       noncesByAddress[addr] = null
       throw err

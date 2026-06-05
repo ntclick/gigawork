@@ -320,11 +320,11 @@ export function IdentityGate({
     const lock = (
       <Lock
         icon={<ShieldCheck className="h-6 w-6 text-cyan-300" />}
-        title="🎁 You have 300 credits — mint your NFT to unlock"
-        body="You've been granted 300 credits. Mint your ERC-8004 identity NFT with your own Privy wallet — admin never signs for you. Every workflow you run is bound to this token id so provider agents know you're a verified client."
+        title="🎁 Mở khóa 300 Credits trải nghiệm miễn phí"
+        body="Chào mừng bạn đến với GigaWork! Hãy kích hoạt Thẻ định danh số (ERC-8004) bảo mật của bạn để nhận ngay 300 Credits miễn phí. Thẻ định danh này là chứng thực on-chain giúp các AI Agent nhận diện bạn là khách hàng hợp lệ và bảo vệ kết quả công việc của bạn."
         cta={{ label, onClick: mint, disabled: step !== 'idle' }}
         error={err}
-        footer={`Contract ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
+        footer={`Hợp đồng ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
       />
     )
     return mode === 'banner' ? (
@@ -341,9 +341,9 @@ export function IdentityGate({
   const lock = (
     <Lock
       icon={<Wallet className="h-6 w-6 text-cyan-300" />}
-      title="Connect a wallet to get started"
-      body="Connect with Privy to claim 300 free credits and mint your ERC-8004 identity NFT — required before creating your first workflow."
-      cta={{ label: 'Connect wallet', onClick: () => login() }}
+      title="Kết nối ví để bắt đầu trải nghiệm"
+      body="Kết nối tài khoản thông qua Privy để tự động nhận 300 Credits trải nghiệm miễn phí và kích hoạt Thẻ định danh số (ERC-8004) bảo mật của bạn."
+      cta={{ label: 'Kết nối ví ngay', onClick: () => login() }}
     />
   )
   return mode === 'banner' ? (

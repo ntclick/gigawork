@@ -66,8 +66,17 @@ function NodeDetailSheetInner({
   onNodeUpdated?: () => void
 }) {
   const [activeTab, setActiveTab] = useState<'output' | 'input' | 'settings'>('output')
+  const [editMode, setEditMode] = useState<'form' | 'json'>('form')
+
   const { skills } = useSkills()
   const [draftSkill, setDraftSkill] = useState(detail.skill)
+
+  const activeSkill = draftSkill || detail.skill
+  const isFormSupported = [
+    'crypto-scanner', 'whale-tracker', 'trading-signals', 'defi-yields', 'email-sender',
+    'telegram-sender', 'report-composer', 'social-sentiment', 'document-digest',
+    'web-intel', 'dca-executor', 'polymarket-pulse', 'nft-floor-watch'
+  ].includes(activeSkill)
   
   const initialInputJson = useMemo(() => {
     try {
@@ -78,6 +87,20 @@ function NodeDetailSheetInner({
   }, [detail.input])
   
   const [draftInput, setDraftInput] = useState(initialInputJson)
+
+  const inputObj = useMemo(() => {
+    try {
+      return JSON.parse(draftInput) || {}
+    } catch {
+      return {}
+    }
+  }, [draftInput])
+
+  const updateField = (key: string, value: any) => {
+    const newObj = { ...inputObj, [key]: value }
+    setDraftInput(JSON.stringify(newObj, null, 2))
+  }
+
   const [draftNote, setDraftNote] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
   
@@ -529,17 +552,475 @@ function NodeDetailSheetInner({
 
           {activeTab === 'input' && (
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white/70">Input Parameters</h3>
-              <div>
-                <label className="mb-1.5 block text-[11px] text-white/60">Edit JSON</label>
-                <textarea
-                  value={draftInput}
-                  onChange={(e) => setDraftInput(e.target.value)}
-                  rows={12}
-                  className="w-full resize-y border-2 border-black bg-[#1f1f33] px-3 py-3 font-mono text-xs leading-relaxed text-emerald-300 placeholder:text-white/20 focus:border-[var(--giga-accent)] focus:outline-none"
-                  spellCheck={false}
-                />
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-white/70">Input Parameters</h3>
+                {isFormSupported && (
+                  <button
+                    onClick={() => setEditMode(editMode === 'form' ? 'json' : 'form')}
+                    className="text-[9px] font-mono uppercase tracking-wider text-cyan-300 hover:text-cyan-200 border border-cyan-400/25 bg-cyan-400/5 px-2 py-0.5"
+                  >
+                    {editMode === 'form' ? '🛠️ Switch to JSON' : '📋 Switch to Form'}
+                  </button>
+                )}
               </div>
+
+              {editMode === 'form' && isFormSupported ? (
+                /* BEAUTIFUL STRUCTURED AGENTS FORM CONFIGURATION */
+                <div className="space-y-4 rounded border border-white/5 bg-[#12101f]/60 p-4">
+                  {/* Birdeye Scanner Agent Form */}
+                  {activeSkill === 'crypto-scanner' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Token Address</label>
+                        <input
+                          type="text"
+                          value={inputObj.token_address || ''}
+                          onChange={(e) => updateField('token_address', e.target.value)}
+                          placeholder="e.g. 0x6982508145454ce325ddbe47a25d4ec3d2311933"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Blockchain Network</label>
+                        <select
+                          value={inputObj.chain || 'ethereum'}
+                          onChange={(e) => updateField('chain', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        >
+                          <option value="ethereum">Ethereum</option>
+                          <option value="solana">Solana</option>
+                          <option value="base">Base</option>
+                          <option value="arbitrum">Arbitrum</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Alchemy Whale Tracker Agent Form */}
+                  {activeSkill === 'whale-tracker' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Whale Wallet Address</label>
+                        <input
+                          type="text"
+                          value={inputObj.wallet || ''}
+                          onChange={(e) => updateField('wallet', e.target.value)}
+                          placeholder="e.g. 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Blockchain Network</label>
+                        <select
+                          value={inputObj.network || 'eth-mainnet'}
+                          onChange={(e) => updateField('network', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        >
+                          <option value="eth-mainnet">Ethereum Mainnet</option>
+                          <option value="base-mainnet">Base Mainnet</option>
+                          <option value="arbitrum-mainnet">Arbitrum Mainnet</option>
+                          <option value="solana-mainnet">Solana Mainnet</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Transaction Fetch Limit</label>
+                        <input
+                          type="number"
+                          value={inputObj.limit !== undefined ? inputObj.limit : 25}
+                          onChange={(e) => updateField('limit', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Binance Analyst Agent Form */}
+                  {activeSkill === 'trading-signals' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Trading Symbol</label>
+                        <input
+                          type="text"
+                          value={inputObj.symbol || 'BTC/USDT'}
+                          onChange={(e) => updateField('symbol', e.target.value)}
+                          placeholder="e.g. BTC/USDT"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Timeframe</label>
+                        <select
+                          value={inputObj.timeframe || '4h'}
+                          onChange={(e) => updateField('timeframe', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        >
+                          <option value="1m">1 minute</option>
+                          <option value="5m">5 minutes</option>
+                          <option value="15m">15 minutes</option>
+                          <option value="1h">1 hour</option>
+                          <option value="4h">4 hours</option>
+                          <option value="1d">1 day</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Exchange Engine</label>
+                        <input
+                          type="text"
+                          value={inputObj.exchange || 'binance'}
+                          onChange={(e) => updateField('exchange', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Yield Finder APY Form */}
+                  {activeSkill === 'defi-yields' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Fetch Top N Pools</label>
+                        <input
+                          type="number"
+                          value={inputObj.top_n !== undefined ? inputObj.top_n : 5}
+                          onChange={(e) => updateField('top_n', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Minimum TVL (USD)</label>
+                        <input
+                          type="number"
+                          value={inputObj.min_tvl_usd !== undefined ? inputObj.min_tvl_usd : 1000000}
+                          onChange={(e) => updateField('min_tvl_usd', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 pt-1.5">
+                        <input
+                          type="checkbox"
+                          id="stablecoin_only"
+                          checked={!!inputObj.stablecoin_only}
+                          onChange={(e) => updateField('stablecoin_only', e.target.checked)}
+                          className="h-4 w-4 rounded border-2 border-black bg-[#1f1f33] text-[var(--giga-accent)] focus:ring-0"
+                        />
+                        <label htmlFor="stablecoin_only" className="text-xs text-white/70 cursor-pointer">Stablecoins Only</label>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resend Mailman Email Form */}
+                  {activeSkill === 'email-sender' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Resend API Key</label>
+                        <input
+                          type="password"
+                          value={inputObj.api_key || ''}
+                          onChange={(e) => updateField('api_key', e.target.value)}
+                          placeholder="re_xxxxxxxx (leave blank to use saved key)"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">From Email Address</label>
+                        <input
+                          type="text"
+                          value={inputObj.from || ''}
+                          onChange={(e) => updateField('from', e.target.value)}
+                          placeholder="e.g. alerts@yourdomain.com"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">To Email Address</label>
+                        <input
+                          type="text"
+                          value={inputObj.to || ''}
+                          onChange={(e) => updateField('to', e.target.value)}
+                          placeholder="e.g. receiver@example.com"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Subject</label>
+                        <input
+                          type="text"
+                          value={inputObj.subject || ''}
+                          onChange={(e) => updateField('subject', e.target.value)}
+                          placeholder="Email Subject Title"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">HTML content</label>
+                        <textarea
+                          value={inputObj.html || ''}
+                          onChange={(e) => updateField('html', e.target.value)}
+                          placeholder="HTML body markdown/layout..."
+                          rows={4}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hermes Telegram Dispatcher Form */}
+                  {activeSkill === 'telegram-sender' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Telegram Bot Token</label>
+                        <input
+                          type="password"
+                          value={inputObj.bot_token || ''}
+                          onChange={(e) => updateField('bot_token', e.target.value)}
+                          placeholder="bot123456789:AAxxxxxxxx (leave blank to use saved key)"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Chat ID</label>
+                        <input
+                          type="text"
+                          value={inputObj.chat_id || ''}
+                          onChange={(e) => updateField('chat_id', e.target.value)}
+                          placeholder="e.g. -100xxxxxxxx or User Chat ID"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Message Text Template</label>
+                        <textarea
+                          value={inputObj.text || ''}
+                          onChange={(e) => updateField('text', e.target.value)}
+                          placeholder="Message content (Supports markdown details)..."
+                          rows={5}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Moonshot Report Composer Form */}
+                  {activeSkill === 'report-composer' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Report Title</label>
+                        <input
+                          type="text"
+                          value={inputObj.title || ''}
+                          onChange={(e) => updateField('title', e.target.value)}
+                          placeholder="e.g. Market Intel Analysis Report"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Markdown Layout Template</label>
+                        <textarea
+                          value={inputObj.template || ''}
+                          onChange={(e) => updateField('template', e.target.value)}
+                          placeholder="Type report layout or sections..."
+                          rows={6}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* LunarCrush Social Sentiment Form */}
+                  {activeSkill === 'social-sentiment' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Sentiment Query (Token or Topic)</label>
+                        <input
+                          type="text"
+                          value={inputObj.query || ''}
+                          onChange={(e) => updateField('query', e.target.value)}
+                          placeholder="e.g. bitcoin, solana, pepe"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Fetch Limit</label>
+                        <input
+                          type="number"
+                          value={inputObj.limit !== undefined ? inputObj.limit : 10}
+                          onChange={(e) => updateField('limit', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Kimi Document Digest Form */}
+                  {activeSkill === 'document-digest' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Document or Whitepaper URL</label>
+                        <input
+                          type="text"
+                          value={inputObj.document_url || ''}
+                          onChange={(e) => updateField('document_url', e.target.value)}
+                          placeholder="e.g. https://bitcoin.org/bitcoin.pdf"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Google Search Research Form */}
+                  {activeSkill === 'web-intel' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Web Search Query</label>
+                        <input
+                          type="text"
+                          value={inputObj.query || ''}
+                          onChange={(e) => updateField('query', e.target.value)}
+                          placeholder="e.g. latest ethereum upgrades or SEC news"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Binance DCA Planner Form */}
+                  {activeSkill === 'dca-executor' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Asset Cash Symbol</label>
+                        <input
+                          type="text"
+                          value={inputObj.asset || 'BTC'}
+                          onChange={(e) => updateField('asset', e.target.value)}
+                          placeholder="e.g. BTC, ETH, SOL"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Budget Per Buy (USD)</label>
+                        <input
+                          type="number"
+                          value={inputObj.budget_per_buy_usd !== undefined ? inputObj.budget_per_buy_usd : 50}
+                          onChange={(e) => updateField('budget_per_buy_usd', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Frequency</label>
+                        <select
+                          value={inputObj.frequency || 'daily'}
+                          onChange={(e) => updateField('frequency', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        >
+                          <option value="hourly">Hourly</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Slippage Tolerance (BPS)</label>
+                        <input
+                          type="number"
+                          value={inputObj.slippage_bps !== undefined ? inputObj.slippage_bps : 50}
+                          onChange={(e) => updateField('slippage_bps', Number(e.target.value))}
+                          placeholder="e.g. 50 (0.5%)"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Polymarket Predictor Form */}
+                  {activeSkill === 'polymarket-pulse' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Gamma API Search Query</label>
+                        <input
+                          type="text"
+                          value={inputObj.query || ''}
+                          onChange={(e) => updateField('query', e.target.value)}
+                          placeholder="e.g. election, fed rate, crypto"
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Fetch Limit</label>
+                        <input
+                          type="number"
+                          value={inputObj.limit !== undefined ? inputObj.limit : 5}
+                          onChange={(e) => updateField('limit', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Sort By</label>
+                        <select
+                          value={inputObj.sort || 'volume'}
+                          onChange={(e) => updateField('sort', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        >
+                          <option value="volume">Volume (Highest)</option>
+                          <option value="liquidity">Liquidity</option>
+                          <option value="recent">Recent</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OpenSea NFT Watch Form */}
+                  {activeSkill === 'nft-floor-watch' && (
+                    <div className="space-y-3.5">
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Collection slug or Contract</label>
+                        <input
+                          type="text"
+                          value={inputObj.collection || ''}
+                          onChange={(e) => updateField('collection', e.target.value)}
+                          placeholder="e.g. pudgy-penguins or 0x..."
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Blockchain Network</label>
+                        <select
+                          value={inputObj.chain || 'ethereum'}
+                          onChange={(e) => updateField('chain', e.target.value)}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        >
+                          <option value="ethereum">Ethereum</option>
+                          <option value="base">Base</option>
+                          <option value="polygon">Polygon (Matic)</option>
+                          <option value="arbitrum">Arbitrum</option>
+                          <option value="optimism">Optimism</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] uppercase tracking-wider text-white/55">Alert Floor Dev Trigger (%)</label>
+                        <input
+                          type="number"
+                          value={inputObj.alert_floor_pct !== undefined ? inputObj.alert_floor_pct : 10}
+                          onChange={(e) => updateField('alert_floor_pct', Number(e.target.value))}
+                          className="w-full border-2 border-black bg-[#1f1f33] px-3 py-2 text-xs text-white focus:border-[var(--giga-accent)] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ADVANCED/FALLBACK RAW JSON EDITOR */
+                <div>
+                  <label className="mb-1.5 block text-[11px] text-white/60">Edit JSON</label>
+                  <textarea
+                    value={draftInput}
+                    onChange={(e) => setDraftInput(e.target.value)}
+                    rows={12}
+                    className="w-full resize-y border-2 border-black bg-[#1f1f33] px-3 py-3 font-mono text-xs leading-relaxed text-emerald-300 placeholder:text-white/20 focus:border-[var(--giga-accent)] focus:outline-none"
+                    spellCheck={false}
+                  />
+                </div>
+              )}
+
               {editError && (
                 <div className="border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
                   {editError}
@@ -758,7 +1239,7 @@ function NodeDetailSheetInner({
         </div>
 
         {/* Footer Actions */}
-        {(activeTab === 'input' || activeTab === 'settings') && workflowId && (
+        {workflowId && (
           <div className="border-t-2 border-black bg-[var(--giga-sidebar)] p-4">
             {editError && (
               <div className="mb-3 border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">

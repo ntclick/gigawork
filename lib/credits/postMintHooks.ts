@@ -19,7 +19,7 @@
 import { eq } from 'drizzle-orm'
 import { encodeFunctionData, getAddress, parseAbi, parseEther, parseUnits, type Hex } from 'viem'
 
-import { adminAccount, adminWallet, publicClient } from '@/lib/chain/client'
+import { adminAccount, publicClient, sendAdminTransaction } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 
@@ -56,7 +56,7 @@ export async function prefundUserWallet(opts: {
   wallet: string
 }): Promise<PrefundResult> {
   if (!PREFUND_ENABLED) return { enabled: false }
-  if (!adminAccount || !adminWallet) {
+  if (!adminAccount) {
     return { enabled: true, skipped: 'admin_unconfigured' }
   }
 
@@ -79,7 +79,7 @@ export async function prefundUserWallet(opts: {
   try {
     const nativeBal = await publicClient.getBalance({ address: target })
     if (nativeBal < nativeAmount / BigInt(2)) {
-      nativeTx = await adminWallet.sendTransaction({ to: target, value: nativeAmount })
+      nativeTx = await sendAdminTransaction({ to: target, value: nativeAmount })
       await publicClient.waitForTransactionReceipt({ hash: nativeTx, confirmations: 1, timeout: 30_000 })
     }
   } catch (e) {
@@ -102,7 +102,7 @@ export async function prefundUserWallet(opts: {
         functionName: 'transfer',
         args: [target, usdcAmount],
       })
-      usdcTx = await adminWallet.sendTransaction({ to: USDC_ADDRESS, data })
+      usdcTx = await sendAdminTransaction({ to: USDC_ADDRESS, data })
       await publicClient.waitForTransactionReceipt({ hash: usdcTx, confirmations: 1, timeout: 30_000 })
     }
   } catch (e) {
