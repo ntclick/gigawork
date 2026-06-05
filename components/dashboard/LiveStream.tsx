@@ -15,12 +15,16 @@ export function LiveStream({
   isPolling,
   onTogglePolling,
 }: LiveStreamProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
 
   useEffect(() => {
-    if (autoScroll && terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    if (autoScroll && containerRef.current) {
+      containerRef.current.scrollTo({
+        top: containerRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
     }
   }, [logs, autoScroll])
 
@@ -76,7 +80,7 @@ export function LiveStream({
       </div>
 
       {/* Terminal Log Console */}
-      <div className="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+      <div ref={containerRef} className="flex-1 p-4 overflow-y-auto font-mono text-xs space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
         {logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-2">
             <AlertCircle className="h-6 w-6 text-slate-650" />

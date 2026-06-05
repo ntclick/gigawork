@@ -275,12 +275,16 @@ export function WorkflowInteraction({
   const { nodes: planNodes, details, hasPlan } = useMemo(() => buildFromMessages(messages), [messages])
   const [consoleMode, setConsoleMode] = useState<'terminal' | 'chat'>('terminal')
   const [showSidebar, setShowSidebar] = useState(true)
+  const terminalContainerRef = useRef<HTMLDivElement>(null)
   const terminalBottomRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll terminal to bottom when messages update
   useEffect(() => {
-    if (consoleMode === 'terminal') {
-      terminalBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (consoleMode === 'terminal' && terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTo({
+        top: terminalContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
     }
   }, [messages, consoleMode])
 
@@ -532,7 +536,7 @@ export function WorkflowInteraction({
             /* RETRO HACKER TERMINAL */
             <div className="h-full overflow-hidden relative crt-vignette">
               <div className="scanline" />
-              <div className="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-cyan-400/90 selection:bg-cyan-500/30 selection:text-white relative z-10">
+              <div ref={terminalContainerRef} className="h-full overflow-y-auto p-4 font-mono text-xs leading-relaxed text-cyan-400/90 selection:bg-cyan-500/30 selection:text-white relative z-10">
                 <div className="space-y-1.5 z-10 relative">
                   {/* Standby Guide Card */}
                   {status === 'planning' && progressStats.completed === 0 && (

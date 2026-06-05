@@ -24,11 +24,17 @@ export function ChatPanel({
 }) {
   const [v, setV] = useState('')
   const [now, setNow] = useState(() => Date.now())
+  const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const busy = status === 'streaming' || status === 'submitted'
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    if (containerRef.current) {
+      containerRef.current.scrollTo({
+        top: containerRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
+    }
   }, [messages])
 
   useEffect(() => {
@@ -70,7 +76,7 @@ export function ChatPanel({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <EmptyState />
         ) : (
