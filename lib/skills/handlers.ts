@@ -28,153 +28,17 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { nodes, skills, users } from '@/lib/db/schema'
 
-function hash(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) h = (h ^ s.charCodeAt(i)) * 16777619
-  return Math.abs(h)
-}
-
-function jitter(seed: string, base: number, pct = 0.15) {
-  const r = (hash(seed) % 1000) / 1000
-  return base * (1 - pct + r * pct * 2)
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
-function compactValue(value: unknown): string {
-  if (value == null) return 'data unavailable'
-  if (typeof value === 'string') return value.length > 180 ? `${value.slice(0, 177)}...` : value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
-  if (typeof value === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>).slice(0, 6)
-    return keys.length > 0 ? keys.join(', ') : 'empty object'
-  }
-  return String(value)
-}
-
-function collectSources(value: unknown, out = new Set<string>()): Set<string> {
-  if (!value || typeof value !== 'object') return out
-  if (Array.isArray(value)) {
-    for (const item of value) collectSources(item, out)
-    return out
-  }
-  const record = value as Record<string, unknown>
-  const sourceFields = ['data_sources', 'sources', 'provider_apis']
-  for (const key of sourceFields) {
-    const raw = record[key]
-    if (Array.isArray(raw)) {
-      for (const source of raw) {
-        if (source) out.add(String(source))
-      }
-    }
-  }
-  for (const nested of Object.values(record)) collectSources(nested, out)
-  return out
-}
-
-function buildDeterministicReport(data: Record<string, unknown>, note?: string): string {
-  const entries = Object.entries(data)
-  if (entries.length === 0) {
-    return [
-      '# Workflow Report',
-      '',
-      '## Verdict',
-      'No upstream agent output was provided, so there is nothing reliable to summarize.',
-      '',
-      '## Next Step',
-      'Re-run the workflow with at least one research agent before composing the final report.',
-    ].join('\n')
-  }
-
-  const failed = entries.filter(([, value]) => {
-    const record = value as Record<string, unknown> | null
-    return !!record && typeof record === 'object' && ('error' in record || record.fallback === true)
-  })
-  const sources = [...collectSources(data)]
-  const generatedAt = new Date().toISOString()
-
-  const sections = entries.map(([key, value]) => {
-    const record = value as Record<string, unknown> | null
-    const lines = [`### ${key}`]
-    if (!record || typeof record !== 'object') {
-      lines.push(`- Result: ${compactValue(value)}`)
-      return lines.join('\n')
-    }
-
-    if (record.error) lines.push(`- Status: failed (${compactValue(record.error)})`)
-    else lines.push('- Status: completed')
-
-    const preferred = [
-      'summary',
-      'verdict',
-      'risk_score',
-      'reasoning',
-      'price',
-      'price_usd',
-      'price_change_24h_pct',
-      'market_cap_usd',
-      'liquidity_usd',
-      'volume_24h_usd',
-      'rsi_14',
-      'macd_histogram',
-      'signal',
-      'sentiment',
-    ]
-    let used = 0
-    for (const field of preferred) {
-      if (record[field] != null && used < 6) {
-        lines.push(`- ${field}: ${compactValue(record[field])}`)
-        used++
-      }
-    }
-    if (used === 0) {
-      for (const [field, fieldValue] of Object.entries(record).slice(0, 6)) {
-        if (field === 'generated_at') continue
-        lines.push(`- ${field}: ${compactValue(fieldValue)}`)
-      }
-    }
-    return lines.join('\n')
-  })
-
-  const health =
-    failed.length === 0
-      ? 'All upstream agents returned usable output.'
-      : `${failed.length} upstream agent${failed.length === 1 ? '' : 's'} returned an error or fallback output.`
-
-  return [
-    '# Workflow Report',
-    '',
-    '## Executive Summary',
-    note ? `- User objective: ${note}` : '- User objective: derived from the workflow prompt.',
-    `- Agent coverage: ${entries.length} step${entries.length === 1 ? '' : 's'} processed.`,
-    `- Data health: ${health}`,
-    '',
-    '## Evidence',
-    ...sections,
-    '',
-    '## Sources',
-    sources.length > 0 ? sources.map((source) => `- ${source}`).join('\n') : '- No source list was returned by upstream agents.',
-    '',
-    '## Recommended Next Step',
-    failed.length > 0
-      ? '- Re-run failed steps, then regenerate the report before using this result for decisions.'
-      : '- Review the evidence rows above and use the raw JSON if you need exact machine-readable values.',
-    '',
-    `Generated at: ${generatedAt}`,
-  ].join('\n')
-}
-
-function sanitizeReportMarkdown(markdown: string): string {
-  return markdown
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
-    .replace(/[\uFE0E\uFE0F\u200B-\u200D]/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{4,}/g, '\n\n\n')
-    .trim()
-}
+import {
+  jitter,
+  round2,
+  compactValue,
+  collectSources,
+  buildDeterministicReport,
+  sanitizeReportMarkdown,
+} from './bundles/reportUtils'
+import { createMarketDataBundleHandler } from './bundles/marketDataBundle'
+import { createSocialLiteBundleHandler } from './bundles/socialLiteBundle'
+import { reportComposerFastHandler } from './bundles/reportComposerFast'
 
 /** Parse a value that may already be string[] or a JSON-encoded string of array.
  *  Polymarket Gamma returns outcomes/outcomePrices as JSON strings. */
@@ -715,6 +579,9 @@ export const SKILLS: Record<string, SkillHandler> = {
 
   // Provider: Kimi (Moonshot AI, OpenAI-compatible). Real synthesis.
   'report-composer': async (input) => {
+    if (input.fast === true) {
+      return reportComposerFastHandler(input)
+    }
     const data = (input.data as Record<string, unknown> | undefined) ?? {}
     const tone = (input.tone as string | undefined) ?? 'casual'
     const format = (input.format as string | undefined) ?? 'markdown'
@@ -1951,4 +1818,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       }
     }
   },
+  'market-data-bundle': createMarketDataBundleHandler((name) => SKILLS[name]),
+  'social-lite-bundle': createSocialLiteBundleHandler((name) => SKILLS[name]),
+  'report-composer-fast': reportComposerFastHandler,
 }
