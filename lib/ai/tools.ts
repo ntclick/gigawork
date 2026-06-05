@@ -179,7 +179,7 @@ export function buildBrainTools(ctx: BrainContext) {
 
   const planWorkflow = tool({
     description:
-      'Plan the workflow nodes from the user prompt. Call ONCE at the start. Each node has id (slug), label (human title), skill_name (must match a registered skill), and depends_on (array of node ids that must finish first).',
+      'Plan the workflow nodes from the user prompt. Call ONCE at the start. Each node has id (slug), label (human title), skill_name (must match a registered skill), depends_on (array of node ids that must finish first), and optional input arguments.',
     inputSchema: z.object({
       nodes: z
         .array(
@@ -188,6 +188,7 @@ export function buildBrainTools(ctx: BrainContext) {
             label: z.string().min(1),
             skill_name: z.string().min(1),
             depends_on: z.array(z.string()).default([]),
+            input: z.record(z.string(), z.unknown()).optional().describe('JSON input arguments for this node (e.g. {"token_address": "0x...", "chain": "ethereum"})'),
           }),
         )
         .min(1),
@@ -215,7 +216,7 @@ export function buildBrainTools(ctx: BrainContext) {
           }
         }
         const existingNodes = await db
-          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn, skillName: skills.name })
+          .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn, skillName: skills.name, input: nodes.input })
           .from(nodes)
           .leftJoin(skills, eq(nodes.skillId, skills.id))
           .where(eq(nodes.workflowId, workflowId))
@@ -230,12 +231,13 @@ export function buildBrainTools(ctx: BrainContext) {
             label: n.label,
             skill_name: n.skillName ?? 'unknown-skill',
             depends_on: n.dependsOn ?? [],
+            input: n.input ?? {},
           })),
         }
       }
 
       const existingNodes = await db
-        .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn, skillName: skills.name })
+        .select({ id: nodes.id, label: nodes.label, dependsOn: nodes.dependsOn, skillName: skills.name, input: nodes.input })
         .from(nodes)
         .leftJoin(skills, eq(nodes.skillId, skills.id))
         .where(eq(nodes.workflowId, workflowId))
@@ -252,6 +254,7 @@ export function buildBrainTools(ctx: BrainContext) {
             label: n.label,
             skill_name: n.skillName ?? 'unknown-skill',
             depends_on: n.dependsOn ?? [],
+            input: n.input ?? {},
           })),
         }
       }
@@ -280,6 +283,7 @@ export function buildBrainTools(ctx: BrainContext) {
         skillId: byName.get(p.skill_name)?.id ?? null,
         status: 'pending',
         dependsOn: p.depends_on,
+        input: p.input ?? {},
       }))
 
       const inserted = await db.insert(nodes).values(rows).returning()
@@ -295,6 +299,7 @@ export function buildBrainTools(ctx: BrainContext) {
           label: n.label,
           skill_name: planned[i].skill_name,
           depends_on: planned[i].depends_on,
+          input: n.input ?? {},
         })),
       }
 

@@ -439,6 +439,83 @@ const SEED = [
       ],
     },
   },
+  {
+    name: 'market-data-bundle',
+    manifest: {
+      schema_version: '1',
+      skill_id: 'market-data-bundle',
+      agent_id: 'market-data-bundle-agent',
+      display_name: 'Market Data Bundle',
+      category: 'research',
+      best_for_keywords: ['crypto', 'token', 'defi', 'blockchain', 'solana', 'ethereum', 'base'],
+      description: 'Parallelized bundle of price scanner, DeFi yields APY checks, Binance technical indicators, and Polymarket odds.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          token_address: { type: 'string' },
+          chain: { type: 'string' },
+          symbol: { type: 'string' },
+          timeframe: { type: 'string' },
+          market_slug: { type: 'string' },
+          query: { type: 'string' },
+        },
+      },
+      pricing_note: '0.15 USDC per snapshot · ~12s max',
+      cost_credits: 15,
+      owner_wallet: OWNER_WALLET,
+      tools_available: [],
+      provider_apis: [],
+    },
+  },
+  {
+    name: 'social-lite-bundle',
+    manifest: {
+      schema_version: '1',
+      skill_id: 'social-lite-bundle',
+      agent_id: 'social-lite-bundle-agent',
+      display_name: 'Social Lite Sentiment Bundle',
+      category: 'research',
+      best_for_keywords: ['sentiment', 'social', 'buzz', 'twitter', 'x', 'telegram', 'reddit', 'mood'],
+      description: 'Quick social sentiment checking utilizing Reddit sentiment, deferring slow channels by default.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string' },
+          window_hours: { type: 'integer' },
+        },
+      },
+      pricing_note: '0.08 USDC per snapshot · ~8s max',
+      cost_credits: 8,
+      owner_wallet: OWNER_WALLET,
+      tools_available: [],
+      provider_apis: [],
+    },
+  },
+  {
+    name: 'report-composer-fast',
+    manifest: {
+      schema_version: '1',
+      skill_id: 'report-composer-fast',
+      agent_id: 'report-composer-fast-agent',
+      display_name: 'AI Report Composer Fast',
+      category: 'research',
+      best_for_keywords: ['report', 'summary', 'email', 'digest', 'newsletter', 'brief'],
+      description: 'Rapid LLM report composer with timeout constraints and deterministic markdown fallbacks.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          data: { type: 'object' },
+          tone: { type: 'string' },
+          format: { type: 'string' },
+        },
+      },
+      pricing_note: '0.10 USDC per snapshot · ~8s max',
+      cost_credits: 10,
+      owner_wallet: OWNER_WALLET,
+      tools_available: [],
+      provider_apis: [],
+    },
+  },
 ] as const
 
 async function main() {
