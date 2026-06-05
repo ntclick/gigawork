@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 
-import { ERC8183_ENABLED, settleJob } from '@/lib/chain/agenticCommerce'
+import { settleJob } from '@/lib/chain/agenticCommerce'
 import { incrementReputationBatch } from '@/lib/chain/reputation'
 import { attestWorkflowCompletion } from '@/lib/chain/validation'
 import { db } from '@/lib/db/client'
@@ -66,21 +66,6 @@ export async function publishFinalReport({
     return { ok: true }
   }
 
-  await db
-    .update(workflows)
-    .set({ status: ERC8183_ENABLED ? 'settling' : 'completed' })
-    .where(eq(workflows.id, workflowId))
-
-  if (ERC8183_ENABLED) {
-    // Settlement is best-effort — if it fails (e.g. job was never funded,
-    // or RPC times out) we still save the report and mark completed.
-    // The settlement trail in the UI will show the failure reason.
-    await settleWorkflowJob(workflowId, finalMarkdown)
-  }
-
-  // Always cache reputation (updates DB scores and attempts on-chain feedback)
-  await cacheReputation(workflowId, userId)
-
   await db.insert(messages).values({
     workflowId,
     role: 'brain',
@@ -92,6 +77,10 @@ export async function publishFinalReport({
     .update(workflows)
     .set({ status: 'completed' })
     .where(eq(workflows.id, workflowId))
+
+  // Enqueue background chain settlement jobs
+  const { enqueueWorkflowSettlementJobs } = await import('@/lib/chain/jobs')
+  await enqueueWorkflowSettlementJobs(workflowId, finalMarkdown, userId)
 
   // Send a brief notification to user's saved Telegram bot upon successful deployment (completion)
   sendTelegramNotification(workflowId, userId, finalMarkdown).catch((e) => {
@@ -133,8 +122,13 @@ async function sendTelegramNotification(workflowId: string, userId: string | nul
     // Auto-detect chat_id from getUpdates if not provided
     if (!chatId) {
       try {
+        interface TelegramUpdate {
+          message?: { chat?: { id?: number } }
+          edited_message?: { chat?: { id?: number } }
+          callback_query?: { message?: { chat?: { id?: number } } }
+        }
         const updatesUrl = `https://api.telegram.org/bot${token}/getUpdates`
-        const updatesRes = await curlFetchJSON<{ ok: boolean; result?: any[] }>(updatesUrl, {
+        const updatesRes = await curlFetchJSON<{ ok: boolean; result?: TelegramUpdate[] }>(updatesUrl, {
           method: 'GET',
           timeoutMs: 5000,
         })
@@ -212,7 +206,7 @@ async function sendTelegramNotification(workflowId: string, userId: string | nul
   }
 }
 
-async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
+export async function settleWorkflowJob(workflowId: string, finalMarkdown: string) {
   const [wf] = await db
     .select()
     .from(workflows)
@@ -283,6 +277,19 @@ export async function failWorkflow(
     .set({ status: 'failed' })
     .where(eq(workflows.id, workflowId))
 
+  const { enqueueChainJob } = await import('@/lib/chain/jobs')
+  await enqueueChainJob({
+    workflowId,
+    kind: 'erc8004_feedback',
+    idempotencyKey: `erc8004_feedback:${workflowId}`,
+    payload: { userId, outcome: 'failed' },
+  })
+}
+
+export async function processFailedReputation(
+  workflowId: string,
+  userId: string | null,
+): Promise<void> {
   const existing = await db
     .select({ id: messages.id })
     .from(messages)
@@ -357,7 +364,7 @@ export async function failWorkflow(
   }
 }
 
-async function cacheReputation(workflowId: string, userId: string | null) {
+export async function cacheReputation(workflowId: string, userId: string | null) {
   const existing = await db
     .select({ id: messages.id })
     .from(messages)

@@ -347,7 +347,7 @@ async function executeSingleNodeParallel(opts: {
   // 6. Execute the skill call
   try {
     const output = await withTimeout(skill.name, timeoutLimit, async () => {
-      return (await callSkillEndpoint(skill, { ...inputParams, workflowId })) as Record<string, unknown>
+      return (await callSkillEndpoint(skill, inputParams, { workflowId, nodeId })) as Record<string, unknown>
     })
 
     const completedAt = new Date()

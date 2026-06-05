@@ -94,6 +94,10 @@ export const nodes = pgTable('nodes', {
   status: text('status').default('pending').notNull(),
   output: jsonb('output'),
   dependsOn: text('depends_on').array(),
+  input: jsonb('input'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  timing: jsonb('timing'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -167,3 +171,20 @@ export type Raffle = typeof raffles.$inferSelect
 export type NewRaffle = typeof raffles.$inferInsert
 export type RaffleWinner = typeof raffleWinners.$inferSelect
 export type NewRaffleWinner = typeof raffleWinners.$inferInsert
+
+export const chainJobs = pgTable('chain_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workflowId: uuid('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }).notNull(),
+  kind: text('kind').notNull(),
+  status: text('status').default('pending').notNull(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  payload: jsonb('payload').notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  lastError: text('last_error'),
+  txHash: text('tx_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export type ChainJob = typeof chainJobs.$inferSelect
+export type NewChainJob = typeof chainJobs.$inferInsert
