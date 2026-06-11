@@ -36,7 +36,6 @@ import {
   validatorAccount,
   pollingClient,
   publicClient,
-  sendAdminTransaction,
   sendProviderTransaction,
   sendValidatorTransaction,
 } from './client'
@@ -105,7 +104,6 @@ async function attestOne(
   }
 
   const requester = getAddress(providerAccount.address).toLowerCase()
-  const reviewer = getAddress(validatorAccount.address).toLowerCase()
 
   // Confirm provider actually owns this agentId — required for the
   // ownership-gated `validationRequest`. If the user owns it, we skip.

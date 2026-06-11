@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Calendar, CheckCircle2, Clock, Loader2, X } from 'lucide-react'
+import { CheckCircle2, Clock, Loader2, X } from 'lucide-react'
 
 type DeployModalProps = {
   isOpen: boolean
@@ -18,18 +18,18 @@ const CRON_OPTIONS = [
   { label: 'Daily', value: '0 0 * * *', description: 'End-of-day reports' },
 ]
 
+const progressSteps = [
+  'Analyzing workflow nodes and triggers...',
+  'Securing escrow sandbox environment...',
+  'Registering cron task with Hermes...',
+  'Finalizing deployment...'
+]
+
 export function DeployModal({ isOpen, onClose, workflowId, workflowTitle }: DeployModalProps) {
   const [selectedCron, setSelectedCron] = useState('*/30 * * * *')
   const [step, setStep] = useState<'config' | 'deploying' | 'success' | 'error'>('config')
   const [currentProgressStep, setCurrentProgressStep] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
-
-  const progressSteps = [
-    'Analyzing workflow nodes and triggers...',
-    'Securing escrow sandbox environment...',
-    'Registering cron task with Hermes...',
-    'Finalizing deployment...'
-  ]
 
   // Simulate deployment progress
   useEffect(() => {

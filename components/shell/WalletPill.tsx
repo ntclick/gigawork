@@ -142,7 +142,10 @@ export function WalletPill() {
   }, [ready, authenticated, user?.id, activeAddr])
 
   useEffect(() => {
-    refresh()
+    const t = setTimeout(() => {
+      refresh()
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
 
   useEffect(() => {

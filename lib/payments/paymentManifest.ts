@@ -92,6 +92,8 @@ export async function createPaymentHeader(args: {
   const paymentHeaderPayload = {
     scheme: 'exact',
     network: `eip155:${chainId}`,
+    workflowId: args.workflowId,
+    nodeId: args.nodeId,
     payload: {
       authorization: {
         from: buyerAccount.address,

@@ -14,7 +14,7 @@
 import { config as loadEnv } from 'dotenv'
 loadEnv({ path: '.env.local' })
 
-import { decodeEventLog, parseAbi, type Hex } from 'viem'
+import { decodeEventLog, parseAbi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { createPublicClient, createWalletClient, defineChain, http } from 'viem'
 import postgres from 'postgres'
@@ -37,7 +37,6 @@ if (!ADMIN_PK) throw new Error('ADMIN_PRIVATE_KEY missing')
 const REGISTRY = (process.env.IDENTITY_REGISTRY_ADDRESS ??
   '0x8004A818BFB912233c491871b3d84c89A494BD9e') as `0x${string}`
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
 // ─── viem setup ────────────────────────────────────────────────

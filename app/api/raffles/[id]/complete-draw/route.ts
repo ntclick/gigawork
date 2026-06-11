@@ -60,11 +60,11 @@ export async function POST(
             topics: log.topics,
           })
           if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
-            const args = decoded.args as any
-            finalOnChainRaffleId = Number(args.raffleId)
+            const args = decoded.args as { raffleId?: bigint }
+            finalOnChainRaffleId = Number(args.raffleId ?? BigInt(0))
             break
           }
-        } catch (e) {
+        } catch {
           // skip log
         }
       }

@@ -30,7 +30,7 @@ import { config as loadEnv } from 'dotenv'
 loadEnv({ path: '.env.local' })
 loadEnv({ path: '.env' })
 
-import { parseAbi, type Hex } from 'viem'
+import { parseAbi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { createPublicClient, createWalletClient, defineChain, http } from 'viem'
 import postgres from 'postgres'

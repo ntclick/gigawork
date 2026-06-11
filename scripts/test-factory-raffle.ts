@@ -79,11 +79,11 @@ async function main() {
         topics: log.topics,
       })
       if (decoded.eventName === 'RaffleCreated' && decoded.args) {
-        const args = decoded.args as any
+        const args = decoded.args as { raffleAddress?: `0x${string}` }
         deployedRaffleAddress = args.raffleAddress as `0x${string}`
         break
       }
-    } catch (e) {
+    } catch {
       // skip non-matching logs
     }
   }

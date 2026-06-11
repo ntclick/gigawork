@@ -7,6 +7,7 @@ import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
+import { emitWorkflowEvent } from '@/lib/workflow/events'
 
 export type BrainContext = { workflowId: string; userId: string | null }
 
@@ -289,7 +290,7 @@ export function buildBrainTools(ctx: BrainContext) {
       const inserted = await db.insert(nodes).values(rows).returning()
       await db
         .update(workflows)
-        .set({ status: 'running' })
+        .set({ status: 'planning' })
         .where(eq(workflows.id, workflowId))
 
       const out = {
@@ -311,6 +312,27 @@ export function buildBrainTools(ctx: BrainContext) {
         toolPayload: { input: { nodes: planned }, output: out },
         content: null,
       })
+
+      await emitWorkflowEvent({
+        workflowId,
+        type: 'workflow.planned',
+        status: 'planning',
+        message: `Planned ${inserted.length} workflow node${inserted.length === 1 ? '' : 's'}`,
+        payload: { nodeCount: inserted.length },
+      })
+      await Promise.all(inserted.map((n, i) => emitWorkflowEvent({
+        workflowId,
+        nodeId: n.id,
+        skillName: planned[i]?.skill_name ?? null,
+        type: 'node.queued',
+        status: 'pending',
+        message: `${n.label} queued`,
+        payload: {
+          planId: planned[i]?.id,
+          label: n.label,
+          dependsOn: planned[i]?.depends_on ?? [],
+        },
+      })))
 
       return out
     },
@@ -385,6 +407,15 @@ export function buildBrainTools(ctx: BrainContext) {
           .update(nodes)
           .set({ status: 'failed', output: { error: `unknown skill ${skill_name}` } })
           .where(eq(nodes.id, node_id))
+        await emitWorkflowEvent({
+          workflowId,
+          nodeId: node_id,
+          skillName: skill_name,
+          type: 'node.failed',
+          status: 'failed',
+          message: `Unknown skill ${skill_name}`,
+          payload: { error: `unknown skill ${skill_name}` },
+        })
         return { ok: false, error: `unknown skill ${skill_name}` }
       }
 
@@ -416,9 +447,24 @@ export function buildBrainTools(ctx: BrainContext) {
         }
       }
 
+      const workflowStarted = await db
+        .update(workflows)
+        .set({ status: 'running' })
+        .where(and(eq(workflows.id, workflowId), eq(workflows.status, 'planning')))
+        .returning({ id: workflows.id })
+      if (workflowStarted.length > 0) {
+        await emitWorkflowEvent({
+          workflowId,
+          type: 'workflow.execution_started',
+          status: 'running',
+          message: 'Workflow execution started',
+        })
+      }
+
+      const startedAt = new Date()
       const claimedNode = await db
         .update(nodes)
-        .set({ status: 'running' })
+        .set({ status: 'running', startedAt })
         .where(and(eq(nodes.id, node_id), eq(nodes.workflowId, workflowId), inArray(nodes.status, ['pending', 'failed'])))
         .returning({ id: nodes.id })
       if (claimedNode.length === 0) {
@@ -437,8 +483,19 @@ export function buildBrainTools(ctx: BrainContext) {
         }
       }
 
+      await emitWorkflowEvent({
+        workflowId,
+        nodeId: node_id,
+        skillName: skill_name,
+        agentId: skill.agentTokenId ?? null,
+        type: 'node.started',
+        status: 'running',
+        message: `${skill_name} started`,
+        payload: { inputKeys: Object.keys(input).sort() },
+      })
+
       // ─── Inject user profile for notification skills ─────────────
-      // The brain never sees the user's email, chat_id, or bot_token.
+
       // We pull from users.notify_email / .telegram_chat_id / .telegram_bot_token
       // and inject right before the HTTP call. Explicit values in the
       // brain's input still win (so per-workflow overrides work).
@@ -491,10 +548,26 @@ export function buildBrainTools(ctx: BrainContext) {
           })
         } catch (err) {
           if (err instanceof InsufficientCreditsError) {
+            const completedAt = new Date()
             await db
               .update(nodes)
-              .set({ status: 'failed', output: { error: 'insufficient_credits', need: cost, have: err.have } })
+              .set({
+                status: 'failed',
+                completedAt,
+                timing: { durationMs: completedAt.getTime() - startedAt.getTime() },
+                output: { error: 'insufficient_credits', need: cost, have: err.have },
+              })
               .where(eq(nodes.id, node_id))
+            await emitWorkflowEvent({
+              workflowId,
+              nodeId: node_id,
+              skillName: skill_name,
+              agentId: skill.agentTokenId ?? null,
+              type: 'node.failed',
+              status: 'failed',
+              message: `Insufficient credits to run ${skill_name}`,
+              payload: { error: 'insufficient_credits', need: cost, have: err.have },
+            })
             return {
               ok: false,
               error: 'insufficient_credits',
@@ -509,11 +582,28 @@ export function buildBrainTools(ctx: BrainContext) {
       }
 
       try {
+        await emitWorkflowEvent({
+          workflowId,
+          nodeId: node_id,
+          skillName: skill_name,
+          agentId: skill.agentTokenId ?? null,
+          type: 'node.tool_call_started',
+          status: 'running',
+          message: `${skill_name} tool call started`,
+          payload: { inputKeys: Object.keys(input).sort() },
+        })
+
         const output = (await callSkillEndpoint(skill, { ...input, workflowId })) as Record<string, unknown>
+        const completedAt = new Date()
 
         await db
           .update(nodes)
-          .set({ status: 'completed', output })
+          .set({
+            status: 'completed',
+            completedAt,
+            timing: { durationMs: completedAt.getTime() - startedAt.getTime() },
+            output,
+          })
           .where(eq(nodes.id, node_id))
 
         // Redact sensitive fields before persisting to message log.
@@ -541,6 +631,27 @@ export function buildBrainTools(ctx: BrainContext) {
           content: null,
         })
 
+        await emitWorkflowEvent({
+          workflowId,
+          nodeId: node_id,
+          skillName: skill_name,
+          agentId: skill.agentTokenId ?? null,
+          type: 'node.tool_call_completed',
+          status: 'completed',
+          message: `${skill_name} tool call completed`,
+          payload: { outputKeys: Object.keys(output ?? {}).sort() },
+        })
+        await emitWorkflowEvent({
+          workflowId,
+          nodeId: node_id,
+          skillName: skill_name,
+          agentId: skill.agentTokenId ?? null,
+          type: 'node.completed',
+          status: 'completed',
+          message: `${skill_name} completed`,
+          payload: { durationMs: completedAt.getTime() - startedAt.getTime() },
+        })
+
         await autoPublishIfWorkflowReady(workflowId, userId)
 
         return {
@@ -551,9 +662,15 @@ export function buildBrainTools(ctx: BrainContext) {
         }
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err)
+        const completedAt = new Date()
         await db
           .update(nodes)
-          .set({ status: 'failed', output: { error } })
+          .set({
+            status: 'failed',
+            completedAt,
+            timing: { durationMs: completedAt.getTime() - startedAt.getTime() },
+            output: { error },
+          })
           .where(eq(nodes.id, node_id))
         // Persist failed dispatch as a message so debug-workflow shows it
         // and the brain sees clear evidence the skill was attempted.
@@ -564,6 +681,16 @@ export function buildBrainTools(ctx: BrainContext) {
           toolName: 'dispatchSkill',
           toolPayload: { skill_name, input, error, ok: false },
           content: null,
+        })
+        await emitWorkflowEvent({
+          workflowId,
+          nodeId: node_id,
+          skillName: skill_name,
+          agentId: skill.agentTokenId ?? null,
+          type: 'node.failed',
+          status: 'failed',
+          message: `${skill_name} failed: ${error}`,
+          payload: { error, durationMs: completedAt.getTime() - startedAt.getTime() },
         })
         return { ok: false, node_id, skill_name, error }
       }

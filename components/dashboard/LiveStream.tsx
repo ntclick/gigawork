@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Terminal, RefreshCw, AlertCircle, Play, Sparkles } from 'lucide-react'
+import { Terminal, AlertCircle, Play } from 'lucide-react'
 import { RequestLog } from '@/lib/chain/nanopayments'
 
 interface LiveStreamProps {

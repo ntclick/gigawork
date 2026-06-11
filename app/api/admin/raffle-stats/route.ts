@@ -6,7 +6,7 @@ import { OrbitportSDK } from '@spacecomputer-io/orbitport-sdk-ts'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     // 1. Calculate General Aggregated Stats
     const totalRafflesRes = await db.select({ count: sql<number>`count(*)::int` }).from(raffles)

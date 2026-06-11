@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { isToolUIPart, type UIMessage } from 'ai'
 import { X } from 'lucide-react'
 
@@ -11,7 +11,7 @@ import { ThinkingSteps, type ThinkStep } from './ThinkingSteps'
 import { UserMessage } from './UserMessage'
 import { useUI } from '../shell/UIShell'
 
-export function ChatPanel({
+export const ChatPanel = React.memo(function ChatPanel({
   messages,
   status,
   onSend,
@@ -228,7 +228,7 @@ export function ChatPanel({
       )}
     </>
   )
-}
+})
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; tone: string; pulse: boolean }> = {
@@ -250,7 +250,7 @@ function EmptyState() {
   return (
     <div className="mt-8 flex flex-col items-center text-center text-xs text-white/40">
       <div className="mb-3 h-12 w-12 rounded-full border border-white/10 bg-white/[0.02]" />
-      Brain sẵn sàng. Đang chờ workflow đầu tiên…
+      Brain ready. Awaiting first workflow...
     </div>
   )
 }
@@ -273,25 +273,25 @@ function buildThinkingSteps(messages: UIMessage[], busy: boolean): ThinkStep[] {
 
   steps.push({
     id: 'understand',
-    label: 'Hiểu yêu cầu',
+    label: 'Understand request',
     status: 'done',
   })
   steps.push({
     id: 'plan',
-    label: 'Lên kế hoạch workflow',
-    detail: hasPlan ? undefined : 'đang chạy…',
+    label: 'Plan workflow',
+    detail: hasPlan ? undefined : 'planning...',
     status: hasPlan ? 'done' : 'running',
   })
   if (hasPlan) {
     steps.push({
       id: 'dispatch',
-      label: 'Gửi tới skill agents',
-      detail: `${dispatchCount} skill đã chạy`,
+      label: 'Dispatching to skill agents',
+      detail: `${dispatchCount} skill agents dispatched`,
       status: finalized ? 'done' : 'running',
     })
   }
   if (finalized) {
-    steps.push({ id: 'final', label: 'Tổng hợp báo cáo', status: 'done' })
+    steps.push({ id: 'final', label: 'Summarizing report', status: 'done' })
   }
 
   return busy || !finalized ? steps : []

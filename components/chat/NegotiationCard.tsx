@@ -1,8 +1,10 @@
-import { CheckCircle2, Loader2, Send, XCircle, Zap } from 'lucide-react'
+import React from 'react'
+import { CheckCircle2, Loader2, Send, XCircle } from 'lucide-react'
+import { getEndpointConfig } from '@/lib/nanopayments/config'
 
 type State = 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
 
-export function NegotiationCard({
+export const NegotiationCard = React.memo(function NegotiationCard({
   state,
   skillName,
   input,
@@ -30,17 +32,20 @@ export function NegotiationCard({
     return `0x${hex.slice(0, 4)}...${hex.slice(-4)}`
   })()
 
+  // Get actual USDC price from config
+  const price = skillName ? (getEndpointConfig(skillName)?.priceUsdc ?? '—') : '—'
+
   const tone = failed
-    ? 'border-red-500/20 bg-gradient-to-br from-red-500/8 to-red-500/[0.02]'
+    ? 'border-red-500/30 bg-red-500/5 text-red-200'
     : running
-      ? 'border-cyan-400/35 bg-gradient-to-br from-cyan-400/8 to-cyan-400/[0.02] gw-breathe'
-      : 'border-emerald-500/20 bg-gradient-to-br from-emerald-500/6 to-emerald-500/[0.02]'
+      ? 'border-cyan-400/30 bg-cyan-400/5 text-cyan-200'
+      : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-200'
 
   const label = failed 
-    ? 'Tác vụ thất bại' 
+    ? 'Task failed' 
     : running 
-      ? 'Đang ký quỹ & Kích hoạt' 
-      : 'Nghiệm thu hoàn tất'
+      ? 'Escrow locked & Activated' 
+      : 'Verification complete'
       
   const Icon = failed ? XCircle : running ? Loader2 : CheckCircle2
   const iconClass = failed
@@ -76,7 +81,7 @@ export function NegotiationCard({
       {input && Object.keys(input).length > 0 && (
         <details className="mt-2.5 group">
           <summary className="cursor-pointer text-[9px] uppercase tracking-widest text-white/40 hover:text-white/70 select-none">
-            [+] Dữ liệu đầu vào (Input)
+            [+] Input Data
           </summary>
           <pre className="mt-1.5 overflow-x-auto rounded-lg bg-black/40 p-2.5 text-[10px] leading-relaxed text-white/55 border border-white/5 font-mono">
             {JSON.stringify(input, null, 2)}
@@ -87,7 +92,7 @@ export function NegotiationCard({
       {output?.output != null && (
         <details className="mt-2 group" open={done}>
           <summary className="cursor-pointer text-[9px] uppercase tracking-widest text-white/40 hover:text-white/70 select-none">
-            [+] Kết quả đầu ra (Output)
+            [+] Output Data
           </summary>
           <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-black/40 p-2.5 text-[10px] leading-relaxed text-white/65 border border-white/5 font-mono">
             {JSON.stringify(output.output, null, 2)}
@@ -101,16 +106,16 @@ export function NegotiationCard({
         </div>
       )}
 
-      {/* USDC Escrow Flow indicators (ERC-8183 bảo chứng) */}
+      {/* USDC Escrow Flow indicators (ERC-8183 escrow) */}
       <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between font-mono text-[9px] select-none">
         <div className="flex items-center gap-1.5">
-          <span className="text-white/40">Bảo chứng:</span>
+          <span className="text-white/40">Escrow:</span>
           <span className={`font-extrabold tracking-wide ${done ? 'text-emerald-400' : failed ? 'text-red-400' : 'text-cyan-300'}`}>
-            0.20 USDC {done ? '✓ (Released)' : failed ? '🔓 (Refunded)' : '🔒 (Locked)'}
+            {price !== '—' ? `${price} USDC` : '—'} {done ? '✓ (Released)' : failed ? '🔓 (Refunded)' : '🔒 (Locked)'}
           </span>
         </div>
         <span className="text-[8px] text-white/30 uppercase tracking-widest">ERC-8183 Escrow</span>
       </div>
     </div>
   )
-}
+})

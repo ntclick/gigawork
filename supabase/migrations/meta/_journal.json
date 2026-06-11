@@ -29,6 +29,20 @@
       "when": 1779507752801,
       "tag": "0003_pink_major_mapleleaf",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781060932173,
+      "tag": "0004_glorious_thunderbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781189500060,
+      "tag": "0005_add_workflow_events",
+      "breakpoints": true
     }
   ]
 }

@@ -15,7 +15,7 @@ async function run() {
     WHERE table_schema = 'public' AND table_name = 'users'
     ORDER BY ordinal_position
   `
-  console.log('Current public.users columns:', cols.map((c: any) => c.column_name).join(', '))
+  console.log('Current public.users columns:', cols.map((c) => (c as { column_name: string }).column_name).join(', '))
 
   const missingCols = [
     'prefunded_at timestamptz',
@@ -31,8 +31,8 @@ async function run() {
     try {
       await sql.unsafe(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS ${col}`)
       console.log(`✅ Added: ${name}`)
-    } catch (e: any) {
-      console.log(`⚠️  ${name}: ${e.message || 'already exists or error'}`)
+    } catch (e) {
+      console.log(`⚠️  ${name}: ${(e as Error).message || 'already exists or error'}`)
     }
   }
 
@@ -43,7 +43,7 @@ async function run() {
     WHERE table_schema = 'public' AND table_name = 'workflows'
     ORDER BY ordinal_position
   `
-  console.log('\nCurrent public.workflows columns:', wfCols.map((c: any) => c.column_name).join(', '))
+  console.log('\nCurrent public.workflows columns:', wfCols.map((c) => (c as { column_name: string }).column_name).join(', '))
 
   const missingWfCols = [
     'erc8183_set_budget_tx text',
@@ -54,8 +54,8 @@ async function run() {
     try {
       await sql.unsafe(`ALTER TABLE public.workflows ADD COLUMN IF NOT EXISTS ${col}`)
       console.log(`✅ Added: workflows.${name}`)
-    } catch (e: any) {
-      console.log(`⚠️  workflows.${name}: ${e.message}`)
+    } catch (e) {
+      console.log(`⚠️  workflows.${name}: ${(e as Error).message}`)
     }
   }
 

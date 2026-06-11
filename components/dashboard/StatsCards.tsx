@@ -1,5 +1,5 @@
 import React from 'react'
-import { Coins, Zap, Users, ShieldCheck, ArrowUpRight } from 'lucide-react'
+import { Coins, Zap, Users, ShieldCheck } from 'lucide-react'
 
 interface StatsCardsProps {
   totalRevenueUsdc: number

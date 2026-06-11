@@ -1,8 +1,4 @@
 import { cookies } from 'next/headers'
-import { eq } from 'drizzle-orm'
-
-import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
 import { getOrCreateUser, getOrCreateUserByPrivy } from '@/lib/credits/service'
 import type { User } from '@/lib/db/schema'
 

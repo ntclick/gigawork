@@ -8,7 +8,6 @@ import {
   claimRefundJob,
   ERC8183_ENABLED,
 } from '@/lib/chain/agenticCommerce'
-import { publicClient } from '@/lib/chain/client'
 
 export async function POST(req: Request) {
   // Guard the endpoint with the admin/migration token
@@ -166,7 +165,8 @@ export async function POST(req: Request) {
           }
           continue
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
         console.error(
           `[Escrow Cleanup Cron] Error processing workflow ${wf.id} (job ${jobId}):`,
           err
@@ -174,14 +174,15 @@ export async function POST(req: Request) {
         errors.push({
           workflowId: wf.id,
           jobId,
-          error: err.message || String(err),
+          error: errorMsg,
         })
       }
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const errorMsg = e instanceof Error ? e.message : String(e)
     console.error('[Escrow Cleanup Cron] Core error:', e)
     return NextResponse.json(
-      { ok: false, error: e.message || String(e) },
+      { ok: false, error: errorMsg },
       { status: 500 }
     )
   }

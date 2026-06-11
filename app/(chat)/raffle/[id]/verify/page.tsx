@@ -9,7 +9,7 @@ import { seedToBytes32 } from '@/lib/cosmic-raffle/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Terminal, ShieldCheck, ShieldAlert, ArrowLeft, Loader2, Play, Sparkles, Trophy } from 'lucide-react'
+import { Terminal, ArrowLeft, Loader2, Play, Trophy } from 'lucide-react'
 import { keccak256, encodePacked } from 'viem'
 
 interface Raffle {
@@ -36,7 +36,6 @@ export default function OfflineVerifyPage({ params }: { params: Promise<{ id: st
 
   // Verification Outputs
   const [verificationRan, setVerificationRan] = useState(false)
-  const [computedRoot, setComputedRoot] = useState('')
   const [isRootValid, setIsRootValid] = useState(false)
   const [logs, setLogs] = useState<string[]>([])
   const [verifiedWinners, setVerifiedWinners] = useState<{ username: string; index: number }[]>([])
@@ -91,7 +90,6 @@ export default function OfflineVerifyPage({ params }: { params: Promise<{ id: st
     consoleLogs.push(`🌳 Computing Merkle Tree hash tree (double-Keccak256)...`)
     const tree = new MerkleTree(entries)
     const newRoot = tree.getRoot()
-    setComputedRoot(newRoot)
 
     const rootMatches = newRoot.toLowerCase() === raffle.merkleRoot.toLowerCase()
     setIsRootValid(rootMatches)
@@ -276,7 +274,7 @@ export default function OfflineVerifyPage({ params }: { params: Promise<{ id: st
                     </div>
                   ) : (
                     <div className="text-slate-500 py-20 text-center uppercase tracking-wide text-xs">
-                      [ Click "Run Offline Verification" to execute the cryptographic proof ]
+                      [ Click &quot;Run Offline Verification&quot; to execute the cryptographic proof ]
                     </div>
                   )}
                 </div>

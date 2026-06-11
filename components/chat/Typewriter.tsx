@@ -51,14 +51,20 @@ export function MarkdownTypewriter({
     lastTextRef.current = text
     doneRef.current = false
 
+    let tInit: NodeJS.Timeout | undefined
+
     if (instant || !text) {
-      setShown(text)
-      return
+      tInit = setTimeout(() => setShown(text), 0)
+      return () => {
+        if (tInit) clearTimeout(tInit)
+      }
     }
 
     // If grew, keep current shown and just race to catch up
     let idx = grew ? shown.length : 0
-    if (!grew) setShown('')
+    if (!grew) {
+      tInit = setTimeout(() => setShown(''), 0)
+    }
 
     const timer = setInterval(() => {
       idx = Math.min(idx + charsPerTick, text.length)
@@ -72,7 +78,10 @@ export function MarkdownTypewriter({
       }
     }, tickMs)
 
-    return () => clearInterval(timer)
+    return () => {
+      if (tInit) clearTimeout(tInit)
+      clearInterval(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, charsPerTick, tickMs, instant])
 

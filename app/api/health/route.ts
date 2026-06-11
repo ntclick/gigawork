@@ -48,7 +48,7 @@ export async function GET() {
   }
 
   // ── Schema introspection — does the live DB actually have what we need? ──
-  let schemaInfo: Record<string, unknown> = {}
+  const schemaInfo: Record<string, unknown> = {}
   try {
     // Identify which DB instance we're connected to (host fingerprint)
     const meta = (await db.execute(sql`

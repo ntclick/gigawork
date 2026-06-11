@@ -4,11 +4,10 @@ import postgres from 'postgres'
 
 // Use direct DB URL — pooler may have DNS issues from local
 // Supabase direct: postgresql://postgres.<project>:<password>@db.<project>.supabase.co:5432/postgres
-const poolerUrl = process.env.DATABASE_URL!
-// Convert pooler URL to direct URL
-const directUrl = poolerUrl
-  .replace('aws-1-ap-south-1.pooler.supabase.com:6543', 'db.yxnmthhkvmjuuapsbchw.supabase.co:5432')
-  .replace('postgres.yxnmthhkvmjuuapsbchw', 'postgres')
+const directUrl = process.env.DATABASE_URL!.replace(
+  'aws-1-ap-south-1.pooler.supabase.com',
+  '3.111.225.200'
+)
 
 console.log('Connecting to:', directUrl.replace(/:([^@]+)@/, ':***@'))
 

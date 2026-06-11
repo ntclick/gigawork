@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Orbit, Plus, Loader2, Sparkles, Trophy, HelpCircle } from 'lucide-react'
+import { Orbit, Plus, Loader2, Sparkles, HelpCircle } from 'lucide-react'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { RaffleCard } from '@/components/raffle/RaffleCard'
 import { Button } from '@/components/ui/button'
@@ -24,22 +24,22 @@ export default function RaffleLandingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const fetchRaffles = async () => {
-    try {
-      const res = await fetch('/api/raffles/list', { cache: 'no-store' })
-      const json = await res.json()
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to load raffle list.')
-      }
-      setRaffles(json.raffles || [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
+    const fetchRaffles = async () => {
+      try {
+        const res = await fetch('/api/raffles/list', { cache: 'no-store' })
+        const json = await res.json()
+        if (!res.ok) {
+          throw new Error(json.error || 'Failed to load raffle list.')
+        }
+        setRaffles(json.raffles || [])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error occurred.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
     fetchRaffles()
   }, [])
 
@@ -64,7 +64,7 @@ export default function RaffleLandingPage() {
               </h1>
               <p className="text-sm text-slate-400 leading-relaxed">
                 A public, absolutely transparent, and independently cryptographically verifiable raffle system. 
-                Powered by SpaceComputer's cTRNG cosmic randomness to ensure that no one can cheat or tamper with the results.
+                Powered by SpaceComputer&apos;s cTRNG cosmic randomness to ensure that no one can cheat or tamper with the results.
               </p>
             </div>
 

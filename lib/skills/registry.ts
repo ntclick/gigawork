@@ -2,19 +2,65 @@ import { eq } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
-import { skills, type Skill } from '@/lib/db/schema'
+import { skills, users, agentLiveness, type Skill } from '@/lib/db/schema'
 import { SKILLS } from '@/lib/skills/handlers'
 
-export async function listSkills(): Promise<Skill[]> {
-  return withDbRetry(() => db.select().from(skills), { label: 'listSkills' })
+export interface SkillWithLiveness extends Skill {
+  livenessStatus?: string | null
+  livenessCapacity?: number | null
+  livenessUptime30d?: number | null
+  consecutiveJobFailures?: number | null
+  lastHeartbeatAt?: string | null
 }
 
-export async function getSkillByName(name: string): Promise<Skill | null> {
+export async function listSkills(): Promise<SkillWithLiveness[]> {
+  const rows = await withDbRetry(
+    () =>
+      db
+        .select({
+          skill: skills,
+          liveness: agentLiveness,
+        })
+        .from(skills)
+        .leftJoin(users, eq(skills.ownerId, users.id))
+        .leftJoin(agentLiveness, eq(users.wallet, agentLiveness.agentAddress)),
+    { label: 'listSkills' },
+  )
+
+  return rows.map((r) => ({
+    ...r.skill,
+    livenessStatus: r.liveness?.status ?? null,
+    livenessCapacity: r.liveness?.capacity ?? null,
+    livenessUptime30d: r.liveness?.uptime30dPct ?? null,
+    consecutiveJobFailures: r.liveness?.consecutiveJobFailures ?? null,
+    lastHeartbeatAt: r.liveness?.lastHeartbeatAt?.toISOString() ?? null,
+  }))
+}
+
+export async function getSkillByName(name: string): Promise<SkillWithLiveness | null> {
   const [row] = await withDbRetry(
-    () => db.select().from(skills).where(eq(skills.name, name)).limit(1),
+    () =>
+      db
+        .select({
+          skill: skills,
+          liveness: agentLiveness,
+        })
+        .from(skills)
+        .leftJoin(users, eq(skills.ownerId, users.id))
+        .leftJoin(agentLiveness, eq(users.wallet, agentLiveness.agentAddress))
+        .where(eq(skills.name, name))
+        .limit(1),
     { label: 'getSkillByName' },
   )
-  return row ?? null
+  if (!row) return null
+  return {
+    ...row.skill,
+    livenessStatus: row.liveness?.status ?? null,
+    livenessCapacity: row.liveness?.capacity ?? null,
+    livenessUptime30d: row.liveness?.uptime30dPct ?? null,
+    consecutiveJobFailures: row.liveness?.consecutiveJobFailures ?? null,
+    lastHeartbeatAt: row.liveness?.lastHeartbeatAt?.toISOString() ?? null,
+  }
 }
 
 /**
@@ -41,6 +87,13 @@ export async function callSkillEndpoint(
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+    }
+
+    if (opts?.workflowId) {
+      headers['X-Workflow-ID'] = opts.workflowId
+    }
+    if (opts?.nodeId) {
+      headers['X-Node-ID'] = opts.nodeId
     }
 
     if (isPaid && opts?.workflowId && opts?.nodeId) {

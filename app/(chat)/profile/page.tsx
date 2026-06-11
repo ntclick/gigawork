@@ -18,8 +18,7 @@ import {
   Clock,
   ChevronRight,
   Loader2,
-  Activity,
-  Trash2
+  Activity
 } from 'lucide-react'
 
 import { AppRail } from '@/components/shell/AppRail'
@@ -50,10 +49,19 @@ type UserData = {
   profile: Profile
 }
 
+type Deployment = {
+  id: string
+  workflowId: string
+  workflowPrompt: string | null
+  cronExpression: string
+  status: 'active' | 'paused'
+  createdAt: string
+}
+
 export default function ProfilePage() {
   const [user, setUser] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [deploymentsList, setDeploymentsList] = useState<any[]>([])
+  const [deploymentsList, setDeploymentsList] = useState<Deployment[]>([])
   const [deploymentsLoading, setDeploymentsLoading] = useState(true)
   const [isTestModalOpen, setIsTestModalOpen] = useState(false)
   const [testDeploymentId, setTestDeploymentId] = useState('')
@@ -98,38 +106,38 @@ export default function ProfilePage() {
           )
         )
         if (willPause) {
-          toast.warning('Cron job tạm dừng', 'Hermes sẽ không chạy workflow này cho đến khi bạn Resume lại.')
+          toast.warning('Cron job paused', 'Hermes will not run this workflow until you resume it.')
         } else {
-          toast.success('Cron job đã kích hoạt', 'Hermes sẽ tiếp tục chạy workflow theo lịch đã cấu hình.')
+          toast.success('Cron job activated', 'Hermes will continue running the workflow according to the configured schedule.')
         }
       } else {
-        toast.error('Không thể cập nhật', 'Vui lòng thử lại sau.')
+        toast.error('Unable to update', 'Please try again later.')
       }
     } catch (e) {
       console.error('Failed to toggle deployment status', e)
-      toast.error('Lỗi kết nối', 'Không thể kết nối đến server.')
+      toast.error('Connection error', 'Unable to connect to the server.')
     }
   }
 
   const handleDeleteDeployment = async (deployId: string) => {
-    if (!confirm('Xác nhận xoá deployment này? Hermes sẽ ngừng chạy workflow theo lịch.')) return
+    if (!confirm('Confirm deleting this deployment? Hermes will stop running the workflow on schedule.')) return
     try {
       const res = await fetch(`/api/deployments/${deployId}`, {
         method: 'DELETE'
       })
       if (res.ok) {
         setDeploymentsList((prev) => prev.filter((d) => d.id !== deployId))
-        toast.success('Đã xoá deployment', 'Cron job đã được gỡ khỏi Hermes.')
+        toast.success('Deployment deleted', 'Cron job has been removed from Hermes.')
       } else {
-        toast.error('Không thể xoá', 'Vui lòng thử lại sau.')
+        toast.error('Unable to delete', 'Please try again later.')
       }
     } catch (e) {
       console.error('Failed to delete deployment', e)
-      toast.error('Lỗi kết nối', 'Không thể kết nối đến server.')
+      toast.error('Connection error', 'Unable to connect to the server.')
     }
   }
 
-  const handleTestDeployment = (deployId: string, workflowPrompt: string) => {
+  const handleTestDeployment = (deployId: string, workflowPrompt: string | null) => {
     setTestDeploymentId(deployId)
     setTestWorkflowTitle(workflowPrompt || `Workflow ${deployId.slice(0, 8)}`)
     setIsTestModalOpen(true)

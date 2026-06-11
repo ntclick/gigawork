@@ -1,17 +1,17 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState, use, useCallback } from 'react'
 import Link from 'next/link'
 import { MainHeader } from '@/components/shell/MainHeader'
-import { CosmicProof } from '@/components/raffle/CosmicProof'
+import { CosmicProof, type CosmicProofProps } from '@/components/raffle/CosmicProof'
 import { WinnersList } from '@/components/raffle/WinnersList'
 import { VerifyPanel } from '@/components/raffle/VerifyPanel'
 import { DrawModal } from '@/components/raffle/DrawModal'
 import { Button } from '@/components/ui/button'
-import { Orbit, Compass, Trophy, ExternalLink, ShieldCheck, ArrowLeft, RefreshCw, Loader2, Search, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react'
+import { Orbit, Trophy, ExternalLink, ShieldCheck, ArrowLeft, Loader2, Search, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { parseEntries } from '@/lib/cosmic-raffle/parseEntries'
-import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, keccak256, encodePacked } from 'viem'
+import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, keccak256, encodePacked, type Abi } from 'viem'
 import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 import CosmicRaffleArtifact from '@/contracts/CosmicRaffle.json'
 import CosmicRaffleInstanceArtifact from '@/contracts/CosmicRaffleInstance.json'
@@ -36,6 +36,7 @@ interface Raffle {
   contractAddress: string
   rawEntries: string
   createdAt: string
+  cosmicProof?: CosmicProofProps['cosmicProof']
 }
 
 interface Winner {
@@ -68,6 +69,8 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
   // cTRNG collapsible proof states
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [showSpaceProof, setShowSpaceProof] = useState(false)
+
+  const cosmicProof = raffle?.cosmicProof
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
@@ -123,13 +126,13 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
         const isNewShared = raffle.contractAddress && 
           raffle.contractAddress.toLowerCase() === CONTRACT_ADDRESS.toLowerCase()
 
-        let abi: any
-        let args: any[]
+        let abi: Abi | undefined
+        let args: unknown[] = []
         let targetAddress: `0x${string}`
         let functionName = 'drawWinners'
 
         if (isNewShared) {
-          abi = CosmicRaffleArtifact.abi
+          abi = CosmicRaffleArtifact.abi as Abi
           functionName = 'drawRaffle'
           args = [
             raffle.merkleRoot as `0x${string}`,
@@ -146,11 +149,11 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
             raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
 
           if (isStandalone) {
-            abi = CosmicRaffleInstanceArtifact.abi
+            abi = CosmicRaffleInstanceArtifact.abi as Abi
             args = [seed, winningUsernames, proofs]
             targetAddress = raffle.contractAddress as `0x${string}`
           } else {
-            abi = CosmicRaffleArtifact.abi
+            abi = CosmicRaffleArtifact.abi as Abi
             args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
             targetAddress = CONTRACT_ADDRESS
           }
@@ -173,9 +176,9 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
       }
     }
     estimateDrawGas()
-  }, [raffle, activeWallet, currentBlock, id])
+  }, [raffle, activeWallet, currentBlock, id, estimatedDrawFee])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetch(`/api/raffles/${id}`, { cache: 'no-store' })
       const json = await res.json()
@@ -189,15 +192,10 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
     } finally {
       setLoading(false)
     }
-  }
+  }, [id])
 
   const queryBlockNumber = async () => {
     try {
-      // We can fetch via prepared prepare-list API or a simple mock/block endpoint,
-      // or we can hit `/api/raffles/prepare-list` with empty parameters to read the block!
-      // But let's write a simple request or use a public RPC directly, or just get from a fast backend check.
-      // Let's call `/api/raffles/prepare-list` payload POST with empty inputs, or just fetch from a public block explorer api.
-      // Wait, let's call a fast endpoint or simulate block progression:
       const res = await fetch('/api/raffles/prepare-list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +203,6 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
       })
       const json = await res.json()
       if (json.commitBlock) {
-        // The endpoint returns currentBlock + 10, so currentBlock is commitBlock - 10!
         setCurrentBlock(json.commitBlock - 10)
       }
     } catch {
@@ -214,11 +211,16 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
   }
 
   useEffect(() => {
-    loadData()
-    queryBlockNumber()
+    const timer = setTimeout(() => {
+      loadData()
+      queryBlockNumber()
+    }, 0)
     const t = setInterval(queryBlockNumber, 10000)
-    return () => clearInterval(t)
-  }, [id])
+    return () => {
+      clearTimeout(timer)
+      clearInterval(t)
+    }
+  }, [id, loadData])
 
   const handleTriggerDraw = async () => {
     if (!raffle) return
@@ -295,13 +297,13 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
       const isNewShared = raffle.contractAddress && 
         raffle.contractAddress.toLowerCase() === CONTRACT_ADDRESS.toLowerCase()
 
-      let abi: any
-      let args: any[]
+      let abi: Abi | undefined
+      let args: unknown[] = []
       let targetAddress: `0x${string}`
       let functionName = 'drawWinners'
 
       if (isNewShared) {
-        abi = CosmicRaffleArtifact.abi
+        abi = CosmicRaffleArtifact.abi as Abi
         functionName = 'drawRaffle'
         args = [
           raffle.merkleRoot as `0x${string}`,
@@ -318,11 +320,11 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
           raffle.contractAddress.toLowerCase() !== '0x3ea7ed77795acad23e414daea25af690810d6dbb'
 
         if (isStandalone) {
-          abi = CosmicRaffleInstanceArtifact.abi
+          abi = CosmicRaffleInstanceArtifact.abi as Abi
           args = [seed, winningUsernames, proofs]
           targetAddress = raffle.contractAddress as `0x${string}`
         } else {
-          abi = CosmicRaffleArtifact.abi
+          abi = CosmicRaffleArtifact.abi as Abi
           args = [BigInt(raffle.onChainRaffleId), seed, winningUsernames, proofs]
           targetAddress = CONTRACT_ADDRESS
         }
@@ -418,7 +420,6 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
   // Allow host/owner to draw
   // Since we are checking local dev flow, we can make the DRAW button visible to the operator wallet address 
   // or simple admin bypass for testing.
-  const hostWallet = raffle.contractAddress ? 'admin' : '' 
   const isHost = true // Allow draw button locally for easy verification!
 
   return (
@@ -545,7 +546,7 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
             </div>
 
             {/* Collapsible cTRNG Proof Section directly inside the Banner! */}
-            {raffle.drawn && (raffle as any).cosmicProof && (
+            {raffle.drawn && cosmicProof && (
               <div className="border-t border-white/5 pt-4 z-10 w-full animate-fadeIn">
                 <div className="border border-emerald-500/20 bg-emerald-950/5 rounded-xl overflow-hidden">
                   <button
@@ -564,29 +565,29 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-3 text-[10px]">
                         <div>
                           <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Hardware (src)</span>
-                          <span className="text-slate-300 font-bold font-mono">{(raffle as any).cosmicProof.src || 'Aptos Orbital Gateway'}</span>
+                          <span className="text-slate-300 font-bold font-mono">{cosmicProof.src || 'Aptos Orbital Gateway'}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[8px] uppercase font-semibold">Service Type</span>
-                          <span className="text-slate-300 font-bold font-mono">{(raffle as any).cosmicProof.service || 'cTRNG'}</span>
+                          <span className="text-slate-300 font-bold font-mono">{cosmicProof.service || 'cTRNG'}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[8px] uppercase font-semibold">Verification Mode</span>
-                          <span className="text-emerald-400 font-bold font-mono uppercase">{(raffle as any).cosmicProof.verificationMode || 'authenticated_sdk'}</span>
+                          <span className="text-emerald-400 font-bold font-mono uppercase">{cosmicProof.verificationMode || 'authenticated_sdk'}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[8px] uppercase font-semibold">Timestamp</span>
                           <span className="text-slate-300 font-bold font-mono">
-                            {(raffle as any).cosmicProof.timestamp ? new Date((raffle as any).cosmicProof.timestamp).toLocaleString('en-US') : 'N/A'}
+                            {cosmicProof.timestamp ? new Date(cosmicProof.timestamp).toLocaleString('en-US') : 'N/A'}
                           </span>
                         </div>
                         <div className="md:col-span-4 border-t border-white/5 pt-2">
                           <span className="text-slate-500 block text-[8px] uppercase font-semibold">Physical Cosmic Entropy (Satellite Chip)</span>
                           <div className="font-mono text-[9px] text-cyan-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
-                            <span className="truncate flex-1">{(raffle as any).cosmicProof.spaceComputerEntropy || 'Unable to retrieve'}</span>
-                            {(raffle as any).cosmicProof.spaceComputerEntropy && (
+                            <span className="truncate flex-1">{cosmicProof.spaceComputerEntropy || 'Unable to retrieve'}</span>
+                            {cosmicProof.spaceComputerEntropy && (
                               <button 
-                                onClick={() => handleCopy((raffle as any).cosmicProof.spaceComputerEntropy || '', 'entropy')}
+                                onClick={() => handleCopy(cosmicProof.spaceComputerEntropy || '', 'entropy')}
                                 className="ml-2 p-1 text-slate-500 hover:text-cyan-400 transition-colors"
                               >
                                 {copiedKey === 'entropy' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -597,10 +598,10 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                         <div className="md:col-span-4 border-t border-white/5 pt-2">
                           <span className="text-slate-500 block text-[8px] uppercase font-semibold">Blockchain Anchor Block Hash</span>
                           <div className="font-mono text-[9px] text-indigo-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
-                            <span className="truncate flex-1">{(raffle as any).cosmicProof.blockHash || 'Unable to retrieve'}</span>
-                            {(raffle as any).cosmicProof.blockHash && (
+                            <span className="truncate flex-1">{cosmicProof.blockHash || 'Unable to retrieve'}</span>
+                            {cosmicProof.blockHash && (
                               <button 
-                                onClick={() => handleCopy((raffle as any).cosmicProof.blockHash || '', 'blockHash')}
+                                onClick={() => handleCopy(cosmicProof.blockHash || '', 'blockHash')}
                                 className="ml-2 p-1 text-slate-500 hover:text-indigo-400 transition-colors"
                               >
                                 {copiedKey === 'blockHash' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -609,14 +610,14 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                           </div>
                         </div>
 
-                        {(raffle as any).cosmicProof.signature && (
+                        {cosmicProof.signature && (
                           <>
                             <div className="md:col-span-4 border-t border-white/5 pt-2">
-                              <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Signature ({(raffle as any).cosmicProof.signature.algo || 'RSA'})</span>
+                              <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Signature ({cosmicProof.signature.algo || 'RSA'})</span>
                               <div className="font-mono text-[9px] text-emerald-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
-                                <span className="truncate flex-1">{(raffle as any).cosmicProof.signature.value}</span>
+                                <span className="truncate flex-1">{cosmicProof.signature.value}</span>
                                 <button 
-                                  onClick={() => handleCopy((raffle as any).cosmicProof.signature?.value || '', 'signatureValue')}
+                                  onClick={() => handleCopy(cosmicProof.signature?.value || '', 'signatureValue')}
                                   className="ml-2 p-1 text-slate-500 hover:text-emerald-400 transition-colors"
                                 >
                                   {copiedKey === 'signatureValue' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -626,9 +627,9 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                             <div className="md:col-span-4 border-t border-white/5 pt-2">
                               <span className="text-slate-500 block text-[8px] uppercase font-semibold">Satellite Hardware Public Key (PEM)</span>
                               <div className="font-mono text-[9px] text-slate-400 break-all select-all flex items-center justify-between bg-slate-900/60 px-3 py-1.5 rounded border border-white/5 mt-0.5">
-                                <span className="truncate flex-1">{(raffle as any).cosmicProof.signature.pk}</span>
+                                <span className="truncate flex-1">{cosmicProof.signature.pk}</span>
                                 <button 
-                                  onClick={() => handleCopy((raffle as any).cosmicProof.signature?.pk || '', 'publicKey')}
+                                  onClick={() => handleCopy(cosmicProof.signature?.pk || '', 'publicKey')}
                                   className="ml-2 p-1 text-slate-500 hover:text-slate-300 transition-colors"
                                 >
                                   {copiedKey === 'publicKey' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -715,7 +716,7 @@ export default function RaffleDetailPage({ params }: { params: Promise<{ id: str
                 drawn={raffle.drawn}
                 txHash={raffle.txHash}
                 contractAddress={raffle.contractAddress}
-                cosmicProof={(raffle as any).cosmicProof}
+                cosmicProof={cosmicProof}
               />
             </div>
 

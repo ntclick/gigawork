@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Coins, ArrowDownCircle, Shield, Info, ExternalLink } from 'lucide-react'
+import { Coins, ArrowDownCircle, Shield, Info } from 'lucide-react'
 
 interface WithdrawalConsoleProps {
   totalRevenueUsdc: number

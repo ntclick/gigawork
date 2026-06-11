@@ -9,13 +9,13 @@ import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { HERMES_SYSTEM_PROMPT } from './prompts'
 import { buildBrainTools } from './tools'
 
-// Provider selection — OpenAI gpt-5-mini is the default brain. Set
+// Provider selection — OpenAI gpt-4.1-mini is the default brain. Set
 // AI_PROVIDER=kimi (or =deepseek) in .env.local to swap. Each provider's
 // API key + model is kept independently so you can A/B without losing
 // config when you switch back.
 //
 // Defaults:
-//   openai   → gpt-5-mini   via https://api.openai.com/v1
+//   openai   → gpt-4.1-mini         via https://api.openai.com/v1
 //   kimi     → kimi-k2-0905-preview  via https://api.moonshot.ai/v1
 //   deepseek → deepseek-chat        via https://api.deepseek.com
 const PROVIDER = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
@@ -56,7 +56,7 @@ function resolveProvider(): ProviderConfig {
         name: 'openai',
         apiKey: process.env.OPENAI_API_KEY ?? '',
         baseURL: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
-        model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+        model: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini',
         fallbackModel: process.env.OPENAI_FALLBACK_MODEL ?? 'gpt-4o-mini',
       }
   }
@@ -113,8 +113,18 @@ async function probeModel(): Promise<string> {
         RESOLVED_MODEL = config.model
         return RESOLVED_MODEL
       }
+
+      const body = await res.text().catch(() => '')
+
+      if (res.status === 429 || body.includes('quota') || body.includes('insufficient_quota')) {
+        throw new Error(`insufficient_quota: LLM provider returned 429 or quota exceeded. Detail: ${body.slice(0, 200)}`)
+      }
+
+      if (res.status === 401 || body.includes('invalid_api_key') || body.includes('Authentication') || body.includes('invalid_authentication')) {
+        throw new Error(`invalid_api_key: LLM provider returned 401. Detail: ${body.slice(0, 200)}`)
+      }
+
       if (res.status === 404 || res.status === 403 || res.status === 400) {
-        const body = await res.text().catch(() => '')
         if (/model.*not.*found|does.*not.*have.*access|invalid.*model|unsupported/i.test(body)) {
           if (config.fallbackModel) {
             console.warn(
@@ -131,6 +141,10 @@ async function probeModel(): Promise<string> {
       RESOLVED_MODEL = config.model
       return RESOLVED_MODEL
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('insufficient_quota') || msg.includes('invalid_api_key')) {
+        throw e
+      }
       // Network/timeout — don't blame the model. Trust env.
       console.warn('[brain] model probe failed, keeping configured model:', e instanceof Error ? e.message : e)
       RESOLVED_MODEL = config.model
@@ -148,7 +162,8 @@ export async function streamBrain(opts: {
   uiMessages: UIMessage[]
   /** Internal retry counter — callers should not set this */ _retry?: number
 }) {
-  const skills = await listSkills()
+  const allSkills = await listSkills()
+  const skills = allSkills.filter((s) => !s.agentTokenId || s.livenessStatus === 'ACTIVE')
   const skillCard = skills
     .map((s) => {
       const m = (s.manifest ?? {}) as Record<string, unknown>
@@ -255,12 +270,18 @@ export async function streamBrain(opts: {
         const dispatchCount = await countMessages(opts.workflowId, 'dispatchSkill')
         const nodeStats = await getNodeStats(opts.workflowId)
 
-        // 1. Brain never dispatched anything → fail
+        // 1. Brain never dispatched anything
         if (dispatchCount === 0) {
-          const reason =
-            nodeStats.total === 0
-              ? 'Brain stopped before creating workflow nodes. Please rerun the request.'
-              : 'Brain stopped before dispatching any skill. Please rerun the workflow.'
+          if (nodeStats.total > 0) {
+            // Plan-First architecture (v2) planning phase completed successfully.
+            // Reset status from 'running' back to 'planning' so the user can review and execute the plan.
+            await db
+              .update(workflows)
+              .set({ status: 'planning' })
+              .where(eq(workflows.id, opts.workflowId))
+            return
+          }
+          const reason = 'Brain stopped before creating workflow nodes. Please rerun the request.'
           await db.insert(messages).values({
             workflowId: opts.workflowId,
             role: 'brain',
@@ -304,7 +325,7 @@ export async function streamBrain(opts: {
               .from(nodes)
               .where(and(eq(nodes.workflowId, opts.workflowId), eq(nodes.status, 'completed')))
 
-            const rawJson: Record<string, any> = {}
+            const rawJson: Record<string, unknown> = {}
             for (const n of completedNodes) {
               const matchedSkill = skills.find((s) => s.id === n.skillId)
               const skillName = matchedSkill ? matchedSkill.name : 'unknown'

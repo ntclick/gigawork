@@ -3,7 +3,15 @@ loadEnv({ path: '.env.local' })
 
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
+import { privateKeyToAccount } from 'viem/accounts'
 import { skills } from '../lib/db/schema'
+
+if (process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.DATABASE_URL.replace(
+    'aws-1-ap-south-1.pooler.supabase.com',
+    '3.111.225.200'
+  )
+}
 
 const url = process.env.DATABASE_URL
 if (!url) throw new Error('DATABASE_URL missing')
@@ -33,9 +41,7 @@ const db = drizzle(sql, { schema: { skills } })
 function deriveAdminAddress(): string {
   const pk = process.env.ADMIN_PRIVATE_KEY
   if (!pk) return '0x0000000000000000000000000000000000000000'
-  // Lazy import to keep this file lightweight outside of seeding context
-  const { privateKeyToAccount } = require('viem/accounts')
-  return privateKeyToAccount(pk).address.toLowerCase()
+  return privateKeyToAccount(pk as `0x${string}`).address.toLowerCase()
 }
 const OWNER_WALLET = (
   process.env.SKILL_OWNER_WALLET ?? deriveAdminAddress()
@@ -525,13 +531,13 @@ async function main() {
       .values({
         name: row.name,
         manifest: row.manifest,
-        endpoint: `${appUrl}/api/skills/${row.name}`,
+        endpoint: `${appUrl}/api/agents/${row.name}`,
       })
       .onConflictDoUpdate({
         target: skills.name,
         set: {
           manifest: row.manifest,
-          endpoint: `${appUrl}/api/skills/${row.name}`,
+          endpoint: `${appUrl}/api/agents/${row.name}`,
         },
       })
     console.log(`✓ ${row.name}  ·  owner ${(row.manifest as { owner_wallet: string }).owner_wallet}  ·  ${row.manifest.cost_credits}cr`)

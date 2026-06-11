@@ -31,8 +31,6 @@ import { nodes, skills, users } from '@/lib/db/schema'
 import {
   jitter,
   round2,
-  compactValue,
-  collectSources,
   buildDeterministicReport,
   sanitizeReportMarkdown,
 } from './bundles/reportUtils'
@@ -1718,7 +1716,7 @@ export const SKILLS: Record<string, SkillHandler> = {
     if (!chatId && token) {
       try {
         const updatesUrl = `https://api.telegram.org/bot${token}/getUpdates`
-        const updatesRes = await curlFetchJSON<{ ok: boolean; result?: any[] }>(updatesUrl, {
+        const updatesRes = await curlFetchJSON<{ ok: boolean; result?: unknown[] }>(updatesUrl, {
           method: 'GET',
           timeoutMs: 5000,
         })
@@ -1726,7 +1724,12 @@ export const SKILLS: Record<string, SkillHandler> = {
           // Scan updates from newest to oldest
           const reversed = [...updatesRes.result].reverse()
           for (const item of reversed) {
-            const cid = item.message?.chat?.id ?? item.edited_message?.chat?.id ?? item.callback_query?.message?.chat?.id
+            const update = item as {
+              message?: { chat?: { id?: number } }
+              edited_message?: { chat?: { id?: number } }
+              callback_query?: { message?: { chat?: { id?: number } } }
+            }
+            const cid = update.message?.chat?.id ?? update.edited_message?.chat?.id ?? update.callback_query?.message?.chat?.id
             if (cid) {
               chatId = String(cid)
               console.log(`[telegram-sender] Auto-detected chat_id=${chatId} via getUpdates`)

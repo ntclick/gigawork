@@ -14,7 +14,7 @@
 import { config as loadEnv } from 'dotenv'
 loadEnv({ path: '.env.local' })
 
-import { decodeEventLog, parseAbi, type Hex } from 'viem'
+import { decodeEventLog, parseAbi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { createPublicClient, createWalletClient, defineChain, http } from 'viem'
 import postgres from 'postgres'
@@ -139,10 +139,9 @@ async function main() {
     if (log.address.toLowerCase() !== REGISTRY.toLowerCase()) continue
     try {
       const parsed = decodeEventLog({ abi: identityAbi, data: log.data, topics: log.topics })
-      if (parsed.eventName === 'Registered' || parsed.eventName === 'Transfer') {
-        tokenId = (parsed.args as any).agentId ?? (parsed.args as any).tokenId ?? null
+        const args = parsed.args as { agentId?: bigint; tokenId?: bigint }
+        tokenId = args.agentId ?? args.tokenId ?? null
         if (tokenId !== null) break
-      }
     } catch { /* skip non-matching logs */ }
   }
   if (tokenId === null) throw new Error('không tìm được tokenId trong receipt logs')

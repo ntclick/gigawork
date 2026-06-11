@@ -6,6 +6,7 @@ import { attestWorkflowCompletion } from '@/lib/chain/validation'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
 import { curlFetchJSON } from '@/lib/skills/curlFetch'
+import { emitWorkflowEvent } from '@/lib/workflow/events'
 
 
 export async function publishFinalReport({
@@ -66,6 +67,14 @@ export async function publishFinalReport({
     return { ok: true }
   }
 
+  await emitWorkflowEvent({
+    workflowId,
+    type: 'workflow.finalizing',
+    status: 'finalizing',
+    message: 'Publishing final workflow report',
+    payload: { toolName, rawJsonKeys: Object.keys(rawJson) },
+  })
+
   await db.insert(messages).values({
     workflowId,
     role: 'brain',
@@ -77,6 +86,21 @@ export async function publishFinalReport({
     .update(workflows)
     .set({ status: 'completed' })
     .where(eq(workflows.id, workflowId))
+
+  await emitWorkflowEvent({
+    workflowId,
+    type: 'workflow.finalized',
+    status: 'completed',
+    message: 'Final report published',
+    payload: { toolName },
+  })
+  await emitWorkflowEvent({
+    workflowId,
+    type: 'workflow.completed',
+    status: 'completed',
+    message: 'Workflow completed',
+    payload: { toolName },
+  })
 
   // Enqueue background chain settlement jobs
   const { enqueueWorkflowSettlementJobs } = await import('@/lib/chain/jobs')
@@ -276,6 +300,13 @@ export async function failWorkflow(
     .update(workflows)
     .set({ status: 'failed' })
     .where(eq(workflows.id, workflowId))
+
+  await emitWorkflowEvent({
+    workflowId,
+    type: 'workflow.failed',
+    status: 'failed',
+    message: 'Workflow failed',
+  })
 
   const { enqueueChainJob } = await import('@/lib/chain/jobs')
   await enqueueChainJob({

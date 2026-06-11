@@ -45,7 +45,7 @@ export function ComingSoon({ title, emoji, desc, next }: Props) {
               </p>
               {next && (
                 <p className="mx-auto mt-4 max-w-md text-xs text-white/45">
-                  <span className="text-white/55">What's next:</span> {next}
+                  <span className="text-white/55">What&apos;s next:</span> {next}
                 </p>
               )}
               <Link

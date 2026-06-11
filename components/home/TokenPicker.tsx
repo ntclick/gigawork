@@ -80,13 +80,14 @@ const isContractLike = (s: string) =>
 
 export function TokenPicker({ value, onChange, chain, placeholder }: Props) {
   const [open, setOpen] = useState(false)
+  const [prevValue, setPrevValue] = useState(value)
   const [query, setQuery] = useState(value)
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  // Sync external value changes (e.g., template default) into the local input.
-  useEffect(() => {
+  if (value !== prevValue) {
+    setPrevValue(value)
     setQuery(value)
-  }, [value])
+  }
 
   // Click-outside closes the dropdown.
   useEffect(() => {

@@ -10,7 +10,7 @@
 import { NextResponse } from 'next/server'
 
 import { db } from '@/lib/db/client'
-import { skills } from '@/lib/db/schema'
+import { skills, agentLiveness } from '@/lib/db/schema'
 
 import { privateKeyToAccount } from 'viem/accounts'
 
@@ -332,6 +332,30 @@ export async function POST(req: Request) {
         },
       })
     seeded.push(row.name)
+  }
+
+  // Seed default ACTIVE liveness status for owner/admin EOA
+  if (OWNER_WALLET && OWNER_WALLET !== '0x0000000000000000000000000000000000000000') {
+    await db
+      .insert(agentLiveness)
+      .values({
+        agentAddress: OWNER_WALLET,
+        status: 'ACTIVE',
+        capacity: 10,
+        avgResponseMs: 500,
+        uptime30dPct: 100,
+        skillTagsActive: SEED.map((s) => s.name),
+      })
+      .onConflictDoUpdate({
+        target: agentLiveness.agentAddress,
+        set: {
+          status: 'ACTIVE',
+          capacity: 10,
+          avgResponseMs: 500,
+          uptime30dPct: 100,
+          skillTagsActive: SEED.map((s) => s.name),
+        },
+      })
   }
 
   return NextResponse.json({ ok: true, seeded, count: seeded.length })

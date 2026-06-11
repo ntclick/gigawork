@@ -912,6 +912,7 @@ export default function PreviewPage() {
   return (
     <div className="gw-preview-root">
       {/* Dynamic Font Loading */}
+      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
       
       {/* Dynamic Style Injection */}

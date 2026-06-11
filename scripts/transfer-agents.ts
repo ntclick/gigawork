@@ -14,7 +14,7 @@
 import { config as loadEnv } from 'dotenv'
 loadEnv({ path: '.env.local' })
 
-import { parseAbi, type Hex } from 'viem'
+import { parseAbi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { createPublicClient, createWalletClient, defineChain, http } from 'viem'
 import postgres from 'postgres'
@@ -100,7 +100,7 @@ async function main() {
   }
 
   const rows = await retry(() =>
-    sql<Array<{ id: string; name: string; agent_token_id: string; manifest: any }>>`
+    sql<Array<{ id: string; name: string; agent_token_id: string; manifest: Record<string, unknown> }>>`
       SELECT id, name, agent_token_id, manifest
       FROM skills
       WHERE agent_token_id IS NOT NULL
@@ -121,8 +121,8 @@ async function main() {
       owner = (await publicClient.readContract({
         address: REGISTRY, abi: erc721Abi, functionName: 'ownerOf', args: [tokenId],
       })) as string
-    } catch (e: any) {
-      console.log(`  ✗ ${tag}  ownerOf failed: ${e.message?.slice(0, 80)}`)
+    } catch (e) {
+      console.log(`  ✗ ${tag}  ownerOf failed: ${(e as Error).message?.slice(0, 80)}`)
       skipped++
       continue
     }
@@ -159,18 +159,18 @@ async function main() {
       const newManifest = {
         ...(r.manifest ?? {}),
         on_chain: {
-          ...((r.manifest as any)?.on_chain ?? {}),
+          ...((r.manifest as { on_chain?: Record<string, unknown> })?.on_chain ?? {}),
           owner: TARGET_OWNER,
           owner_transferred_at: new Date().toISOString(),
           owner_transfer_tx: hash,
         },
       }
-      await retry(() => db.update(skills).set({ manifest: newManifest as any }).where(eq(skills.id, r.id)),
+      await retry(() => db.update(skills).set({ manifest: newManifest as unknown }).where(eq(skills.id, r.id)),
         `update manifest ${r.name}`)
 
       transferred++
-    } catch (e: any) {
-      console.log(`  ✗ ${tag}  transfer failed: ${e.message?.slice(0, 120)}`)
+    } catch (e) {
+      console.log(`  ✗ ${tag}  transfer failed: ${(e as Error).message?.slice(0, 120)}`)
       skipped++
     }
   }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { and, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, isNotNull, isNull } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
 import { prefundUserWallet } from '@/lib/credits/postMintHooks'

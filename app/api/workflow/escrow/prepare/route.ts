@@ -6,7 +6,6 @@ import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import {
   ERC8183_USER_CLIENT,
   prepareOpenAndFund,
-  readJobStatus,
 } from '@/lib/chain/agenticCommerce'
 import { arcTestnet, adminAccount } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
@@ -64,7 +63,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const bundle = await prepareOpenAndFund({
+    await prepareOpenAndFund({
       clientAddress: user.wallet as `0x${string}`,
       description: `GigaWork workflow ${wf.id}: ${wf.prompt.slice(0, 96)}`,
       budgetUsdc: ERC8183_BUDGET,

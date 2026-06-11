@@ -1,16 +1,16 @@
 declare module 'solc' {
-  interface SolcInput {
+  export interface SolcInput {
     language: string
     sources: Record<string, { content: string }>
     settings?: Record<string, unknown>
   }
 
-  interface SolcError {
+  export interface SolcError {
     severity: 'error' | 'warning' | string
     formattedMessage: string
   }
 
-  interface SolcOutput {
+  export interface SolcOutput {
     errors?: SolcError[]
     contracts: Record<
       string,

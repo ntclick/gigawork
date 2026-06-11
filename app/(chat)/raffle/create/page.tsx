@@ -6,7 +6,7 @@ import { MainHeader } from '@/components/shell/MainHeader'
 import { Step1Info } from '@/components/raffle/CreateForm/Step1Info'
 import { Step2List } from '@/components/raffle/CreateForm/Step2List'
 import { Step3Confirm } from '@/components/raffle/CreateForm/Step3Confirm'
-import { Orbit, Sparkles, ChevronRight, HelpCircle } from 'lucide-react'
+import { Orbit, Sparkles } from 'lucide-react'
 
 export default function CreateRafflePage() {
   const [currentStep, setCurrentStep] = useState(1)

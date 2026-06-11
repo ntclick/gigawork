@@ -83,7 +83,7 @@ export async function POST(req: Request) {
       confirmations: 1,
       timeout: 30_000,
     })
-  } catch (e) {
+  } catch {
     return NextResponse.json(
       {
         error: 'tx not mined within 30s',

@@ -4,12 +4,12 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUp } from 'lucide-react'
+import { ArrowUp, Tv, Terminal, Network, ListChecks } from 'lucide-react'
 
 import { WorkflowCanvas, buildFromMessages } from '@/components/chat/WorkflowCanvas'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
 import { WorkflowInteraction } from '@/components/chat/AgentsTheater'
-import { NodeDetailSheet, type NodeDetail } from '@/components/chat/NodeDetailSheet'
+import { NodeDetailSheet } from '@/components/chat/NodeDetailSheet'
 import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { MainHeader } from '@/components/shell/MainHeader'
@@ -18,19 +18,12 @@ import { useEscrowPost } from '@/lib/hooks/useEscrowPost'
 import { useValidationAttest } from '@/lib/hooks/useValidationAttest'
 import { toast } from '@/components/ui/toast'
 import { DeployModal } from '@/components/chat/DeployModal'
+import { FocusedStepList } from '@/components/chat/FocusedStepList'
+import { NanopaymentTicker } from '@/components/chat/NanopaymentTicker'
+import { WorkflowDataProvider, WorkflowUIProvider, type NodeDetail, type Erc8183Trail } from '@/components/chat/WorkflowContext'
+import { type WorkflowViewState } from '@/types/workflow-view'
 
-type Erc8183Trail = {
-  jobId: string | null
-  createTx: string | null
-  setBudgetTx: string | null
-  approveTx: string | null
-  fundTx: string | null
-  submitTx: string | null
-  completeTx: string | null
-  deliverableHash: string | null
-  budgetUsdc: string | null
-  reputationTx: string | null
-}
+// Erc8183Trail imported from WorkflowContext
 
 type Snapshot = {
   workflow: { id: string; prompt: string; status: string; erc8183?: Erc8183Trail | null }
@@ -42,8 +35,9 @@ export default function WorkflowPage() {
   const params = useParams<{ id: string }>()
   const id = params?.id ?? ''
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [viewState, setViewState] = useState<WorkflowViewState | null>(null)
   const [isDeployOpen, setIsDeployOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<'theater' | 'interaction' | 'canvas'>('theater')
+  const [viewMode, setViewMode] = useState<'steps' | 'theater' | 'interaction' | 'canvas'>('steps')
   const [showDocPanel, setShowDocPanel] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [selectedNode, setSelectedNode] = useState<NodeDetail | null>(null)
@@ -129,6 +123,19 @@ export default function WorkflowPage() {
     }
   }, [messages])
 
+  const refreshViewState = useCallback(async () => {
+    if (!id) return
+    try {
+      const res = await fetch(`/api/workflows/${id}/view-state`)
+      if (res.ok) {
+        const data = await res.json()
+        setViewState(data)
+      }
+    } catch (e) {
+      console.error('Failed to fetch view state:', e)
+    }
+  }, [id])
+
   const refreshMessages = useCallback(async () => {
     if (!id) return
     try {
@@ -143,7 +150,18 @@ export default function WorkflowPage() {
     } catch (e) {
       console.error('Failed to refresh messages:', e)
     }
-  }, [id, setMessages])
+    refreshViewState()
+  }, [id, setMessages, refreshViewState])
+
+  useEffect(() => {
+    if (!id) return
+    const interval = setInterval(refreshViewState, 3000)
+    const t = setTimeout(refreshViewState, 0)
+    return () => {
+      clearInterval(interval)
+      clearTimeout(t)
+    }
+  }, [id, refreshViewState])
 
   // Hydrate from DB so reload preserves the canvas + doc panel.
   // We also re-fetch when the stream finishes (status transitions to 'idle')
@@ -286,13 +304,13 @@ export default function WorkflowPage() {
     try {
       const res = await fetch(`/api/workflow/${id}/execute`, { method: 'POST' })
       if (res.ok) {
-        toast.success('Khởi chạy hệ thống Multi-Agent!', 'Các Agent đã bắt đầu tự trị lập luận và xử lý.')
+        toast.success('Multi-Agent system launched!', 'Agents have started autonomous reasoning and processing.')
         refreshMessages()
       } else {
         throw new Error(await res.text())
       }
     } catch (e) {
-      toast.error('Lỗi khi chạy Workflow', e instanceof Error ? e.message : String(e))
+      toast.error('Error running workflow', e instanceof Error ? e.message : String(e))
     } finally {
       setExecuting(false)
     }
@@ -489,280 +507,300 @@ export default function WorkflowPage() {
     runEscrowFunding().catch(() => {})
   }, [needsEscrow, wallet, id, escrow.step, escrow.error, runEscrowFunding])
 
+  const handleNodeClick = useCallback((planId: string, label: string, skill: string, nodeStatus: string) => {
+    const det = details.get(planId)
+    setSelectedNode({
+      id: planId,
+      label: label,
+      skill: skill,
+      status: nodeStatus as NodeDetail['status'],
+      input: det?.input,
+      output: det?.output,
+      startedAt: det?.startedAt ?? null,
+      finishedAt: det?.finishedAt ?? null,
+    })
+  }, [details])
+
+  const handleSend = useCallback((text: string) => {
+    sendMessage({ text })
+  }, [sendMessage])
+
+  const handleCloseDeploy = useCallback(() => {
+    setIsDeployOpen(false)
+  }, [])
+
+  const handleCloseNodeDetail = useCallback(() => {
+    setSelectedNode(null)
+  }, [])
+
+  const dataValue = useMemo(() => ({
+    workflowId: id,
+    viewState,
+    refreshViewState,
+    erc8183: snapshot?.workflow?.erc8183 ?? null,
+    workflowStatus: snapshot?.workflow?.status ?? null,
+  }), [id, viewState, refreshViewState, snapshot?.workflow?.erc8183, snapshot?.workflow?.status])
+
+  const uiValue = useMemo(() => ({
+    viewMode,
+    setViewMode,
+    showDocPanel,
+    setShowDocPanel,
+    executing,
+    setExecuting,
+    selectedNode,
+    setSelectedNode,
+    isDeployOpen,
+    setIsDeployOpen,
+    busy,
+    displayStatus: displayStatus ?? '',
+  }), [
+    viewMode,
+    showDocPanel,
+    executing,
+    selectedNode,
+    isDeployOpen,
+    busy,
+    displayStatus
+  ])
+
   return (
-    <>
-      {/* Top header — always visible */}
-      <MainHeader />
+    <WorkflowDataProvider value={dataValue}>
+      <WorkflowUIProvider value={uiValue}>
+        <MainHeader />
 
-      {/* Main shell: thin AppRail · history sidebar · canvas · doc panel */}
-      <div className="giga-theme gw-main-shell">
-        <AppRail />
-        <HistorySidebar />
+        <div className="giga-theme gw-main-shell">
+          <AppRail />
+          <HistorySidebar />
 
-        {/* CANVAS COLUMN */}
-        <main className="gw-canvas-column bg-[#030208]">
-          {/* Deep space floating auroras */}
-          <div className="gw-aurora" />
-          {/* Workflow header */}
-          <div className="gw-workflow-header">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex shrink-0 items-center gap-2 rounded border border-[var(--giga-accent)]/30 bg-[var(--giga-accent)]/10 px-2 py-0.5">
-                <span className={`h-2 w-2 rounded-full bg-[var(--giga-accent)] ${busy ? 'animate-pulse' : ''}`} />
-                <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--giga-accent)]">
-                  {viewMode === 'interaction' ? 'Tương tác' : 'Sơ đồ'}
-                </span>
+          {/* CANVAS COLUMN */}
+          <main className="gw-canvas-column bg-[var(--gw-bg)]">
+            {/* Workflow header */}
+            <div className="gw-workflow-header">
+              {/* Left: status + title */}
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  busy ? 'bg-cyan-400 animate-pulse' :
+                  snapshot?.workflow?.status === 'completed' ? 'bg-emerald-400' :
+                  snapshot?.workflow?.status === 'failed' ? 'bg-red-500' :
+                  'bg-white/20'
+                }`} />
+                <h1 className="truncate text-sm font-medium text-white/85">{title}</h1>
               </div>
-              <h1 className="font-pixel-body inline truncate text-lg uppercase text-white sm:text-xl lg:text-2xl">
-                {title}
-              </h1>
-            </div>
 
-            {/* View Mode Toggle & Actions */}
-            <div className="flex flex-wrap items-center gap-3 font-mono">
-              <div className="flex items-center gap-1 rounded bg-white/[0.04] p-0.5 border border-white/5">
+              {/* Right: view tabs + actions */}
+              <div className="flex items-center gap-2">
+                {/* View mode tabs */}
+                <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.03] p-0.5">
+                  {(['steps', 'theater', 'interaction', 'canvas'] as const).map((mode) => {
+                    const Icon = mode === 'steps' ? ListChecks : mode === 'theater' ? Tv : mode === 'interaction' ? Terminal : Network
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setViewMode(mode)}
+                        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition ${
+                          viewMode === mode
+                            ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                            : 'text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        <Icon className="h-3 w-3 shrink-0" />
+                        {mode === 'steps' ? 'Steps' : mode === 'theater' ? 'Theater' : mode === 'interaction' ? 'Terminal' : 'DAG'}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Doc panel toggle */}
                 <button
                   type="button"
-                  onClick={() => setViewMode('theater')}
-                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider transition ${
-                    viewMode === 'theater' ? 'bg-[var(--giga-accent)] text-black font-bold' : 'text-white/60 hover:text-white'
+                  onClick={() => setShowDocPanel(!showDocPanel)}
+                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                    showDocPanel
+                      ? 'border-violet-400/30 bg-violet-400/10 text-violet-300'
+                      : 'border-white/[0.07] bg-white/[0.03] text-white/40 hover:text-white/70'
                   }`}
                 >
-                  🎬 Theater Mode
+                  {showDocPanel ? 'Hide Docs' : 'Docs'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('interaction')}
-                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider transition ${
-                    viewMode === 'interaction' ? 'bg-[var(--giga-accent)] text-black font-bold' : 'text-white/60 hover:text-white'
-                  }`}
-                >
-                  💻 CLI Terminal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('canvas')}
-                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider transition ${
-                    viewMode === 'canvas' ? 'bg-[var(--giga-accent)] text-black font-bold' : 'text-white/60 hover:text-white'
-                  }`}
-                >
-                  🕸️ DAG Graph
-                </button>
-              </div>
 
-              {/* TOGGLE DOC PANEL BUTTON */}
-              <button
-                type="button"
-                onClick={() => setShowDocPanel(!showDocPanel)}
-                className={`px-2.5 py-1 border rounded text-[9px] uppercase tracking-wider transition flex items-center gap-1.5 ${
-                  showDocPanel 
-                    ? 'border-purple-500/40 bg-purple-500/10 text-purple-300' 
-                    : 'border-white/10 bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <span>{showDocPanel ? '📖 Hide Docs' : '📘 Show Docs'}</span>
-              </button>
-
-              {/* RUN BUTTON */}
-              {['planning', 'failed', 'completed'].includes(snapshot?.workflow?.status ?? '') && !busy && (
-                <button
-                  type="button"
-                  onClick={triggerExecution}
-                  disabled={executing}
-                  className={`pixel-border-sm flex shrink-0 items-center gap-1.5 px-3 py-1.5 font-pixel-body text-xs uppercase transition shadow-md ${
-                    snapshot?.workflow?.status === 'planning'
-                      ? 'bg-[#ffe082] hover:bg-yellow-300 text-black shadow-[0_0_20px_rgba(255,204,77,0.45)] border border-yellow-400/40 animate-pulse'
-                      : 'bg-[#ffe082] hover:bg-yellow-300 text-black'
-                  }`}
-                >
-                  <span>▶</span>
-                  <span>{executing ? 'Starting...' : snapshot?.workflow?.status === 'planning' ? 'Run Workflow' : 'Re-run Workflow'}</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsDeployOpen(true)}
-                className="pixel-border-sm flex shrink-0 items-center gap-2 bg-[var(--giga-accent)] px-3 py-1.5 font-pixel-body text-xs text-black transition hover:bg-yellow-300"
-              >
-                <span className="text-xs">📉</span>
-                <span className="hidden sm:inline">DEPLOY</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Main workspace */}
-          <div className="gw-grid-bg gw-main-workspace bg-transparent">
-            {viewMode === 'theater' && (
-              <WorkflowInteraction
-                messages={messages}
-                status={displayStatus}
-                onNodeClick={(planId, label, skill, nodeStatus) => {
-                  const det = details.get(planId)
-                  setSelectedNode({
-                    id: planId,
-                    label: label,
-                    skill: skill,
-                    status: nodeStatus as NodeDetail['status'],
-                    input: det?.input,
-                    output: det?.output,
-                    startedAt: det?.startedAt ?? null,
-                    finishedAt: det?.finishedAt ?? null,
-                  })
-                }}
-              />
-            )}
-
-            {viewMode === 'interaction' && (
-              <WorkflowInteraction
-                messages={messages}
-                status={displayStatus}
-                onNodeClick={(planId, label, skill, nodeStatus) => {
-                  const det = details.get(planId)
-                  setSelectedNode({
-                    id: planId,
-                    label: label,
-                    skill: skill,
-                    status: nodeStatus as NodeDetail['status'],
-                    input: det?.input,
-                    output: det?.output,
-                    startedAt: det?.startedAt ?? null,
-                    finishedAt: det?.finishedAt ?? null,
-                  })
-                }}
-              />
-            )}
-
-            {viewMode === 'canvas' && (
-              <WorkflowCanvas
-                messages={messages}
-                status={displayStatus}
-                workflowId={id}
-                erc8183={snapshot?.workflow?.erc8183 ?? null}
-                onNodeUpdated={refreshMessages}
-              />
-            )}
-            {busy && (
-              <div className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs font-pixel-body">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]" />
-                <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
-              </div>
-            )}
-            {/* Escrow progress strip — inline status while auto-fire is signing */}
-            {needsEscrow && escrow.step !== 'idle' && escrow.step !== 'error' && escrow.step !== 'done' && (
-              <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-4 py-2.5 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--giga-accent)]" />
-                <span className="text-[var(--giga-accent)]">
-                  {escrow.step === 'preparing' && 'Preparing payment…'}
-                  {escrow.step === 'signing-fund' && 'Sign native USDC transfer in wallet…'}
-                  {escrow.step === 'confirming' && 'Confirming native payment & backend escrow…'}
-                </span>
-              </div>
-            )}
-            {/* Compact retry strip — shown after escrow error */}
-            {needsEscrow && (escrow.step === 'error' || (escrow.step === 'idle' && !!escrow.error)) && (
-              <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
-                <span className="text-[var(--giga-accent)]">Escrow not funded</span>
-                <span className="text-white/40">·</span>
-                <span className="truncate text-white/60">{escrow.error ?? 'Sign required'}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    escrow.reset()
-                    autoEscrowRef.current = null // allow auto-fire to re-run
-                    runEscrowFunding().catch(() => {})
-                  }}
-                  className="ml-1 inline-flex items-center bg-[var(--giga-accent)] px-2 py-1 font-pixel-body text-[10px] uppercase text-black transition hover:bg-yellow-300"
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-            {/* Agent Proofs CTA — shown only once the workflow is fully
-                settled. Validation requires user-side popups (ownership-
-                gated), so we make it an explicit click instead of auto-
-                firing. After all agents are attested, the strip auto-
-                hides. */}
-            {!busy &&
-              snapshot?.workflow?.status === 'completed' &&
-              validate.step !== 'done' &&
-              validate.pendingCount > 0 && (
-                <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2.5 border border-cyan-400/40 bg-[#0d091a]/95 px-4 py-2.5 text-xs text-white/95 shadow-[0_8px_25px_rgba(0,0,0,0.55)] rounded-xl backdrop-blur-md">
-                  <span className="text-cyan-300 font-bold tracking-wider">Nghiệm Thu Kết Quả (ERC-8004)</span>
-                  <span className="text-white/20">·</span>
-                  <span className="text-white/70">
-                    {validate.step === 'preparing' && 'Đang khởi tạo chứng chỉ…'}
-                    {validate.step === 'signing' && 'Ký chứng thực trong ví…'}
-                    {validate.step === 'responding' && 'Đang xác thực on-chain…'}
-                    {validate.step === 'error' && `Lỗi: ${validate.error ?? 'Thao tác thất bại'}`}
-                    {validate.step === 'idle' &&
-                      'Ký nhận báo cáo & cộng điểm Uy tín cho AI Agent đã hỗ trợ.'}
-                  </span>
+                {/* Run / Re-run button */}
+                {['planning', 'failed', 'completed'].includes(snapshot?.workflow?.status ?? '') && !busy && (
                   <button
                     type="button"
-                    disabled={
-                      validate.step === 'preparing' ||
-                      validate.step === 'signing' ||
-                      validate.step === 'responding'
-                    }
-                    onClick={() => validate.attest(id).catch(() => {})}
-                    className="ml-1 inline-flex items-center rounded bg-cyan-400 px-3 py-1.5 font-pixel-body text-[10px] uppercase text-black font-bold transition hover:bg-cyan-300 active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.25)] disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={triggerExecution}
+                    disabled={executing}
+                    className={`gw-btn-primary flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold ${
+                      snapshot?.workflow?.status === 'planning' ? 'animate-pulse' : ''
+                    }`}
                   >
-                    {validate.step === 'idle' && 'Ký nghiệm thu'}
-                    {validate.step !== 'idle' &&
-                      validate.step !== 'error' &&
-                      `${validate.items.filter((i) => i.status === 'done').length}/${validate.items.length}`}
-                    {validate.step === 'error' && 'Thử lại'}
+                    {executing ? '…' : snapshot?.workflow?.status === 'planning' ? '▶ Run' : '↺ Re-run'}
+                  </button>
+                )}
+
+                {/* Deploy button */}
+                <button
+                  type="button"
+                  onClick={() => setIsDeployOpen(true)}
+                  className="gw-btn-violet flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold"
+                >
+                  Deploy
+                </button>
+              </div>
+            </div>
+
+            {/* Main workspace */}
+            <div className="gw-grid-bg gw-main-workspace bg-transparent">
+              {viewMode === 'steps' && (
+                <FocusedStepList />
+              )}
+
+              {viewMode !== 'steps' && (
+                <NanopaymentTicker workflowId={id} active={busy || displayStatus === 'running'} />
+              )}
+
+              {(viewMode === 'theater' || viewMode === 'interaction') && (
+                <WorkflowInteraction
+                  messages={messages}
+                  status={displayStatus}
+                  consoleMode={viewMode === 'theater' ? 'chat' : 'terminal'}
+                  onNodeClick={handleNodeClick}
+                />
+              )}
+
+              {viewMode === 'canvas' && (
+                <WorkflowCanvas
+                  messages={messages}
+                  status={displayStatus}
+                  workflowId={id}
+                  erc8183={snapshot?.workflow?.erc8183 ?? null}
+                  onNodeUpdated={refreshMessages}
+                />
+              )}
+              {busy && (
+                <div className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-2 border-2 border-[var(--giga-accent)] bg-[var(--giga-accent)]/10 px-3 py-1.5 text-xs font-pixel-body">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--giga-accent)]" />
+                  <span className="text-[var(--giga-accent)]">Hermes is orchestrating…</span>
+                </div>
+              )}
+              {/* Escrow progress strip — inline status while auto-fire is signing */}
+              {needsEscrow && escrow.step !== 'idle' && escrow.step !== 'error' && escrow.step !== 'done' && (
+                <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-4 py-2.5 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--giga-accent)]" />
+                  <span className="text-[var(--giga-accent)]">
+                    {escrow.step === 'preparing' && 'Preparing payment…'}
+                    {escrow.step === 'signing-fund' && 'Sign native USDC transfer in wallet…'}
+                    {escrow.step === 'confirming' && 'Confirming native payment & backend escrow…'}
+                  </span>
+                </div>
+              )}
+              {/* Compact retry strip — shown after escrow error */}
+              {needsEscrow && (escrow.step === 'error' || (escrow.step === 'idle' && !!escrow.error)) && (
+                <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2 border border-[var(--giga-accent)]/30 bg-[#12101f]/95 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
+                  <span className="text-[var(--giga-accent)]">Escrow not funded</span>
+                  <span className="text-white/40">·</span>
+                  <span className="truncate text-white/60">{escrow.error ?? 'Sign required'}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      escrow.reset()
+                      autoEscrowRef.current = null // allow auto-fire to re-run
+                      runEscrowFunding().catch(() => {})
+                    }}
+                    className="ml-1 inline-flex items-center bg-[var(--giga-accent)] px-2 py-1 font-pixel-body text-[10px] uppercase text-black transition hover:bg-yellow-300"
+                  >
+                    Retry
                   </button>
                 </div>
               )}
-          </div>
+              {/* Agent Proofs CTA — shown only once the workflow is fully
+                  settled. Validation requires user-side popups (ownership-
+                  gated), so we make it an explicit click instead of auto-
+                  firing. After all agents are attested, the strip auto-
+                  hides. */}
+              {!busy &&
+                snapshot?.workflow?.status === 'completed' &&
+                validate.step !== 'done' &&
+                validate.pendingCount > 0 && (
+                  <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 inline-flex max-w-[90%] -translate-x-1/2 items-center gap-2.5 border border-cyan-400/40 bg-[#0d091a]/95 px-4 py-2.5 text-xs text-white/95 shadow-[0_8px_25px_rgba(0,0,0,0.55)] rounded-xl backdrop-blur-md">
+                    <span className="text-cyan-300 font-bold tracking-wider">Verification of Results (ERC-8004)</span>
+                    <span className="text-white/20">·</span>
+                    <span className="text-white/70">
+                      {validate.step === 'preparing' && 'Initializing certificate...'}
+                      {validate.step === 'signing' && 'Sign attestation in wallet...'}
+                      {validate.step === 'responding' && 'Verifying on-chain...'}
+                      {validate.step === 'error' && `Error: ${validate.error ?? 'Operation failed'}`}
+                      {validate.step === 'idle' &&
+                        'Sign off report & reward Reputation points to the supporting AI Agents.'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={
+                        validate.step === 'preparing' ||
+                        validate.step === 'signing' ||
+                        validate.step === 'responding'
+                      }
+                      onClick={() => validate.attest(id).catch(() => {})}
+                      className="ml-1 inline-flex items-center rounded bg-cyan-400 px-3 py-1.5 font-pixel-body text-[10px] uppercase text-black font-bold transition hover:bg-cyan-300 active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.25)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {validate.step === 'idle' && 'Sign Verification'}
+                      {validate.step !== 'idle' &&
+                        validate.step !== 'error' &&
+                        `${validate.items.filter((i) => i.status === 'done').length}/${validate.items.length}`}
+                      {validate.step === 'error' && 'Retry'}
+                    </button>
+                  </div>
+                )}
+            </div>
 
-          {/* Bottom prompt bar */}
-          <BottomPromptBar 
-            busy={busy} 
-            status={displayStatus ?? ''} 
-            onSend={(text) => sendMessage({ text })} 
-            onActivate={triggerExecution} 
-          />
-        </main>
+            {/* Bottom prompt bar */}
+            <BottomPromptBar 
+              busy={busy} 
+              status={displayStatus ?? ''} 
+              onSend={handleSend} 
+              onActivate={triggerExecution} 
+            />
+          </main>
 
-        {/* RIGHT DOC PANEL */}
-        {showDocPanel && (
-          <WorkflowDocPanel
-            title={title}
-            prompt={snapshot?.workflow?.prompt}
-            messages={messages}
-            status={displayStatus}
-            erc8183={snapshot?.workflow?.erc8183 ?? null}
-          />
-        )}
-      </div>
-      <DeployModal
-        isOpen={isDeployOpen}
-        onClose={() => setIsDeployOpen(false)}
-        workflowId={id}
-        workflowTitle={title}
-      />
-      <NodeDetailSheet
-        detail={selectedNode}
-        onClose={() => setSelectedNode(null)}
-        workflowId={id}
-        onNodeUpdated={refreshMessages}
-      />
-    </>
+          {/* RIGHT DOC PANEL */}
+          {showDocPanel && (
+            <WorkflowDocPanel
+              title={title}
+              prompt={snapshot?.workflow?.prompt}
+              messages={messages}
+              status={displayStatus}
+              erc8183={snapshot?.workflow?.erc8183 ?? null}
+            />
+          )}
+        </div>
+        <DeployModal
+          isOpen={isDeployOpen}
+          onClose={handleCloseDeploy}
+          workflowId={id}
+          workflowTitle={title}
+        />
+        <NodeDetailSheet
+          detail={selectedNode}
+          onClose={handleCloseNodeDetail}
+          workflowId={id}
+          onNodeUpdated={refreshMessages}
+        />
+      </WorkflowUIProvider>
+    </WorkflowDataProvider>
   )
 }
 
-function BottomPromptBar({ 
-  busy, 
-  status, 
-  onSend, 
-  onActivate 
-}: { 
-  busy: boolean; 
-  status: string; 
-  onSend: (text: string) => void;
-  onActivate?: () => void;
+function BottomPromptBar({
+  busy,
+  status,
+  onSend,
+  onActivate,
+}: {
+  busy: boolean
+  status: string
+  onSend: (text: string) => void
+  onActivate?: () => void
 }) {
   const [v, setV] = useState('')
   const send = () => {
@@ -777,39 +815,28 @@ function BottomPromptBar({
 
   if (isPlanning) {
     return (
-      <div className="bg-[#030208] p-4 border-t border-white/5 flex flex-col sm:flex-row gap-3 items-center justify-between z-10 shrink-0">
-        <div className="flex flex-col font-mono text-xs text-white/50">
-          <span className="text-yellow-400 font-bold uppercase tracking-widest text-[9px]">🤖 SYSTEM STANDBY</span>
-          <span>Hermes planned successfully. Ready for autonomous activation.</span>
+      <div className="shrink-0 z-10 border-t border-white/[0.05] bg-[var(--gw-bg)] px-4 py-3 flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#22d3ee]" />
+          <span className="text-xs text-white/50">Plan is ready — click Run to start or edit further</span>
         </div>
         <div className="flex w-full sm:w-auto items-center gap-2">
-          {/* Quick Refine Input */}
           <input
             type="text"
             value={v}
             onChange={(e) => setV(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                send()
-              }
-            }}
-            placeholder="Or refine prompt here..."
-            className="bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-mono text-white outline-none rounded focus:border-purple-500 flex-1 sm:w-48"
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send() } }}
+            placeholder="Edit request..."
+            className="gw-input flex-1 px-3 py-1.5 text-xs sm:w-48"
           />
-          <button
-            onClick={send}
-            disabled={!v.trim()}
-            className="bg-white/10 hover:bg-white/20 border border-white/15 px-3 py-1.5 font-pixel-body text-[10px] text-white transition rounded disabled:opacity-40"
-          >
-            Refine
+          <button onClick={send} disabled={!v.trim()} className="gw-btn-secondary rounded-lg px-3 py-1.5 text-xs disabled:opacity-40">
+            Send
           </button>
-          {/* HUGE GLOWING ACTIVATION BUTTON */}
           <button
             onClick={onActivate}
-            className="pixel-border-sm flex items-center gap-1.5 bg-gradient-to-r from-yellow-400 to-[#ffe082] text-black px-5 py-2 font-pixel-body text-xs uppercase font-extrabold transition shadow-[0_0_20px_rgba(255,204,77,0.45)] border border-yellow-300 animate-pulse hover:scale-[1.03]"
+            className="gw-btn-primary flex items-center gap-1.5 px-4 py-1.5 text-xs animate-pulse"
           >
-            🚀 Activate Workflow
+            ▶ Run Workflow
           </button>
         </div>
       </div>
@@ -818,43 +845,43 @@ function BottomPromptBar({
 
   if (isRunning) {
     return (
-      <div className="bg-[#030208] p-4 border-t border-white/5 flex items-center justify-between font-mono text-xs z-10 shrink-0">
-        <div className="flex items-center gap-2 text-cyan-400 animate-pulse">
-          <span className="h-2 w-2 rounded-full bg-cyan-400" />
-          <span className="font-bold tracking-widest text-[9px] uppercase">
-            {status === 'queued' ? '⏳ WORKFLOW QUEUED IN BACKGROUND' : '⚡ AUTONOMOUS AGENTS OPERATING'}
+      <div className="shrink-0 z-10 border-t border-white/[0.05] bg-[var(--gw-bg)] px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" />
+          <span className="text-xs font-mono text-cyan-400 font-bold uppercase tracking-wider">
+            {status === 'queued' ? 'Queued — starting soon...' : 'AI is processing your request...'}
           </span>
         </div>
-        <span className="text-white/40 text-[9px]">Prompt input disabled during execution logs sweep.</span>
+        <div className="flex items-center gap-1">
+          <span className="w-1 h-3.5 bg-cyan-400/80 rounded animate-bounce [animation-delay:-0.3s]" />
+          <span className="w-1 h-3.5 bg-cyan-400/80 rounded animate-bounce [animation-delay:-0.15s]" />
+          <span className="w-1 h-3.5 bg-cyan-400/80 rounded animate-bounce" />
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-[var(--giga-dark)] p-4 sm:p-6 z-10 shrink-0">
-      <div className="flex items-end gap-2 border border-[#3e3b5e] bg-[var(--giga-panel)] p-3 transition-colors gw-prompt-glow-focus rounded-xl">
+    <div className="shrink-0 z-10 border-t border-white/[0.05] bg-[var(--gw-bg)] p-3">
+      <div className="gw-prompt-glow-focus flex items-end gap-2 rounded-xl border border-white/[0.07] bg-[var(--gw-surface)] p-3">
         <textarea
           value={v}
           onChange={(e) => setV(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
           }}
-          placeholder={busy ? 'Hermes is orchestrating… (wait before refining)' : 'Refine this workflow with a prompt…'}
+          placeholder={busy ? 'AI is processing...' : 'Ask questions or edit request...'}
           disabled={busy}
           rows={1}
-          className="font-pixel-body min-h-[2.25rem] flex-1 resize-none bg-transparent text-base text-white outline-none placeholder:text-gray-400 disabled:cursor-not-allowed sm:text-xl"
-          style={{ fontFamily: 'inherit' }}
+          className="min-h-[1.75rem] flex-1 resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/25 disabled:cursor-not-allowed"
         />
         <button
           onClick={send}
           disabled={busy || !v.trim()}
           aria-label="Send"
-          className="pixel-border-sm inline-flex h-9 w-9 shrink-0 items-center justify-center bg-[var(--giga-accent)] text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-30"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-400 text-black transition hover:bg-cyan-300 disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          <ArrowUp className="h-4 w-4" />
+          <ArrowUp className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>

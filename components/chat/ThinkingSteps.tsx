@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { Check, Loader2, Sparkles } from 'lucide-react'
 
 export type ThinkStep = {
@@ -9,7 +10,7 @@ export type ThinkStep = {
   status: 'running' | 'done'
 }
 
-export function ThinkingSteps({
+export const ThinkingSteps = React.memo(function ThinkingSteps({
   steps,
   durationMs,
   sources,
@@ -24,7 +25,7 @@ export function ThinkingSteps({
       <div className="rounded-xl bg-[#0f131c]/85 px-3 py-2.5">
         <div className="mb-2 flex items-center gap-2 text-[11px] text-cyan-300/85">
           <Sparkles className="h-3 w-3" />
-          <span className="font-medium">Đang phân tích…</span>
+          <span className="font-medium">Analyzing...</span>
           {durationMs != null && (
             <span className="ml-auto rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-white/55">
               {(durationMs / 1000).toFixed(1)}s
@@ -32,7 +33,7 @@ export function ThinkingSteps({
           )}
           {sources != null && sources > 0 && (
             <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-white/55">
-              {sources} nguồn
+              {sources} {sources === 1 ? 'source' : 'sources'}
             </span>
           )}
         </div>
@@ -58,4 +59,4 @@ export function ThinkingSteps({
       </div>
     </div>
   )
-}
+})

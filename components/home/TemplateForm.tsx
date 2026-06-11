@@ -33,8 +33,8 @@ interface Props {
 
 export function TemplateForm({ template, onSubmit, onCancel, userCredits, hasIdentity = true }: Props) {
   const skill = useSkill(template.skillName)
-  const props = skill?.manifest?.input_schema?.properties ?? {}
-  const required = new Set(skill?.manifest?.input_schema?.required ?? [])
+  const props = useMemo(() => skill?.manifest?.input_schema?.properties ?? {}, [skill])
+  const required = useMemo(() => new Set(skill?.manifest?.input_schema?.required ?? []), [skill])
 
   const initial = useMemo(() => {
     const out: Record<string, unknown> = {}

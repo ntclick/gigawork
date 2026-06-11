@@ -5,6 +5,8 @@ import { isToolUIPart, type UIMessage } from 'ai'
 import { BookOpen, ExternalLink, FileText, Hexagon, ListChecks, Sparkles } from 'lucide-react'
 
 import { MarkdownTypewriter } from './Typewriter'
+import { useWorkflowData } from './WorkflowContext'
+import { useNanopaymentStream } from '@/lib/hooks/useNanopaymentStream'
 
 export interface Erc8183Trail {
   jobId: string | null
@@ -50,6 +52,12 @@ export function WorkflowDocPanel({
 }) {
   const { plan, finalReport, dispatchStats, dispatches, reputationTx, reputationStatus, reputationReason, validationAttests } = useMemo(() => extract(messages, status), [messages, status])
 
+  const { workflowId, workflowStatus } = useWorkflowData()
+  const { totalUsdc, callCount } = useNanopaymentStream(
+    workflowId,
+    workflowStatus === 'running' || workflowStatus === 'queued'
+  )
+
   const busy = status === 'streaming' || status === 'submitted'
 
   return (
@@ -70,6 +78,36 @@ export function WorkflowDocPanel({
       )}
 
       <div className="space-y-6">
+        {/* ERC-8183 Trail — Moved to top */}
+        {(plan.length > 0 || erc8183) && (
+          <section>
+            <SectionHeading icon={<Hexagon className="h-3.5 w-3.5" />}>
+              ERC-8183 Trail
+            </SectionHeading>
+            
+            {/* x402 Nanopayment Summary Row */}
+            <div className="mb-4 rounded-lg bg-white/[0.03] border border-white/[0.06] p-2.5 flex items-center justify-between text-xs font-mono">
+              <span className="text-white/50">⚡ x402 nanopayments:</span>
+              <span className="text-amber-400 font-semibold">
+                {callCount} calls · {totalUsdc} USDC total
+              </span>
+            </div>
+
+            <UnifiedTrail
+              planCount={plan.length}
+              dispatchStats={dispatchStats}
+              dispatches={dispatches}
+              hasReport={!!finalReport}
+              status={status}
+              erc8183={erc8183}
+              reputationTx={reputationTx}
+              reputationStatus={reputationStatus}
+              reputationReason={reputationReason}
+              validationAttests={validationAttests}
+            />
+          </section>
+        )}
+
         {/* Description — only when there's no report yet (otherwise the
             report's own intro paragraph carries the description). */}
         {!finalReport && (
@@ -111,26 +149,6 @@ export function WorkflowDocPanel({
                 </li>
               ))}
             </ol>
-          </section>
-        )}
-
-        {(plan.length > 0 || erc8183) && (
-          <section>
-            <SectionHeading icon={<Hexagon className="h-3.5 w-3.5" />}>
-              ERC-8183 Trail
-            </SectionHeading>
-            <UnifiedTrail
-              planCount={plan.length}
-              dispatchStats={dispatchStats}
-              dispatches={dispatches}
-              hasReport={!!finalReport}
-              status={status}
-              erc8183={erc8183}
-              reputationTx={reputationTx}
-              reputationStatus={reputationStatus}
-              reputationReason={reputationReason}
-              validationAttests={validationAttests}
-            />
           </section>
         )}
 
@@ -278,7 +296,7 @@ function UnifiedTrail({
 
       {erc8183 && (
         <div className="space-y-2 border-t border-white/10 pt-3">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Bản đồ tiến trình bảo chứng</p>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-white/45">Escrow Progress Map</p>
           
           {/* Shipping-tracker style visual list */}
           <div className="bg-black/30 p-2.5 rounded-lg border border-white/5 space-y-2 text-[11px] leading-relaxed">
@@ -287,7 +305,7 @@ function UnifiedTrail({
                 {settleState === 'done' || !!erc8183.fundTx ? '🟢' : '🔄'}
               </span>
               <span className={(settleState === 'active' || settleState === 'done' || !!erc8183.fundTx) ? 'text-emerald-300 font-medium' : 'text-white/40'}>
-                Nạp bảo chứng an toàn
+                Escrow deposit secure
               </span>
             </div>
 
@@ -296,7 +314,7 @@ function UnifiedTrail({
                 {agentState === 'done' ? '🟢' : agentState === 'active' ? '🔄' : '⏳'}
               </span>
               <span className={agentState === 'done' ? 'text-emerald-300/80' : agentState === 'active' ? 'text-cyan-300 font-medium' : 'text-white/40'}>
-                AI Expert đang làm việc
+                AI Agents executing tasks
               </span>
             </div>
 
@@ -305,7 +323,7 @@ function UnifiedTrail({
                 {reportReady ? '🟢' : '⏳'}
               </span>
               <span className={reportReady ? 'text-emerald-300/80' : 'text-white/40'}>
-                Bàn giao báo cáo nghiệm thu
+                Submit report for acceptance
               </span>
             </div>
 
@@ -314,7 +332,7 @@ function UnifiedTrail({
                 {reputationState === 'done' ? '🟢' : '⏳'}
               </span>
               <span className={reputationState === 'done' ? 'text-emerald-300/80 font-bold' : 'text-white/40'}>
-                Giải ngân & Ghi nhận uy tín (+95)
+                Disburse funds & Record reputation (+95)
               </span>
             </div>
           </div>
@@ -322,21 +340,21 @@ function UnifiedTrail({
           {/* Collapsible details for on-chain logs */}
           <details className="group text-[10px] font-mono mt-1">
             <summary className="list-none flex items-center justify-between cursor-pointer text-white/35 hover:text-emerald-400 transition-colors select-none py-1">
-              <span>[+] Xem chi tiết log On-chain</span>
+              <span>[+] View On-chain Transaction Log</span>
               <span className="group-open:rotate-180 transition-transform">▼</span>
             </summary>
             
             <div className="space-y-2 mt-2 bg-black/40 p-2.5 rounded-lg border border-white/5">
               <MetaRow label="Job ID" value={erc8183.jobId ? `#${erc8183.jobId}` : 'pending'} />
-              {erc8183.budgetUsdc && <MetaRow label="Ngân sách" value={`${erc8183.budgetUsdc} USDC`} />}
-              <TrailTxRow label="Khởi tạo job" tx={erc8183.createTx} state={erc8183.jobId ? 'done' : erc8183.createTx ? 'active' : 'idle'} />
-              <TrailTxRow label="Thiết lập quỹ" tx={erc8183.setBudgetTx} state={erc8183.setBudgetTx ? 'done' : erc8183.jobId ? 'active' : 'idle'} />
-              <TrailTxRow label="Ủy quyền USDC" tx={erc8183.approveTx} state={erc8183.approveTx ? 'done' : erc8183.setBudgetTx ? 'active' : 'idle'} />
-              <TrailTxRow label="Nạp bảo chứng" tx={erc8183.fundTx} state={erc8183.fundTx ? 'done' : erc8183.approveTx ? 'active' : 'idle'} />
-              <TrailTxRow label="Nộp sản phẩm" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : reportReady && erc8183.fundTx ? 'active' : 'idle'} />
-              <TrailTxRow label="Giải phóng quỹ" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
-              {erc8183.deliverableHash && <HashRow label="Mã băm kết quả" hash={erc8183.deliverableHash} />}
-              <TrailTxRow label="Điểm Uy tín" tx={effectiveRepTx} state={reputationState} detail={reputationStatus === 'skipped' ? 'DB only' : reputationStatus === 'error' ? 'failed' : undefined} />
+              {erc8183.budgetUsdc && <MetaRow label="Budget" value={`${erc8183.budgetUsdc} USDC`} />}
+              <TrailTxRow label="Initialize job" tx={erc8183.createTx} state={erc8183.jobId ? 'done' : erc8183.createTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Set budget" tx={erc8183.setBudgetTx} state={erc8183.setBudgetTx ? 'done' : erc8183.jobId ? 'active' : 'idle'} />
+              <TrailTxRow label="Approve USDC" tx={erc8183.approveTx} state={erc8183.approveTx ? 'done' : erc8183.setBudgetTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Deposit Escrow" tx={erc8183.fundTx} state={erc8183.fundTx ? 'done' : erc8183.approveTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Submit work" tx={erc8183.submitTx} state={erc8183.submitTx ? 'done' : reportReady && erc8183.fundTx ? 'active' : 'idle'} />
+              <TrailTxRow label="Release funds" tx={erc8183.completeTx} state={erc8183.completeTx ? 'done' : erc8183.submitTx ? 'active' : 'idle'} />
+              {erc8183.deliverableHash && <HashRow label="Result Hash" hash={erc8183.deliverableHash} />}
+              <TrailTxRow label="Record Reputation" tx={effectiveRepTx} state={reputationState} detail={reputationStatus === 'skipped' ? 'DB only' : reputationStatus === 'error' ? 'failed' : undefined} />
             </div>
           </details>
         </div>

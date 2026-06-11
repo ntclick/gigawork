@@ -58,16 +58,20 @@ export function useUSDCBalance(address?: string | null): USDCBalanceState {
 
   useEffect(() => {
     if (!address) {
-      setRaw(BigInt(0))
-      setLoading(false)
+      setTimeout(() => {
+        setRaw(BigInt(0))
+        setLoading(false)
+      }, 0)
       return
     }
     // Hydrate from cache when address changes (account flip in extension).
     const cached = readUSDCCache(address)
-    if (cached) setRaw(BigInt(cached.raw))
+    setTimeout(() => {
+      if (cached) setRaw(BigInt(cached.raw))
+      setLoading(!cached)
+      setError(null)
+    }, 0)
     let cancelled = false
-    setLoading(!cached)
-    setError(null)
     client
       .readContract({
         address: USDC_ADDRESS,

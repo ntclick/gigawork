@@ -104,7 +104,7 @@ async function fetchSpaceComputerEntropy(): Promise<SpaceComputerFetchResult> {
       return {
         entropy,
         verificationMode: 'public_sdk_ipfs',
-        sequence: (result.data as any).sequence || null,
+        sequence: (result.data as { sequence?: number }).sequence || null,
       }
     }
   } catch (e) {

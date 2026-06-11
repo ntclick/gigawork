@@ -219,13 +219,12 @@ interface TokenHit {
 function TokenPicker({ currentValue, onPick }: { currentValue: string; onPick: (next: string) => void }) {
   const [q, setQ] = useState('')
   const [tokens, setTokens] = useState<TokenHit[] | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Debounced fetch — token universe doesn't move minute-to-minute, server
   // caches 5 min, but we still don't want to fire on every keystroke.
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     const t = setTimeout(() => {
       fetch(`/api/tokens/search?q=${encodeURIComponent(q)}`)
         .then((r) => r.json())
@@ -251,7 +250,10 @@ function TokenPicker({ currentValue, onPick }: { currentValue: string; onPick: (
       <input
         type="text"
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(e) => {
+          setQ(e.target.value)
+          setLoading(true)
+        }}
         autoFocus
         placeholder="Search BTC, Solana, $ARC…"
         className="mb-2 w-full border-2 border-black bg-[var(--giga-panel)] px-2 py-1 text-sm text-white outline-none placeholder:text-white/30 focus:border-[var(--giga-accent)]"
@@ -260,7 +262,7 @@ function TokenPicker({ currentValue, onPick }: { currentValue: string; onPick: (
         {loading && (!tokens || tokens.length === 0) && (
           <div className="flex items-center gap-2 px-2 py-3 text-white/55">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Đang tìm…
+            Searching...
           </div>
         )}
         {tokens?.map((t) => {
@@ -294,7 +296,7 @@ function TokenPicker({ currentValue, onPick }: { currentValue: string; onPick: (
           )
         })}
         {tokens?.length === 0 && !loading && (
-          <div className="px-2 py-3 text-center text-white/40">Không tìm thấy.</div>
+          <div className="px-2 py-3 text-center text-white/40">No results found.</div>
         )}
       </div>
     </div>

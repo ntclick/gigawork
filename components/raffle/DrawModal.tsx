@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { Orbit, Trophy, Sparkles, Loader2, Compass, ShieldCheck, Cpu, Terminal, ExternalLink, Activity } from 'lucide-react'
+import { Trophy, Sparkles, Loader2, ShieldCheck, Terminal, ExternalLink, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface Winner {
@@ -49,18 +49,28 @@ export function DrawModal({
   // Trigger flash effect when status transitions to done
   useEffect(() => {
     if (status === 'done') {
-      setTriggerFlash(true)
+      const flashTimeout = setTimeout(() => {
+        setTriggerFlash(true)
+      }, 0)
       const t = setTimeout(() => setTriggerFlash(false), 800)
       
-      // Stagger winners reveal
-      setRenderedWinners([])
-      winners.forEach((winner, idx) => {
-        setTimeout(() => {
-          setRenderedWinners((prev) => [...prev, winner])
-        }, 500 + idx * 300) // 500ms delay, then 300ms gap
-      })
+      const staggerTimeoutIds: NodeJS.Timeout[] = []
+      const clearWinnersTimeout = setTimeout(() => {
+        setRenderedWinners([])
+        winners.forEach((winner, idx) => {
+          const timeoutId = setTimeout(() => {
+            setRenderedWinners((prev) => [...prev, winner])
+          }, 500 + idx * 300) // 500ms delay, then 300ms gap
+          staggerTimeoutIds.push(timeoutId)
+        })
+      }, 0)
       
-      return () => clearTimeout(t)
+      return () => {
+        clearTimeout(flashTimeout)
+        clearTimeout(t)
+        clearTimeout(clearWinnersTimeout)
+        staggerTimeoutIds.forEach((id) => clearTimeout(id))
+      }
     }
   }, [status, winners])
 

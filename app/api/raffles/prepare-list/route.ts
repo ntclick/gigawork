@@ -14,10 +14,10 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   try {
     // 1. Authenticate user
-    const user = await getCurrentUser()
+    await getCurrentUser()
 
     // 2. Parse payload
-    const { title, rawInput, winnerCount } = await request.json()
+    const { rawInput, winnerCount } = await request.json()
 
     if (!rawInput || typeof rawInput !== 'string') {
       return NextResponse.json({ error: 'Contestant entries are required.' }, { status: 400 })

@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Shield, Sparkles, Orbit, Compass, Trophy, FileText, Cpu, Loader2, ExternalLink, ShieldCheck, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Shield, Sparkles, Orbit, Compass, FileText, Cpu, Loader2, ExternalLink, ShieldCheck, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react'
 
-interface CosmicProofProps {
+export interface CosmicProofProps {
   merkleRoot: string
   commitBlock: number
   seed?: string | null
@@ -20,7 +20,7 @@ interface CosmicProofProps {
     src?: string | null
     service?: string | null
     signature?: {
-      algo: string
+      algo?: string
       value: string
       pk: string
     } | null

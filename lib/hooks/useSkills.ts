@@ -49,6 +49,11 @@ export interface Skill {
   endpoint: string
   agentTokenId: string | null
   agentTxHash: string | null
+  livenessStatus?: string | null
+  livenessCapacity?: number | null
+  livenessUptime30d?: number | null
+  consecutiveJobFailures?: number | null
+  lastHeartbeatAt?: string | null
 }
 
 let CACHE: Skill[] | null = null
@@ -78,7 +83,6 @@ export function useSkills(): { skills: Skill[]; loading: boolean } {
 
   useEffect(() => {
     if (CACHE) {
-      setSkills(CACHE)
       return
     }
     SUBSCRIBERS.add(setSkills)

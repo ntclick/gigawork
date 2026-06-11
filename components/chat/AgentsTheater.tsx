@@ -1,16 +1,16 @@
 'use client'
 
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect, useRef, memo } from 'react'
 import type { UIMessage } from 'ai'
 import { 
-  CheckCircle2, XCircle, Loader2, PlayCircle, HelpCircle, Terminal, MessageSquare,
+  CheckCircle2, XCircle, Loader2, HelpCircle, Terminal, MessageSquare,
   Search, ShieldAlert, TrendingUp, MessageSquare as MessageIcon, Coins, Globe, 
   FileText, Clock, Compass, Image as ImageIcon, Sparkles, Mail, Bot
 } from 'lucide-react'
 import { buildFromMessages } from './WorkflowCanvas'
 
 // Map skill name to beautiful Agent Identity metadata with Lucide Icons
-const AGENT_META: Record<string, { name: string; icon: any; color: string; bg: string; border: string }> = {
+const AGENT_META: Record<string, { name: string; icon: React.ComponentType<{ className?: string }>; color: string; bg: string; border: string }> = {
   'crypto-scanner': {
     name: 'Birdeye On-chain Scanner',
     icon: Search,
@@ -104,8 +104,17 @@ const AGENT_META: Record<string, { name: string; icon: any; color: string; bg: s
   },
 }
 
+type NodeBulletsOutput = {
+  symbol?: string
+  price_usd?: string | number
+  market_cap_usd?: number
+  change_24h_pct?: number
+  holders?: number
+  sentiment_score?: string | number
+}
+
 // Generate live dynamic sub-bullets/telemetry for each AI Agent card (Mockup aesthetic)
-function getNodeBullets(skill: string, status: string, detailInput: any, detailOutput: any): string[] {
+function getNodeBullets(skill: string, status: string, detailInput: unknown, detailOutput: unknown): string[] {
   if (status === 'running') {
     switch (skill) {
       case 'crypto-scanner':
@@ -127,20 +136,20 @@ function getNodeBullets(skill: string, status: string, detailInput: any, detailO
       case 'polymarket-pulse':
         return ['Retrieving prediction odds', 'Measuring trading volumes', 'Evaluating market outcomes']
       case 'nft-floor-watch':
-        return ['Fetching collection floor', 'Comparing OpenSea floor prices', 'Checking floor deviation']
+        return ['Fetch collection floor price', 'Compare with market prices', 'Monitor floor deviations']
       case 'email-sender':
-        return ['Connecting to Resend API', 'Formatting markdown layout', 'Sending alert email']
+        return ['Connecting to mail server', 'Formatting message content', 'Sending email alert']
       case 'telegram-sender':
-        return ['Packaging Telegram text', 'Dispatched alerts to target chat', 'Pinging chat ID']
+        return ['Packaging notification alert', 'Sending message to Telegram', 'Confirming delivery']
       case 'report-composer':
-        return ['Compiling markdown synthesis', 'Assembling preceding data', 'Writing synthesis outline']
+        return ['Aggregating report data', 'Compiling analysis outcomes', 'Composing final report']
       default:
-        return ['Executing dynamic agent tasks...', 'Synthesizing inputs']
+        return ['Executing task...', 'Aggregating results']
     }
   }
 
   if (status === 'completed') {
-    const out = detailOutput || {}
+    const out = (detailOutput || {}) as NodeBulletsOutput
     switch (skill) {
       case 'crypto-scanner': {
         const symbol = out.symbol || 'token'
@@ -148,51 +157,51 @@ function getNodeBullets(skill: string, status: string, detailInput: any, detailO
         const mc = out.market_cap_usd ? `$${Math.round(out.market_cap_usd / 1000).toLocaleString()}K` : 'N/A'
         return [
           `Scanned ${symbol} successfully`,
-          `Price: ${price} (${out.change_24h_pct > 0 ? '+' : ''}${out.change_24h_pct || 0}%)`,
+          `Price: ${price} (${(out.change_24h_pct ?? 0) > 0 ? '+' : ''}${out.change_24h_pct || 0}%)`,
           `Market Cap: ${mc} / Holders: ${(out.holders || 0).toLocaleString()}`
         ]
       }
       case 'whale-tracker': {
         return [
-          `Analyzed wallet transfer logs`,
-          `Large transactions verified`,
-          `Flow assessment complete`
+          `Wallet history analyzed`,
+          `Large transactions validated`,
+          `Cash flows evaluated`
         ]
       }
       case 'trading-signals': {
         return [
-          `Binance Analyst completed RSI/MACD`,
-          `Indicators calculated successfully`,
-          `Technical status update ready`
+          `Technical analysis complete`,
+          `Calculated market indicators`,
+          `Market state updated`
         ]
       }
       case 'social-sentiment': {
         const score = out.sentiment_score !== undefined ? `${out.sentiment_score}%` : '85%'
         return [
-          `LunarCrush social metrics scanned`,
-          `Social Sentiment Score: ${score}`,
-          `Trend engagement: Strong Bullish`
+          `Social platforms analyzed`,
+          `Sentiment score: ${score}`,
+          `Trend: Strongly Positive`
         ]
       }
       case 'defi-yields': {
         return [
-          `Scanned top yield liquidity pools`,
-          `Min TVL requirements passed`,
-          `DeFi pool APY metrics calculated`
+          `Scanned best liquidity pools`,
+          `Verified TVL requirements`,
+          `Calculated APY yields`
         ]
       }
       case 'web-intel': {
         return [
-          `General search query succeeded`,
-          `Extracted relevant news articles`,
-          `Synthesized macro research data`
+          `Search queries complete`,
+          `Extracted relevant research`,
+          `Macro intelligence summarized`
         ]
       }
       case 'document-digest': {
         return [
-          `Parsed external URL whitepaper`,
-          `Document digested by Kimi`,
-          `Synthesized dynamic outline`
+          `Read document from source`,
+          `Synthesized summary via AI`,
+          `Smart outline generated`
         ]
       }
       case 'dca-executor': {
@@ -256,11 +265,11 @@ interface DialogueItem {
   text: string
   agentName?: string
   agentColor?: string
-  agentIcon?: any
+  agentIcon?: React.ComponentType<{ className?: string }>
   status?: 'running' | 'completed' | 'failed'
   tx?: string
-  input?: any
-  output?: any
+  input?: unknown
+  output?: unknown
 }
 
 interface TerminalLine {
@@ -270,17 +279,20 @@ interface TerminalLine {
   content: string
 }
 
-export function WorkflowInteraction({
+export const WorkflowInteraction = memo(function WorkflowInteraction({
   messages,
   status,
   onNodeClick,
+  consoleMode: propConsoleMode,
 }: {
   messages: UIMessage[]
   status?: string
   onNodeClick: (planId: string, label: string, skill: string, nodeStatus: string) => void
+  consoleMode?: 'terminal' | 'chat'
 }) {
   const { nodes: planNodes, details, hasPlan } = useMemo(() => buildFromMessages(messages), [messages])
-  const [consoleMode, setConsoleMode] = useState<'terminal' | 'chat'>('terminal')
+  const [internalMode, setInternalMode] = useState<'terminal' | 'chat'>('terminal')
+  const consoleMode = propConsoleMode ?? internalMode
   const [showSidebar, setShowSidebar] = useState(true)
   const terminalContainerRef = useRef<HTMLDivElement>(null)
   const terminalBottomRef = useRef<HTMLDivElement>(null)
@@ -338,7 +350,21 @@ export function WorkflowInteraction({
 
         // Interleave the active skill execution reports as chat messages from individual agents
         if (part.type === 'tool-call') {
-          const p = part as any
+          const p = part as unknown as {
+            type: string
+            state?: string
+            input?: {
+              skill_name?: string
+              node_id?: string
+              input?: Record<string, unknown>
+            }
+            output?: {
+              ok?: boolean
+              error?: string
+              dispatch_tx?: string
+              output?: unknown
+            }
+          }
           const toolName = p.type.replace(/^tool-/, '')
           const state = p.state
 
@@ -363,7 +389,7 @@ export function WorkflowInteraction({
                 agentColor: meta.color,
                 agentIcon: meta.icon,
                 status: 'running',
-                text: `⚙️ [${label}] matches x402 payment challenge. Gasless EIP-3009 transfer signature received. Processing inputs...`,
+                text: `⚙️ ${label} initializing and processing inputs...`,
                 input: input.input,
               })
             } else if (state === 'output-available') {
@@ -376,7 +402,7 @@ export function WorkflowInteraction({
                   agentColor: '#ff1744',
                   agentIcon: XCircle,
                   status: 'failed',
-                  text: `❌ [${label}] execution failed: ${out.error || 'Connection timed out'}`,
+                  text: `❌ ${label} failed: ${out.error || 'Connection interrupted. Please try again.'}`,
                 })
               } else {
                 list.push({
@@ -386,7 +412,7 @@ export function WorkflowInteraction({
                   agentColor: '#39ff14',
                   agentIcon: meta.icon,
                   status: 'completed',
-                  text: `✅ [${label}] completed successfully. Nanopayments settlement queued on-chain.`,
+                  text: `✅ ${label} completed and returned results.`,
                   tx: out.dispatch_tx,
                   output: out.output,
                 })
@@ -406,7 +432,7 @@ export function WorkflowInteraction({
       const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false })
 
       if (m.role === 'user') {
-        const text = (m.parts?.[0] as any)?.text || ''
+        const text = (m.parts?.[0] as { text?: string })?.text || ''
         lines.push({
           id: `u-${m.id}-${msgIdx}`,
           time: timeStr,
@@ -429,15 +455,36 @@ export function WorkflowInteraction({
               id: lineId,
               time: timeStr,
               type: 'INFO',
-              content: `[SYSTEM] hermes_planner: analyzing request and drafting execution plan...`,
+              content: `AI analyzing request and planning execution...`,
             })
           } else {
-            lines.push({ id: lineId, time: timeStr, type: 'DIALOGUE', content: `[DIALOGUE] ${text}` })
+            lines.push({ id: lineId, time: timeStr, type: 'DIALOGUE', content: text })
           }
         }
 
         if (typeof part === 'object' && part !== null && 'type' in part) {
-          const p = part as any
+          const p = part as unknown as {
+            type: string
+            state?: string
+            input?: {
+              skill_name?: string
+              node_id?: string
+              input?: Record<string, unknown>
+            }
+            output?: {
+              ok?: boolean
+              error?: string
+              dispatch_tx?: string
+              status?: string
+              tx?: string
+              output?: unknown
+              nodes?: Array<{
+                plan_id: string
+                label: string
+                skill_name: string
+              }>
+            }
+          }
           const toolName = p.type.replace(/^tool-/, '')
           const state = p.state
 
@@ -448,14 +495,14 @@ export function WorkflowInteraction({
               id: `${lineId}-planned`,
               time: timeStr,
               type: 'SUCCESS',
-              content: `[OK] hermes_planner: workflow planned successfully with ${nodesCount} active nodes.`,
+              content: `✓ Planning complete — ${nodesCount} AI tasks scheduled.`,
             })
-            out.nodes?.forEach((n: any, i: number) => {
+            out.nodes?.forEach((n, i: number) => {
               lines.push({
                 id: `${lineId}-node-${i}`,
                 time: timeStr,
                 type: 'PARAM',
-                content: `     ├── Node #${i + 1}: slug="${n.plan_id}" label="${n.label}" skill="${n.skill_name}"`,
+                content: `     ├── Task #${i + 1}: ${n.label}`,
               })
             })
           }
@@ -469,14 +516,17 @@ export function WorkflowInteraction({
                 id: `${lineId}-start`,
                 time: timeStr,
                 type: 'INFO',
-                content: `[RUN] abco_scheduler: launching Agent [${skillName}]...`,
+                content: `▶ Running: ${skillName}...`,
               })
               if (input.input) {
+                const inputSummary = Object.entries(input.input as Record<string, unknown>)
+                  .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`)
+                  .join(' | ')
                 lines.push({
                   id: `${lineId}-args`,
                   time: timeStr,
                   type: 'PARAM',
-                  content: `      ├─ Dynamic inputs: ${JSON.stringify(input.input)}`,
+                  content: `      ↳ Params: ${inputSummary}`,
                 })
               }
             } else if (state === 'output-available') {
@@ -486,21 +536,21 @@ export function WorkflowInteraction({
                   id: `${lineId}-err`,
                   time: timeStr,
                   type: 'ERROR',
-                  content: `[FAIL] Agent [${skillName}] aborted: ${out.error || 'unknown connection error'}`,
+                  content: `✗ ${skillName} failed: ${out.error || 'Unknown error'}`,
                 })
               } else {
                 lines.push({
                   id: `${lineId}-ok`,
                   time: timeStr,
                   type: 'SUCCESS',
-                  content: `[OK] Agent [${skillName}] completed execution.`,
+                  content: `✓ ${skillName} complete.`,
                 })
                 if (out.dispatch_tx) {
                   lines.push({
                     id: `${lineId}-tx`,
                     time: timeStr,
                     type: 'SKY',
-                    content: `      └─ On-chain Attestation: ${out.dispatch_tx}`,
+                    content: `      └─ Recorded on-chain: ${(out.dispatch_tx as string).slice(0, 12)}...`,
                   })
                 }
               }
@@ -508,12 +558,11 @@ export function WorkflowInteraction({
           }
 
           if (toolName === 'reputationUpdate' && state === 'output-available') {
-            const out = p.output || {}
             lines.push({
               id: `${lineId}-rep`,
               time: timeStr,
               type: 'REPUTE',
-              content: `[REPUTE] Reputation scored. status=${out.status || 'recorded'} tx=${out.tx || 'DB_CACHED'}`,
+              content: `★ Reputation score updated for AI Agent.`,
             })
           }
 
@@ -522,7 +571,7 @@ export function WorkflowInteraction({
               id: `${lineId}-val`,
               time: timeStr,
               type: 'SKY',
-              content: `[VALIDATION] validator_node: certified ERC-8004 agent signature on-chain.`,
+              content: `✓ Results validated and recorded.`,
             })
           }
         }
@@ -536,19 +585,19 @@ export function WorkflowInteraction({
         id: 'boot-1',
         time: timeStr,
         type: 'INFO',
-        content: `[SYSTEM] hermes_planner: connecting to AI orchestrator brain...`
+        content: `AI connecting and reading your request...`
       })
       lines.push({
         id: 'boot-2',
         time: timeStr,
         type: 'INFO',
-        content: `[SYSTEM] hermes_planner: parsing intents and dependencies...`
+        content: `Analyzing and selecting appropriate tools...`
       })
       lines.push({
         id: 'boot-3',
         time: timeStr,
         type: 'WARN',
-        content: `[SYSTEM] hermes_planner: constructing execution graph (DAG)...`
+        content: `Generating list of tasks to execute...`
       })
     }
 
@@ -560,13 +609,11 @@ export function WorkflowInteraction({
     if (!planNodes || planNodes.length === 0) return { percent: 0, completed: 0, total: 0 }
     const total = planNodes.length
     let completed = 0
-    let failed = 0
     let running = 0
 
     planNodes.forEach((node) => {
       const state = details.get(node.id)?.status ?? 'pending'
       if (state === 'completed') completed++
-      else if (state === 'failed') failed++
       else if (state === 'running') running++
     })
 
@@ -594,26 +641,28 @@ export function WorkflowInteraction({
               {showSidebar ? '➡️ Hide Panel' : '⬅️ Show Panel'}
             </button>
           </div>
-          <div className="flex items-center gap-1 rounded bg-black/40 p-0.5 border border-white/5 font-mono text-[9px]">
-            <button
-              onClick={() => setConsoleMode('terminal')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded transition uppercase ${
-                consoleMode === 'terminal' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/20' : 'text-white/40 hover:text-white/70'
-              }`}
-            >
-              <Terminal className="h-3 w-3" />
-              Terminal
-            </button>
-            <button
-              onClick={() => setConsoleMode('chat')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded transition uppercase ${
-                consoleMode === 'chat' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/20' : 'text-white/40 hover:text-white/70'
-              }`}
-            >
-              <MessageSquare className="h-3 w-3" />
-              Chat
-            </button>
-          </div>
+          {!propConsoleMode && (
+            <div className="flex items-center gap-1 rounded bg-black/40 p-0.5 border border-white/5 font-mono text-[9px]">
+              <button
+                onClick={() => setInternalMode('terminal')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded transition uppercase ${
+                  consoleMode === 'terminal' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/20' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                <Terminal className="h-3 w-3" />
+                Terminal
+              </button>
+              <button
+                onClick={() => setInternalMode('chat')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded transition uppercase ${
+                  consoleMode === 'chat' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/20' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                <MessageSquare className="h-3 w-3" />
+                Chat
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Dynamic Console Mode render */}
@@ -629,16 +678,16 @@ export function WorkflowInteraction({
                     <div className="gw-standby-panel p-5 font-mono border border-yellow-500/30 text-yellow-300/90 rounded-lg space-y-3 my-2 animate-flash">
                       <div className="flex items-center gap-2 border-b border-yellow-500/20 pb-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-ping" />
-                        <span className="font-bold tracking-widest text-xs uppercase text-yellow-400">⚡ SYSTEM STANDBY (READY)</span>
+                        <span className="font-bold tracking-widest text-xs uppercase text-yellow-400">⚡ Ready to Run</span>
                       </div>
                       <p className="text-[11px] leading-relaxed">
-                        Hermes planner has compiled the autonomous execution DAG (<span className="text-white font-bold">{progressStats.total} steps</span>).
+                        AI has formulated a plan with <span className="text-white font-bold">{progressStats.total} steps</span> to fulfill your request.
                       </p>
                       <div className="bg-black/35 px-3 py-2 border border-white/5 text-[10px] text-white/70">
-                        <span className="text-cyan-400 font-bold">SYSTEM CHECKS:</span> All Agent modules loaded successfully. Ready to trigger wallets, mint keys, and orchestrate DeFi/Scanner parameters.
+                        <span className="text-cyan-400 font-bold">Status:</span> All AI tools are ready. Click the button below to start!
                       </div>
                       <div className="text-[11px] font-bold text-center border border-yellow-500/20 bg-yellow-500/5 py-2 uppercase tracking-wide">
-                        👉 Click <span className="text-white font-extrabold underline text-xs animate-pulse">"ACTIVATE WORKFLOW"</span> at the bottom to begin!
+                        👉 Click the <span className="text-white font-extrabold underline text-xs animate-pulse">&quot;Run Workflow&quot;</span> button in the bar below!
                       </div>
                     </div>
                   )}
@@ -679,7 +728,7 @@ export function WorkflowInteraction({
               {dialogues.length === 0 ? (
                 <div className="flex items-center gap-2 text-xs text-white/35">
                   <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
-                  Preparing conversation...
+                  AI preparing...
                 </div>
               ) : (
                 dialogues.map((d) => {
@@ -705,28 +754,31 @@ export function WorkflowInteraction({
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-xs font-bold text-white tracking-wide">{d.agentName}</span>
-                            <span className="text-[7px] font-mono font-bold px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">ERC-8004</span>
-                            <span className="text-[7px] font-mono font-bold px-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">x402 PAID</span>
+                            <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">AI Agent</span>
                           </div>
                           
                           <div className="max-w-[90%] rounded-xl px-4 py-2.5 text-xs font-mono leading-relaxed bg-[#0b0818]/65 border border-white/5 text-white/85 shadow-lg space-y-2">
                             <p className="whitespace-pre-wrap">{d.text}</p>
                             
-                            {d.input && typeof d.input === 'object' && Object.keys(d.input).length > 0 && (
-                              <div className="bg-black/45 p-2 rounded border border-white/5 space-y-0.5 text-[10px]">
-                                <span className="text-white/45 block text-[8px] uppercase tracking-widest font-bold">Input Arguments</span>
-                                {Object.entries(d.input).map(([k, v]) => (
-                                  <div key={k} className="flex gap-1.5">
-                                    <span className="text-purple-400">{k}:</span>
-                                    <span className="text-slate-350">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            {(() => {
+                              const inputObj = d.input as Record<string, unknown> | null
+                              if (!inputObj || typeof inputObj !== 'object' || Object.keys(inputObj).length === 0) return null
+                              return (
+                                <div className="bg-black/45 p-2 rounded border border-white/5 space-y-0.5 text-[10px]">
+                                  <span className="text-white/45 block text-[8px] uppercase tracking-widest font-bold">Input Data</span>
+                                  {Object.entries(inputObj).map(([k, v]) => (
+                                    <div key={k} className="flex gap-1.5">
+                                      <span className="text-purple-400">{k}:</span>
+                                      <span className="text-slate-350 break-all">{v && typeof v === 'object' ? JSON.stringify(v).slice(0, 120) : String(v).slice(0, 120)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            })()}
 
                             {d.tx && (
                               <div className="flex items-center gap-1.5 text-[9px] text-cyan-400 font-mono">
-                                <span>Attestation:</span>
+                                <span>✓ Recorded on-chain:</span>
                                 <a
                                   href={`https://testnet.arcscan.app/tx/${d.tx}`}
                                   target="_blank"
@@ -735,7 +787,7 @@ export function WorkflowInteraction({
                                 >
                                   {d.tx.slice(0, 10)}...{d.tx.slice(-6)}
                                 </a>
-                                <span className="text-[8px] bg-cyan-500/10 text-cyan-400 px-1 rounded border border-cyan-500/20">Arc Testnet</span>
+                                <span className="text-[8px] bg-cyan-500/10 text-cyan-400 px-1 rounded border border-cyan-500/20">View transaction</span>
                               </div>
                             )}
                           </div>
@@ -787,7 +839,7 @@ export function WorkflowInteraction({
           <div className="border-b border-white/[0.05] bg-black/45 p-4 space-y-3">
             <div className="flex items-baseline justify-between font-mono">
               <span className="text-xs font-bold tracking-widest text-cyan-300">AI TEAM</span>
-              <span className="text-[10px] text-white/40 tracking-wider">{progressStats.completed} / {progressStats.total} STEPS COMPLETED</span>
+              <span className="text-[10px] text-white/40 tracking-wider">{progressStats.completed} / {progressStats.total} steps complete</span>
             </div>
             
             <div className="flex items-baseline gap-2.5">
@@ -795,7 +847,7 @@ export function WorkflowInteraction({
                 {progressStats.percent}%
               </span>
               <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 animate-pulse font-bold">
-                {progressStats.percent === 100 ? '100% DONE' : `${progressStats.percent}% DONE`}
+                {progressStats.percent === 100 ? 'Complete!' : `Processing...`}
               </span>
             </div>
 
@@ -810,34 +862,59 @@ export function WorkflowInteraction({
           {/* Vertical Agent cards list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <span className="block font-mono text-[9px] uppercase tracking-wider text-white/35 mb-2">
-              DETAILED STEP STATUS (WF NODES)
+              Execution Steps
             </span>
 
             {planNodes.length === 0 ? (
-              /* Pulsing placeholders while planning */
-              <div className="space-y-3">
-                {[1, 2, 3].map((num) => (
-                  <div
-                    key={num}
-                    className="flex items-center gap-3.5 border border-dashed border-white/10 bg-white/[0.01] p-3.5 rounded animate-pulse"
-                  >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/20 text-white/20 text-sm">
-                      ⚙️
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="truncate text-xs font-bold uppercase tracking-wider text-white/35">
-                        Formulating plan...
-                      </h4>
-                      <p className="truncate font-mono text-[9px] text-white/20 mt-0.5 uppercase tracking-widest">
-                        STEP #{num}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-white/20">
-                      <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
-                    </div>
+              status === 'failed' ? (
+                <div className="border border-red-500/20 bg-red-500/5 p-4 rounded-lg flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
+                    <span>⚠️</span>
+                    <span>Planning failed</span>
                   </div>
-                ))}
-              </div>
+                  <p className="text-xs text-white/70 font-mono leading-relaxed break-words">
+                    {(() => {
+                      const msgList = messages as unknown as Record<string, unknown>[]
+                      const errWf = msgList.find((m) => m.role === 'brain' && m.toolName === 'stream_error')
+                      if (errWf) return String(errWf.content ?? '')
+                      const keywordWf = msgList.find((m) =>
+                        m.role === 'brain' &&
+                        (String(m.content ?? '').includes('failed') ||
+                          String(m.content ?? '').includes('Error') ||
+                          String(m.content ?? '').includes('quota') ||
+                          String(m.content ?? '').includes('suspended'))
+                      )
+                      if (keywordWf) return String(keywordWf.content ?? '')
+                      return "AI could not formulate a plan. Please check connection and try again."
+                    })()}
+                  </p>
+                </div>
+              ) : (
+                /* Pulsing placeholders while planning */
+                <div className="space-y-3">
+                  {[1, 2, 3].map((num) => (
+                    <div
+                      key={num}
+                      className="flex items-center gap-3.5 border border-dashed border-white/10 bg-white/[0.01] p-3.5 rounded animate-pulse"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/20 text-white/20 text-sm">
+                        ⚙️
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-xs font-bold uppercase tracking-wider text-white/35">
+                          Formulating plan...
+                        </h4>
+                        <p className="truncate font-mono text-[9px] text-white/20 mt-0.5 uppercase tracking-widest">
+                          Step #{num}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-white/20">
+                        <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : (
               planNodes.map((node) => {
                 const skill = (node.data?.skill as string) ?? ''
@@ -849,16 +926,7 @@ export function WorkflowInteraction({
                   border: 'rgba(213,0,249,0.15)',
                 }
                 const nodeStatus = details.get(node.id)?.status ?? 'pending'
-                
-                // Deterministic mock L1 wallet address based on skill name for Web3 realism
-                const mockAddr = (() => {
-                  let hash = 0
-                  for (let i = 0; i < skill.length; i++) {
-                    hash = skill.charCodeAt(i) + ((hash << 5) - hash)
-                  }
-                  const hex = Math.abs(hash).toString(16).slice(0, 8).padStart(8, '0')
-                  return `0x${hex.slice(0, 4)}...${hex.slice(-4)}`
-                })()
+
 
                 return (
                   <div
@@ -900,12 +968,11 @@ export function WorkflowInteraction({
                           <h4 className="truncate text-xs font-bold uppercase tracking-wider text-white group-hover:text-cyan-300 transition-colors">
                             {meta.name}
                           </h4>
-                          <span className="shrink-0 text-[7px] font-mono font-bold px-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">ERC-8004</span>
+                          <span className="shrink-0 text-[7px] font-mono font-bold px-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">AI Agent</span>
                         </div>
                         
                         <div className="flex items-center justify-between font-mono text-[9px] text-white/45 uppercase tracking-widest leading-none">
                           <span className="truncate">{String(node.data?.label ?? skill)}</span>
-                          <span className="text-cyan-400/70 hover:underline hover:text-cyan-300 transition-colors font-mono ml-1">{mockAddr}</span>
                         </div>
 
                         {/* Interactive dynamic sub-bullets/telemetry (Exactly like the mockup) */}
@@ -955,7 +1022,7 @@ export function WorkflowInteraction({
                     {/* USDC Escrow Flow Section (ERC-8183 bảo chứng) */}
                     <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between font-mono text-[9px] leading-none shrink-0 w-full select-none">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-white/40">Bảo chứng USDC:</span>
+                        <span className="text-white/40">Payment:</span>
                         <span className={`font-extrabold tracking-wide ${
                           nodeStatus === 'completed'
                             ? 'text-emerald-400 font-bold'
@@ -965,20 +1032,20 @@ export function WorkflowInteraction({
                         }`}>
                           0.20 USDC {
                             nodeStatus === 'completed'
-                              ? '✓ (Released)'
+                              ? '✓ (Paid)'
                               : nodeStatus === 'failed'
                                 ? '🔓 (Refunded)'
                                 : '🔒 (Locked)'
                           }
                         </span>
                       </div>
-                      <span className="text-[8px] text-white/30 uppercase tracking-widest font-mono">ERC-8183 Escrow</span>
+                      <span className="text-[8px] text-white/30 uppercase tracking-widest font-mono">Service Fee</span>
                     </div>
 
                     {/* Re-run tooltip overlay when failed */}
                     {nodeStatus === 'failed' && (
                       <div className="absolute right-12 top-1/2 -translate-y-1/2 bg-red-500 text-white font-pixel-body text-[9px] px-2 py-1 rounded shadow animate-pulse uppercase tracking-wider">
-                        Configure & Re-run
+                        Retry
                       </div>
                     )}
                   </div>
@@ -990,4 +1057,4 @@ export function WorkflowInteraction({
       )}
     </div>
   )
-}
+})

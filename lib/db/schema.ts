@@ -112,12 +112,34 @@ export const messages = pgTable('messages', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+export const workflowEvents = pgTable('workflow_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workflowId: uuid('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }).notNull(),
+  nodeId: uuid('node_id').references(() => nodes.id, { onDelete: 'set null' }),
+  skillName: text('skill_name'),
+  agentId: text('agent_id'),
+  type: text('type').notNull(),
+  status: text('status'),
+  message: text('message'),
+  payload: jsonb('payload').$type<Record<string, unknown>>().default({}).notNull(),
+  quoteId: text('quote_id'),
+  paymentId: text('payment_id'),
+  txHash: text('tx_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('workflow_events_workflow_id_idx').on(table.workflowId),
+  index('workflow_events_node_id_idx').on(table.nodeId),
+  index('workflow_events_created_at_idx').on(table.createdAt),
+])
+
 export type Workflow = typeof workflows.$inferSelect
 export type NewWorkflow = typeof workflows.$inferInsert
 export type Skill = typeof skills.$inferSelect
 export type Node = typeof nodes.$inferSelect
 export type Message = typeof messages.$inferSelect
 export type NewMessage = typeof messages.$inferInsert
+export type WorkflowEvent = typeof workflowEvents.$inferSelect
+export type NewWorkflowEvent = typeof workflowEvents.$inferInsert
 
 export const deployments = pgTable('deployments', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -188,3 +210,49 @@ export const chainJobs = pgTable('chain_jobs', {
 
 export type ChainJob = typeof chainJobs.$inferSelect
 export type NewChainJob = typeof chainJobs.$inferInsert
+
+export const agentLiveness = pgTable('agent_liveness', {
+  agentAddress: text('agent_address').primaryKey(),
+  lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }).defaultNow().notNull(),
+  status: text('status').default('INACTIVE').notNull(),
+  capacity: integer('capacity').default(1).notNull(),
+  avgResponseMs: integer('avg_response_ms').default(0).notNull(),
+  uptime30dPct: integer('uptime_30d_pct').default(100).notNull(),
+  consecutiveJobFailures: integer('consecutive_job_failures').default(0).notNull(),
+  skillTagsActive: text('skill_tags_active').array(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .$onUpdate(() => new Date())
+    .defaultNow().notNull(),
+})
+
+export const heartbeatLog = pgTable('heartbeat_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentAddress: text('agent_address').notNull(),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
+  capacity: integer('capacity').notNull(),
+  avgResponseMs: integer('avg_response_ms').notNull(),
+  rawPayload: jsonb('raw_payload'),
+})
+
+export type AgentLiveness = typeof agentLiveness.$inferSelect
+export type NewAgentLiveness = typeof agentLiveness.$inferInsert
+export type HeartbeatLog = typeof heartbeatLog.$inferSelect
+export type NewHeartbeatLog = typeof heartbeatLog.$inferInsert
+
+export const nanopaymentEvents = pgTable('nanopayment_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workflowId: uuid('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }).notNull(),
+  stepId: text('step_id'),
+  skillName: text('skill_name').notNull(),
+  amountUsdc: text('amount_usdc').notNull(),
+  buyerAddress: text('buyer_address').notNull(),
+  status: text('status').default('queued').notNull(), // queued | settled | failed
+  txHash: text('tx_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('nanopayment_events_workflow_id_idx').on(table.workflowId),
+])
+
+export type NanopaymentEvent = typeof nanopaymentEvents.$inferSelect
+export type NewNanopaymentEvent = typeof nanopaymentEvents.$inferInsert
+

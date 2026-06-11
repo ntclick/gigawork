@@ -11,8 +11,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useSkills } from '@/lib/hooks/useSkills'
 
-const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
-
 export interface NodeDetail {
   id: string
   label: string
@@ -96,7 +94,7 @@ function NodeDetailSheetInner({
     }
   }, [draftInput])
 
-  const updateField = (key: string, value: any) => {
+  const updateField = (key: string, value: unknown) => {
     const newObj = { ...inputObj, [key]: value }
     setDraftInput(JSON.stringify(newObj, null, 2))
   }
@@ -107,7 +105,7 @@ function NodeDetailSheetInner({
   // Test state
   const [testResult, setTestResult] = useState<{
     status: 'idle' | 'running' | 'done' | 'error'
-    data?: any
+    data?: unknown
     error?: string
   }>({ status: 'idle' })
 
@@ -209,79 +207,83 @@ function NodeDetailSheetInner({
 
   // Reset form when detail changes
   useEffect(() => {
-    setDraftSkill(detail.skill)
-    setDraftInput(initialInputJson)
-    setDraftNote('')
-    setEditError(null)
-    setTestResult({ status: 'idle' })
-    
-    // Prefill custom bot configurations if they exist in detail.input.
-    // IMPORTANT: Never prefill masked/redacted values (e.g. "••••XXXX")
-    // since they were redacted by the server and are not usable.
-    const isMasked = (v: unknown): boolean =>
-      typeof v === 'string' && v.includes('••••')
-    
-    // Try to load cached credentials from sessionStorage if available
-    const cachedToken = typeof window !== 'undefined' ? sessionStorage.getItem(`tg_token_${detail.id}`) : null
-    const cachedChatId = typeof window !== 'undefined' ? sessionStorage.getItem(`tg_chat_id_${detail.id}`) : null
-    
-    let isCustom = false
-    let token = cachedToken || ''
-    let cid = cachedChatId || ''
-    
-    if (cachedToken || cachedChatId) {
-      isCustom = true
-    }
-    
-    if (detail.input && typeof detail.input === 'object') {
-      const inputObj = detail.input as Record<string, unknown>
+    const handler = setTimeout(() => {
+      setDraftSkill(detail.skill)
+      setDraftInput(initialInputJson)
+      setDraftNote('')
+      setEditError(null)
+      setTestResult({ status: 'idle' })
       
-      // Extract bot_token
-      if (typeof inputObj.bot_token === 'string') {
-        if (!isMasked(inputObj.bot_token)) {
-          isCustom = true
-          token = inputObj.bot_token
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem(`tg_token_${detail.id}`, token)
-          }
-        } else {
-          // If masked in DB, but we have a cached token, use the cached one!
-          if (cachedToken) {
+      // Prefill custom bot configurations if they exist in detail.input.
+      // IMPORTANT: Never prefill masked/redacted values (e.g. "••••XXXX")
+      // since they were redacted by the server and are not usable.
+      const isMasked = (v: unknown): boolean =>
+        typeof v === 'string' && v.includes('••••')
+      
+      // Try to load cached credentials from sessionStorage if available
+      const cachedToken = typeof window !== 'undefined' ? sessionStorage.getItem(`tg_token_${detail.id}`) : null
+      const cachedChatId = typeof window !== 'undefined' ? sessionStorage.getItem(`tg_chat_id_${detail.id}`) : null
+      
+      let isCustom = false
+      let token = cachedToken || ''
+      let cid = cachedChatId || ''
+      
+      if (cachedToken || cachedChatId) {
+        isCustom = true
+      }
+      
+      if (detail.input && typeof detail.input === 'object') {
+        const inputObj = detail.input as Record<string, unknown>
+        
+        // Extract bot_token
+        if (typeof inputObj.bot_token === 'string') {
+          if (!isMasked(inputObj.bot_token)) {
             isCustom = true
-            token = cachedToken
+            token = inputObj.bot_token
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem(`tg_token_${detail.id}`, token)
+            }
           } else {
-            // Masked but no cache: keep token empty, but still treat as custom
+            // If masked in DB, but we have a cached token, use the cached one!
+            if (cachedToken) {
+              isCustom = true
+              token = cachedToken
+            } else {
+              // Masked but no cache: keep token empty, but still treat as custom
+              isCustom = true
+            }
+          }
+        }
+        
+        // Extract chat_id
+        if (typeof inputObj.chat_id === 'string') {
+          if (!isMasked(inputObj.chat_id)) {
+            cid = inputObj.chat_id
             isCustom = true
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem(`tg_chat_id_${detail.id}`, cid)
+            }
+          } else {
+            if (cachedChatId) {
+              isCustom = true
+              cid = cachedChatId
+            } else {
+              isCustom = true
+            }
           }
         }
       }
       
-      // Extract chat_id
-      if (typeof inputObj.chat_id === 'string') {
-        if (!isMasked(inputObj.chat_id)) {
-          cid = inputObj.chat_id
-          isCustom = true
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem(`tg_chat_id_${detail.id}`, cid)
-          }
-        } else {
-          if (cachedChatId) {
-            isCustom = true
-            cid = cachedChatId
-          } else {
-            isCustom = true
-          }
-        }
-      }
-    }
-    
-    setTgBotSource(isCustom ? 'custom' : 'saved')
-    setTgCustomToken(token)
-    setTgCustomChatId(cid)
-    
-    setTgShowToken(false)
-    setActiveTab(detail.output ? 'output' : 'input')
-  }, [detail.id, initialInputJson])
+      setTgBotSource(isCustom ? 'custom' : 'saved')
+      setTgCustomToken(token)
+      setTgCustomChatId(cid)
+      
+      setTgShowToken(false)
+      setActiveTab(detail.output ? 'output' : 'input')
+    }, 0)
+
+    return () => clearTimeout(handler)
+  }, [detail.id, detail.skill, initialInputJson, detail.output, detail.input])
 
   // Save custom bot configurations to sessionStorage whenever they change
   // When bot token changes, clear cached chat_id so backend can auto-detect
@@ -543,7 +545,7 @@ function NodeDetailSheetInner({
                   <FlaskConical className="mx-auto mb-2 h-5 w-5 text-white/30" />
                   <p className="text-xs text-white/50">No output yet</p>
                   <p className="mt-1 text-[10px] text-white/30">
-                    Click "Test this step" to run the skill directly.
+                    Click &quot;Test this step&quot; to run the skill directly.
                   </p>
                 </div>
               )}
@@ -1159,19 +1161,19 @@ function NodeDetailSheetInner({
                           className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300/70 transition hover:text-cyan-300"
                         >
                           <ChevronDown className="h-3 w-3" />
-                          Tùy chọn: Gửi vào Chat ID khác
+                          Optional: Send to different Chat ID
                         </button>
                       ) : (
                         <div className="space-y-1">
                           <label className="text-[10px] uppercase tracking-wider text-white/50">
-                            Chat ID (Tùy chọn)
+                            Chat ID (Optional)
                           </label>
                           <div className="flex gap-2">
                             <input
                               type="text"
                               value={tgCustomChatId}
                               onChange={(e) => setTgCustomChatId(e.target.value)}
-                              placeholder="Để trống sẽ tự nhận diện..."
+                              placeholder="Leave blank for auto-detection..."
                               className="flex-1 border-2 border-black bg-[#1f1f33] px-3 py-2 font-mono text-xs text-white placeholder:text-white/20 focus:border-cyan-400 focus:outline-none"
                             />
                             <a
@@ -1184,7 +1186,7 @@ function NodeDetailSheetInner({
                             </a>
                           </div>
                           <div className="text-[10px] text-white/30">
-                            Nếu để trống, bot sẽ tự động lấy Chat ID của người nhắn tin cuối cùng cho bot.
+                            If left blank, the bot will automatically fetch the Chat ID of the last user who sent a message to the bot.
                           </div>
                         </div>
                       )}

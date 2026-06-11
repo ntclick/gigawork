@@ -9,6 +9,7 @@ import { checkOnChainIdentity, verifyTokenOwnership } from '@/lib/chain/identity
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, users, workflows, type User } from '@/lib/db/schema'
+import { emitWorkflowEvent } from '@/lib/workflow/events'
 
 const ERC8183_BUDGET = process.env.ERC8183_BUDGET_USDC ?? '0.05'
 
@@ -172,6 +173,29 @@ async function handlePost(req: Request) {
       }),
       { label: 'workflow:seed-message' },
     )
+
+    await emitWorkflowEvent({
+      workflowId: wf.id,
+      type: 'workflow.created',
+      status: initialStatus,
+      message: 'Workflow created',
+      payload: {
+        promptPreview: parsed.data.prompt.slice(0, 160),
+        escrowEnabled: ERC8183_ENABLED,
+        escrowUserClient: ERC8183_USER_CLIENT,
+      },
+    })
+    if (!ERC8183_ENABLED || ERC8183_USER_CLIENT) {
+      await emitWorkflowEvent({
+        workflowId: wf.id,
+        type: 'workflow.planning_started',
+        status: initialStatus,
+        message: initialStatus === 'awaiting_fund'
+          ? 'Waiting for escrow funding before planning'
+          : 'Planning workflow',
+      })
+    }
+
   } catch (e) {
     console.error('[/api/workflow] db insert failed', e)
     return NextResponse.json(
@@ -194,11 +218,25 @@ async function handlePost(req: Request) {
   if (ERC8183_ENABLED) {
     if (ERC8183_USER_CLIENT) {
       escrowMode = 'user-client'
+      await emitWorkflowEvent({
+        workflowId: wf.id,
+        type: 'erc8183.awaiting_user_funding',
+        status: 'awaiting_fund',
+        message: 'Waiting for the user wallet to open and fund escrow',
+        payload: { budgetUsdc: ERC8183_BUDGET },
+      })
       // Frontend will POST to /api/workflow/escrow/prepare next.
     } else {
       escrowMode = 'admin'
       try {
         await db.update(workflows).set({ status: 'funding' }).where(eq(workflows.id, wf.id))
+        await emitWorkflowEvent({
+          workflowId: wf.id,
+          type: 'erc8183.funding_started',
+          status: 'funding',
+          message: 'Opening and funding ERC-8183 escrow job',
+          payload: { budgetUsdc: ERC8183_BUDGET },
+        })
         const res = await openAndFundJob({
           description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
           budgetUsdc: ERC8183_BUDGET,
@@ -216,6 +254,27 @@ async function handlePost(req: Request) {
             erc8183BudgetUsdc: res.budgetUsdc,
           })
           .where(eq(workflows.id, wf.id))
+        await emitWorkflowEvent({
+          workflowId: wf.id,
+          type: 'erc8183.funded',
+          status: 'planning',
+          message: 'ERC-8183 escrow funded; workflow can plan',
+          txHash: res.fundTx,
+          payload: {
+            jobId: res.jobId,
+            createTx: res.createTx,
+            setBudgetTx: res.setBudgetTx,
+            approveTx: res.approveTx,
+            fundTx: res.fundTx,
+            budgetUsdc: res.budgetUsdc,
+          },
+        })
+        await emitWorkflowEvent({
+          workflowId: wf.id,
+          type: 'workflow.planning_started',
+          status: 'planning',
+          message: 'Planning workflow after escrow funding',
+        })
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         console.warn('[workflow] ERC-8183 open+fund failed', message)

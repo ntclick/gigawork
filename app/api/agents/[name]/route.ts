@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { SKILLS } from '@/lib/skills/handlers'
 import { getEndpointConfig } from '@/lib/nanopayments/config'
-import { requireX402Payment, logRequest, incrementFailedCalls } from '@/lib/chain/nanopayments'
+import { requireX402Payment, logRequest, incrementFailedCalls, parsePaymentHeader } from '@/lib/chain/nanopayments'
+import { db } from '@/lib/db/client'
+import { nanopaymentEvents } from '@/lib/db/schema'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +57,32 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     return error
   }
   
+  // Insert event to DB if workflowId is found
+  try {
+    const paymentHeader = parsePaymentHeader(req)
+    const headersWorkflowId = req.headers.get('X-Workflow-ID') || req.headers.get('x-workflow-id')
+    const bodyClone = await req.clone().json().catch(() => ({}))
+    const workflowId = headersWorkflowId || paymentHeader?.workflowId || bodyClone?.workflowId || bodyClone?.workflow_id
+    const nodeId = req.headers.get('X-Node-ID') || req.headers.get('x-node-id') || paymentHeader?.nodeId || bodyClone?.nodeId || bodyClone?.node_id
+
+    const isValidUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+    if (workflowId && isValidUuid(workflowId)) {
+      db.insert(nanopaymentEvents)
+        .values({
+          workflowId,
+          stepId: nodeId || null,
+          skillName: name,
+          amountUsdc: config.priceUsdc,
+          buyerAddress: buyer ?? 'anonymous',
+          status: 'queued',
+        })
+        .execute() // non-blocking call
+        .catch((err) => console.error('[nanopayments] failed to insert event:', err))
+    }
+  } catch (err) {
+    console.error('[nanopayments] error extracting workflowId:', err)
+  }
+
   // 3. Execution phase
   const input = (await req.json().catch(() => ({}))) as Record<string, unknown>
   try {

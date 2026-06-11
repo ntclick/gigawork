@@ -3,6 +3,7 @@
  * Submits a real form-shaped prompt to streamBrain() and checks tool calls.
  */
 import { config as loadEnv } from 'dotenv'
+import type { UIMessage } from 'ai'
 loadEnv({ path: '.env.local' })
 
 const ADMIN_WALLET = '0xafe6dd950dc2cf561e8daba1725e0e6840f70549'
@@ -45,11 +46,11 @@ async function main() {
   const result = await streamBrain({
     workflowId: wf.id,
     userId: u.id,
-    uiMessages: [{ id: 'seed', role: 'user' as const, parts: [{ type: 'text' as const, text: ENVELOPE }] }] as any,
+    uiMessages: [{ id: 'seed', role: 'user' as const, parts: [{ type: 'text' as const, text: ENVELOPE }], content: ENVELOPE }] as unknown as UIMessage[],
   })
 
   let toolCalls = 0
-  for await (const part of (result as any).fullStream) {
+  for await (const part of (result as { fullStream: AsyncIterable<{ type: string; toolName?: string; input?: unknown }> }).fullStream) {
     if (part.type === 'tool-call') {
       toolCalls++
       console.log(`   → tool-call: ${part.toolName} ${JSON.stringify(part.input).slice(0, 120)}`)

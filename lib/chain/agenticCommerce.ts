@@ -205,19 +205,7 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
   return { hash, receipt }
 }
 
-async function waitForTxVisibility(hash: Hex, timeoutMs: number): Promise<boolean> {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const tx = await publicClient.getTransaction({ hash })
-      if (tx) return true
-    } catch {
-      // Keep polling until timeout. Some RPC nodes need a short propagation delay.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 800))
-  }
-  return false
-}
+
 
 /**
  * Create the job, set the budget, approve USDC, and fund the escrow.

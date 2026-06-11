@@ -34,6 +34,7 @@ async function runTests() {
   console.log('\n[Test 3] Testing withTimeout behavior...')
   try {
     await withTimeout('test-timeout', 100, async (signal) => {
+      if (signal.aborted) return 'aborted'
       await new Promise((resolve) => setTimeout(resolve, 300))
       return 'should not reach here'
     })

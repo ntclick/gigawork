@@ -64,7 +64,7 @@ async function main() {
       FOREIGN KEY ("raffle_id") REFERENCES "public"."raffles"("id") ON DELETE cascade ON UPDATE no action;
     `)
     console.log('   ✓ Added raffle_winners -> raffles foreign key.')
-  } catch (e) {
+  } catch {
     console.log('   ℹ️ raffle_winners foreign key constraint already exists.')
   }
 
@@ -75,7 +75,7 @@ async function main() {
       FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
     `)
     console.log('   ✓ Added raffles -> users foreign key.')
-  } catch (e) {
+  } catch {
     console.log('   ℹ️ raffles foreign key constraint already exists.')
   }
 

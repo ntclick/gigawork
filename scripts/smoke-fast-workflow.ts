@@ -20,7 +20,6 @@ async function main() {
   const { db } = await import('../lib/db/client')
   const { messages, nodes, users, workflows } = await import('../lib/db/schema')
   const { streamBrain } = await import('../lib/ai/brain')
-  const { executeWorkflowRun } = await import('../lib/workflow/executor')
 
   // Find or seed admin user
   const [u] = await db.select().from(users).where(eq(users.wallet, ADMIN_WALLET)).limit(1)
@@ -65,19 +64,23 @@ async function main() {
   console.log(`✓ Planning finished in ${((Date.now() - planStart) / 1000).toFixed(2)}s (${chunks} chunks)`)
 
   // 2. Execute workflow
-  console.log('\n② Running parallel DAG executor...')
+  console.log('\n② Waiting for parallel DAG executor worker...')
   const execStart = Date.now()
 
-  // Set to queued first to match actual frontend trigger flow, then execute
+  // Set to queued first to match actual frontend trigger flow
   await db.update(workflows).set({ status: 'queued' }).where(eq(workflows.id, wf.id))
 
-  // Execute in-process for direct synchronous assertion
-  await executeWorkflowRun({ workflowId: wf.id, userId: u.id })
+  // Poll DB until status is completed or failed
+  let finalWf = null
+  while (true) {
+    await new Promise((r) => setTimeout(r, 1000))
+    finalWf = await db.query.workflows.findFirst({ where: eq(workflows.id, wf.id) })
+    if (finalWf && (finalWf.status === 'completed' || finalWf.status === 'failed')) {
+      break
+    }
+  }
   const execElapsed = Date.now() - execStart
   console.log(`✓ Execution finished in ${(execElapsed / 1000).toFixed(2)}s`)
-
-  // Load results from DB
-  const finalWf = await db.query.workflows.findFirst({ where: eq(workflows.id, wf.id) })
   const nodeRows = await db.query.nodes.findMany({ where: eq(nodes.workflowId, wf.id) })
   const msgRows = await db.query.messages.findMany({ where: eq(messages.workflowId, wf.id) })
 

@@ -77,6 +77,8 @@ export interface EIP3009Authorization {
 export interface ParsedPaymentHeader {
   scheme: 'exact'
   network: string
+  workflowId?: string
+  nodeId?: string
   payload: {
     authorization: EIP3009Authorization
   }

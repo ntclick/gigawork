@@ -90,7 +90,6 @@ export function IdentityGate({
       window.removeEventListener('gw:identity-changed', onBust)
       window.removeEventListener('gw:session-ready', onBust)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletAddr])
 
   // Initial load — cache-first, network fallback.
@@ -109,8 +108,10 @@ export function IdentityGate({
     // Privy says logged out → wipe cache + show connect prompt.
     if (!authenticated && !walletAddr) {
       clearIdentityCache()
-      setIdentity(null)
-      setChecked(true)
+      setTimeout(() => {
+        setIdentity(null)
+        setChecked(true)
+      }, 0)
       lastFetchedWalletRef.current = null
       return
     }
@@ -118,13 +119,15 @@ export function IdentityGate({
     // Cache hit for the current wallet — render instantly.
     const cached = readIdentityCache(walletAddr)
     if (cached && lastFetchedWalletRef.current !== walletAddr) {
-      setIdentity({
-        hasIdentity: cached.hasIdentity,
-        tokenId: cached.tokenId,
-        txHash: cached.txHash,
-        mintedAt: cached.mintedAt,
-      })
-      setChecked(true)
+      setTimeout(() => {
+        setIdentity({
+          hasIdentity: cached.hasIdentity,
+          tokenId: cached.tokenId,
+          txHash: cached.txHash,
+          mintedAt: cached.mintedAt,
+        })
+        setChecked(true)
+      }, 0)
       lastFetchedWalletRef.current = walletAddr
       return
     }
@@ -320,11 +323,11 @@ export function IdentityGate({
     const lock = (
       <Lock
         icon={<ShieldCheck className="h-6 w-6 text-cyan-300" />}
-        title="🎁 Mở khóa 300 Credits trải nghiệm miễn phí"
-        body="Chào mừng bạn đến với GigaWork! Hãy kích hoạt Thẻ định danh số (ERC-8004) bảo mật của bạn để nhận ngay 300 Credits miễn phí. Thẻ định danh này là chứng thực on-chain giúp các AI Agent nhận diện bạn là khách hàng hợp lệ và bảo vệ kết quả công việc của bạn."
+        title="🎁 Unlock 300 Free Trial Credits"
+        body="Welcome to GigaWork! Activate your secure Digital Identity Card (ERC-8004) to instantly receive 300 free Credits. This identity card is an on-chain attestation that helps AI Agents verify you as a valid customer and protects your work results."
         cta={{ label, onClick: mint, disabled: step !== 'idle' }}
         error={err}
-        footer={`Hợp đồng ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
+        footer={`Contract ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
       />
     )
     return mode === 'banner' ? (
@@ -341,9 +344,9 @@ export function IdentityGate({
   const lock = (
     <Lock
       icon={<Wallet className="h-6 w-6 text-cyan-300" />}
-      title="Kết nối ví để bắt đầu trải nghiệm"
-      body="Kết nối tài khoản thông qua Privy để tự động nhận 300 Credits trải nghiệm miễn phí và kích hoạt Thẻ định danh số (ERC-8004) bảo mật của bạn."
-      cta={{ label: 'Kết nối ví ngay', onClick: () => login() }}
+      title="Connect Wallet to Get Started"
+      body="Connect your account via Privy to automatically receive 300 free trial Credits and activate your secure Digital Identity Card (ERC-8004)."
+      cta={{ label: 'Connect Wallet Now', onClick: () => login() }}
     />
   )
   return mode === 'banner' ? (

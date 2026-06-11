@@ -114,7 +114,7 @@ export default function SettingsPage() {
                     </li>
                     <li>
                       ▸ Per-workflow override is supported in the prompt
-                      (e.g. "email me at <span className="font-mono">other@x.com</span>").
+                      (e.g. &quot;email me at <span className="font-mono">other@x.com</span>&quot;).
                     </li>
                     <li>
                       ▸ If credentials are unset, the matching skill runs in dev-mock mode —
@@ -153,7 +153,7 @@ function ProfileForm({
   const [showAdvancedTg, setShowAdvancedTg] = useState(!!profile.telegramChatId)
   // ─── UI state ───
   const [saving, setSaving] = useState(false)
-  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [showSavedAlert, setShowSavedAlert] = useState(false)
   const [testingEmail, setTestingEmail] = useState(false)
   const [testingTg, setTestingTg] = useState(false)
   const [emailTestResult, setEmailTestResult] = useState<TestResult | null>(null)
@@ -240,7 +240,8 @@ function ProfileForm({
       setClearToken(false)
       setShowEmailKey(false)
       setShowToken(false)
-      setSavedAt(Date.now())
+      setShowSavedAlert(true)
+      setTimeout(() => setShowSavedAlert(false), 3000)
       toast.success('Profile saved')
     } catch (e) {
       toast.error('Save failed', e instanceof Error ? e.message : String(e))
@@ -255,7 +256,7 @@ function ProfileForm({
         <h2 className="text-sm font-medium uppercase tracking-wider text-[var(--giga-accent)]">
           Notification settings
         </h2>
-        {savedAt && Date.now() - savedAt < 3000 && (
+        {showSavedAlert && (
           <span className="inline-flex items-center gap-1 text-xs text-emerald-300">
             <CheckCircle2 className="h-3.5 w-3.5" /> Saved
           </span>

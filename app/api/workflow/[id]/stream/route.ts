@@ -3,6 +3,7 @@ import { type UIMessage } from 'ai'
 
 import { streamBrain } from '@/lib/ai/brain'
 import { failWorkflow } from '@/lib/ai/finalizeWorkflow'
+import { runLocalWorkflowPlanningSimulation } from '@/lib/ai/simulation'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
@@ -157,8 +158,24 @@ export async function POST(req: Request, ctx: RouteCtx) {
   }
 
   const e = lastErr
+  const msg = e instanceof Error ? e.message : String(e)
+  const isQuotaOrAuthError = /quota|insufficient|balance|suspend|billing|limit|auth|key|unauthorized/i.test(msg)
+
+  if (isQuotaOrAuthError) {
+    console.warn(`[stream] LLM API error detected: "${msg}". Activating local planning simulation fallback...`)
+    try {
+      const simulatedText = await runLocalWorkflowPlanningSimulation({
+        workflowId: id,
+        userId: user.id,
+        prompt: wf.prompt,
+      })
+      return createMockStreamResponse(simulatedText)
+    } catch (simErr) {
+      console.error('[stream] Local planning simulation fallback failed', simErr)
+    }
+  }
+
   {
-    const msg = e instanceof Error ? e.message : String(e)
     const stack = e instanceof Error ? e.stack?.slice(0, 1500) : undefined
     console.error('[/api/workflow/:id/stream] streamBrain failed after retries', e)
     try {
@@ -178,4 +195,21 @@ export async function POST(req: Request, ctx: RouteCtx) {
       headers: { 'Content-Type': 'application/json' },
     })
   }
+}
+
+function createMockStreamResponse(text: string) {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    start(controller) {
+      const chunk = `0:${JSON.stringify(text)}\n`
+      controller.enqueue(encoder.encode(chunk))
+      controller.close()
+    }
+  })
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'x-vercel-ai-stream-protocol': 'v1',
+    }
+  })
 }

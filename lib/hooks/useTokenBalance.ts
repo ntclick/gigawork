@@ -63,27 +63,35 @@ export function useTokenBalance(
 
   useEffect(() => {
     if (!walletAddress || !tokenAddress || !rpcUrl) {
-      setRaw(BigInt(0))
-      setLoading(false)
+      setTimeout(() => {
+        setRaw(BigInt(0))
+        setLoading(false)
+      }, 0)
       return
     }
 
     try {
       const cached = window.localStorage.getItem(`gw:token:${walletAddress.toLowerCase()}:${tokenAddress.toLowerCase()}`)
-      if (cached) {
-        setRaw(BigInt(cached))
-        setLoading(false)
-      } else {
+      setTimeout(() => {
+        if (cached) {
+          setRaw(BigInt(cached))
+          setLoading(false)
+        } else {
+          setRaw(BigInt(0))
+          setLoading(true)
+        }
+      }, 0)
+    } catch {
+      setTimeout(() => {
         setRaw(BigInt(0))
         setLoading(true)
-      }
-    } catch {
-      setRaw(BigInt(0))
-      setLoading(true)
+      }, 0)
     }
 
     let cancelled = false
-    setError(null)
+    setTimeout(() => {
+      if (!cancelled) setError(null)
+    }, 0)
     const client = getClient(rpcUrl)
     client
       .readContract({

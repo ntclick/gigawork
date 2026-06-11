@@ -23,22 +23,24 @@ import { MainHeader } from '@/components/shell/MainHeader'
 import { useTopup, type TopupStep } from '@/lib/hooks/useTopup'
 import { useUSDCBalance } from '@/lib/hooks/useUSDCBalance'
 import { useTokenBalance } from '@/lib/hooks/useTokenBalance'
-import { createWalletClient, custom, parseUnits, createPublicClient, http, encodeFunctionData, maxUint256, type Hex } from 'viem'
+import { createWalletClient, custom, parseUnits, createPublicClient, http, encodeFunctionData, maxUint256 } from 'viem'
 
 const PRESETS = [3, 5, 10, 25]
+
+type GWWindow = Window & typeof globalThis & { __gw_circle_fetch_patched?: boolean }
 
 // Monkeypatch window.fetch to strip x-user-agent header for api.circle.com calls.
 // This resolves the browser CORS block caused by Circle SDK's bug where it sends
 // x-user-agent in preflight headers but api.circle.com's CORS policy does not allow it.
-if (typeof window !== 'undefined' && !(window as any).__gw_circle_fetch_patched) {
-  (window as any).__gw_circle_fetch_patched = true
+if (typeof window !== 'undefined' && !(window as GWWindow).__gw_circle_fetch_patched) {
+  (window as GWWindow).__gw_circle_fetch_patched = true
   const originalFetch = window.fetch
   window.fetch = function (input, init) {
     let isCircleUrl = false
     if (typeof input === 'string') {
       isCircleUrl = input.includes('api.circle.com')
     } else if (input && typeof input === 'object' && 'url' in input) {
-      const url = (input as any).url || ''
+      const url = (input as Request).url || ''
       isCircleUrl = typeof url === 'string' && url.includes('api.circle.com')
     }
 
@@ -46,12 +48,12 @@ if (typeof window !== 'undefined' && !(window as any).__gw_circle_fetch_patched)
       // 1. Clean headers in Request object if input is Request
       if (input && typeof input === 'object' && 'headers' in input) {
         try {
-          const reqHeaders = (input as any).headers
+          const reqHeaders = (input as Request).headers
           if (reqHeaders && typeof reqHeaders.delete === 'function') {
             reqHeaders.delete('x-user-agent')
             reqHeaders.delete('X-User-Agent')
           }
-        } catch (e) {}
+        } catch {}
       }
       
       // 2. Clean headers in init options
@@ -513,7 +515,7 @@ function ActivityTab() {
       <div className="border-2 border-black bg-[var(--giga-panel)]">
         {filtered.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-white/45">
-            No "{filter}" activity.
+            No &quot;{filter}&quot; activity.
           </div>
         )}
         {filtered.map((row, i) => (
@@ -773,14 +775,27 @@ function SwapTab() {
   const [tokenOut, setTokenOut] = useState('EURC')
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<any>(null)
+
+  type SwapResult = {
+    ok: boolean
+    amountIn: string
+    tokenIn: string
+    amountOut: string | null
+    tokenOut: string
+    txHash: string | null
+    explorerUrl: string | null
+    fees?: unknown[]
+    action?: string
+  }
+  const [result, setResult] = useState<SwapResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [estimatedOut, setEstimatedOut] = useState<string | null>(null)
-  const [estimating, setEstimating] = useState(false)
   const [interceptedTxHash, setInterceptedTxHash] = useState<string | null>(null)
 
   // Preload App-Kit package on mount to make swapping instantaneous on click
-  const [appKitSdk, setAppKitSdk] = useState<{ AppKit: any; createViemAdapterFromProvider: any } | null>(null)
+  const [appKitSdk, setAppKitSdk] = useState<{
+    AppKit: new () => unknown
+    createViemAdapterFromProvider: (args: { provider: unknown }) => Promise<unknown>
+  } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -792,8 +807,8 @@ function SwapTab() {
         ])
         if (!cancelled) {
           setAppKitSdk({
-            AppKit: appKitMod.AppKit,
-            createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider
+            AppKit: appKitMod.AppKit as new () => unknown,
+            createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider as (args: { provider: unknown }) => Promise<unknown>
           })
           console.log('AppKit pre-loaded successfully in background for SwapTab')
         }
@@ -811,16 +826,12 @@ function SwapTab() {
   const swapDirection = () => {
     setTokenIn(tokenOut)
     setTokenOut(tokenIn)
-    setEstimatedOut(null)
   }
 
   // Instant local rate estimation for snappy premium UX (0ms latency)
-  useEffect(() => {
+  const estimatedOut = useMemo(() => {
     const amt = parseFloat(amount)
-    if (!amt || amt <= 0) {
-      setEstimatedOut(null)
-      return
-    }
+    if (!amt || amt <= 0) return null
 
     let est = String(amt) // default 1:1
     if (tokenIn === 'USDC' && tokenOut === 'EURC') {
@@ -840,10 +851,8 @@ function SwapTab() {
     } else if (tokenIn === 'cirBTC' && tokenOut === 'EURC') {
       est = String((amt * 60000).toFixed(6))
     }
-
-    setEstimatedOut(est)
+    return est
   }, [amount, tokenIn, tokenOut])
-
 
   const rate = amount && estimatedOut && parseFloat(amount) > 0
     ? (parseFloat(estimatedOut) / parseFloat(amount)).toFixed(4) : null
@@ -864,7 +873,7 @@ function SwapTab() {
 
         const provider = await walletObj.getEthereumProvider()
         const walletClient = createWalletClient({ transport: custom(provider) })
-        const publicClient = createPublicClient({ chain: { id: ARC_CHAIN_ID } as any, transport: http(ARC_RPC) })
+        const publicClient = createPublicClient({ chain: { id: ARC_CHAIN_ID } as unknown as import('viem').Chain, transport: http(ARC_RPC) })
         
         const TELLER = '0x9fdF14c5B14173D74C08Af27AebFf39240dC105A' as `0x${string}`
         const decimals = 6
@@ -904,8 +913,9 @@ function SwapTab() {
               functionName: 'deposit',
               args: [amountWei, accountAddr],
             })
-          } catch (simError: any) {
-            throw new Error('Simulation failed. Your wallet may not be allowlisted by Circle for USYC: ' + (simError.shortMessage || simError.message))
+          } catch (simError) {
+            const err = simError as { shortMessage?: string; message?: string }
+            throw new Error('Simulation failed. Your wallet may not be allowlisted by Circle for USYC: ' + (err.shortMessage || err.message))
           }
 
           const data = encodeFunctionData({ abi: TELLER_ABI, functionName: 'deposit', args: [amountWei, accountAddr] })
@@ -935,8 +945,9 @@ function SwapTab() {
               functionName: 'redeem',
               args: [amountWei, accountAddr, accountAddr],
             })
-          } catch (simError: any) {
-            throw new Error('Simulation failed. Your wallet may not be allowlisted by Circle for USYC: ' + (simError.shortMessage || simError.message))
+          } catch (simError) {
+            const err = simError as { shortMessage?: string; message?: string }
+            throw new Error('Simulation failed. Your wallet may not be allowlisted by Circle for USYC: ' + (err.shortMessage || err.message))
           }
 
           const data = encodeFunctionData({ abi: TELLER_ABI, functionName: 'redeem', args: [amountWei, accountAddr, accountAddr] })
@@ -949,7 +960,7 @@ function SwapTab() {
       } else {
         // --- Regular App-Kit Swap (USDC ↔ EURC) — user ký trực tiếp ---
         const walletObj = wallets[0]
-        if (!walletObj) throw new Error('Chưa kết nối ví. Vui lòng kết nối ví trước.')
+        if (!walletObj) throw new Error('No connected wallet. Please connect your wallet first.')
 
         let kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
         if (!kitKey) {
@@ -965,18 +976,18 @@ function SwapTab() {
             console.error('Failed to fetch CIRCLE_KIT_KEY from server:', e)
           }
         }
-        if (!kitKey) throw new Error('CIRCLE_KIT_KEY chưa được cấu hình (Vui lòng cấu hình CIRCLE_KIT_KEY hoặc NEXT_PUBLIC_CIRCLE_KIT_KEY trên Vercel).')
+        if (!kitKey) throw new Error('CIRCLE_KIT_KEY is not configured (Please configure CIRCLE_KIT_KEY or NEXT_PUBLIC_CIRCLE_KIT_KEY on Vercel).')
 
         // Switch sang Arc Testnet trước khi swap
         try { await walletObj.switchChain(5042002) } catch { /* ignore */ }
 
         const rawProvider = await walletObj.getEthereumProvider()
-        const provider = { ...rawProvider } as any
+        const provider = { ...rawProvider } as unknown as { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown> }
         if (rawProvider.request) {
-          provider.request = async (args: any) => {
+          provider.request = async (args: { method: string; params?: unknown[] }) => {
             const res = await rawProvider.request(args)
             if (args?.method === 'eth_sendTransaction' && typeof res === 'string' && res.startsWith('0x')) {
-              const txParams = args?.params?.[0]
+              const txParams = args?.params?.[0] as { data?: string } | undefined
               const isApproval = typeof txParams?.data === 'string' && (
                 txParams.data.startsWith('0x095ea7b3') || // approve
                 txParams.data.startsWith('0x39509351')    // increaseAllowance
@@ -990,7 +1001,7 @@ function SwapTab() {
                 ;(async () => {
                   try {
                     const client = createPublicClient({ 
-                      chain: { id: 5042002 } as any, 
+                      chain: { id: 5042002 } as unknown as import('viem').Chain, 
                       transport: http(ARC_RPC) 
                     })
                     console.log('Swap fallback: Waiting for transaction receipt for:', res)
@@ -1008,7 +1019,6 @@ function SwapTab() {
                       explorerUrl: `https://testnet.arcscan.app/tx/${res}`,
                     })
                     setAmount('')
-                    setEstimatedOut(null)
                     setBusy(false)
                     window.dispatchEvent(new Event('gw:credits-changed'))
                   } catch (err) {
@@ -1026,11 +1036,14 @@ function SwapTab() {
             import('@circle-fin/app-kit'),
             import('@circle-fin/adapter-viem-v2')
           ])
-          return { AppKit: appKitMod.AppKit, createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider }
+          return {
+            AppKit: appKitMod.AppKit as new () => unknown,
+            createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider as (args: { provider: unknown }) => Promise<unknown>
+          }
         })()
 
         const kit = new sdk.AppKit()
-        const adapter = await sdk.createViemAdapterFromProvider({ provider: provider as any })
+        const adapter = await sdk.createViemAdapterFromProvider({ provider })
 
         // Map symbol → contract address
         const TOKEN_MAP: Record<string, string> = {
@@ -1041,10 +1054,10 @@ function SwapTab() {
         const resolvedIn  = TOKEN_MAP[tokenIn] ?? tokenIn
         const resolvedOut = TOKEN_MAP[tokenOut] ?? tokenOut
 
-        const swapResult = await (kit as any).swap({
-          from: { adapter, chain: 'Arc_Testnet' as any },
-          tokenIn:  resolvedIn  as any,
-          tokenOut: resolvedOut as any,
+        const swapResult = await (kit as { swap: (args: unknown) => Promise<unknown> }).swap({
+          from: { adapter, chain: 'Arc_Testnet' as unknown as import('viem').Chain },
+          tokenIn:  resolvedIn  as `0x${string}`,
+          tokenOut: resolvedOut as `0x${string}`,
           amountIn: amount,
           config: { kitKey, slippageBps: 100 },
         })
@@ -1052,7 +1065,7 @@ function SwapTab() {
         const normalizeAmt = (v: unknown): string | null => {
           if (v == null) return null
           if (typeof v === 'string' || typeof v === 'number') return String(v)
-          if (typeof v === 'object' && 'amount' in (v as any)) return String((v as any).amount)
+          if (typeof v === 'object' && 'amount' in (v as { amount: unknown })) return String((v as { amount: unknown }).amount)
           return null
         }
 
@@ -1062,16 +1075,15 @@ function SwapTab() {
           tokenIn,
           tokenOut,
           amountIn: amount,
-          amountOut: normalizeAmt((swapResult as any).amountOut),
-          txHash: (swapResult as any).txHash ?? null,
-          explorerUrl: (swapResult as any).explorerUrl ?? null,
-          fees: (swapResult as any).fees ?? [],
+          amountOut: normalizeAmt((swapResult as { amountOut?: unknown }).amountOut),
+          txHash: (swapResult as { txHash?: string }).txHash ?? null,
+          explorerUrl: (swapResult as { explorerUrl?: string }).explorerUrl ?? null,
+          fees: (swapResult as { fees?: unknown[] }).fees ?? [],
         })
       }
 
 
       setAmount('')
-      setEstimatedOut(null)
       window.dispatchEvent(new Event('gw:credits-changed'))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Swap failed')
@@ -1131,7 +1143,7 @@ function SwapTab() {
               {SWAP_TOKENS.map(t => <option key={t.symbol} value={t.symbol} className="bg-[#1f1f33]">{t.symbol}</option>)}
             </select>
             <span className="flex-1 text-right text-2xl font-mono text-white/50">
-              {estimating ? '…' : estimatedOut ?? '—'}
+              {estimatedOut ?? '—'}
             </span>
           </div>
         </div>
@@ -1216,7 +1228,7 @@ const BRIDGE_SOURCES = [
   { value: 'Base_Sepolia', label: 'Base Sepolia', rpcUrl: `https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`, usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' },
 ]
 
-type BridgeEstimate = { feeTotal: number; providerFee: number; forwarderFee: number; kitFee: number; amountReceived: number }
+
 
 const CHAIN_ID_MAP: Record<string, number> = {
   Arc_Testnet: 5042002,
@@ -1238,17 +1250,25 @@ function BridgeTab() {
   const [amount, setAmount] = useState('')
   const [speed, setSpeed] = useState<'FAST' | 'SLOW'>('FAST')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<any>(null)
+
+  type BridgeResult = {
+    ok: boolean
+    amount: string
+    fromChain: string
+    toChain: string
+    txHash: string | null
+    explorerUrl: string | null
+  }
+  const [result, setResult] = useState<BridgeResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState('')
   const [interceptedTxHash, setInterceptedTxHash] = useState<string | null>(null)
 
-  // Fee estimate
-  const [estimate, setEstimate] = useState<BridgeEstimate | null>(null)
-  const [estimating, setEstimating] = useState(false)
-
   // Preload App-Kit package on mount to make bridging instantaneous on click
-  const [appKitSdk, setAppKitSdk] = useState<{ AppKit: any; createViemAdapterFromProvider: any } | null>(null)
+  const [appKitSdk, setAppKitSdk] = useState<{
+    AppKit: new () => unknown
+    createViemAdapterFromProvider: (args: { provider: unknown }) => Promise<unknown>
+  } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1260,8 +1280,8 @@ function BridgeTab() {
         ])
         if (!cancelled) {
           setAppKitSdk({
-            AppKit: appKitMod.AppKit,
-            createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider
+            AppKit: appKitMod.AppKit as new () => unknown,
+            createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider as (args: { provider: unknown }) => Promise<unknown>
           })
           console.log('AppKit pre-loaded successfully in background for BridgeTab')
         }
@@ -1293,9 +1313,7 @@ function BridgeTab() {
 
   // Chain selection handlers that automatically swap/adjust chains
   const handleSelectFrom = async (val: string) => {
-    let newTo = toChain
     if (val === toChain) {
-      newTo = fromChain
       setToChain(fromChain)
     }
     setFromChain(val)
@@ -1335,11 +1353,8 @@ function BridgeTab() {
   }
 
   // Instant local bridge fee estimation for snappy premium UX (0ms latency)
-  useEffect(() => {
-    if (!parsedAmount || parsedAmount < MIN_BRIDGE) {
-      setEstimate(null)
-      return
-    }
+  const estimate = useMemo(() => {
+    if (!parsedAmount || parsedAmount < MIN_BRIDGE) return null
 
     const feeTotal = fromChain === 'Ethereum_Sepolia' ? 0.50 : fromChain === 'Base_Sepolia' ? 0.05 : 0.01
     const providerFee = Number((feeTotal * 0.2).toFixed(6))
@@ -1347,21 +1362,21 @@ function BridgeTab() {
     const kitFee = Number((feeTotal * 0.2).toFixed(6))
     const amountReceived = Number(Math.max(parsedAmount - feeTotal, 0).toFixed(6))
 
-    setEstimate({
+    return {
       feeTotal,
       providerFee,
       forwarderFee,
       kitFee,
       amountReceived,
-    })
-  }, [parsedAmount, fromChain, toChain, speed, amount])
+    }
+  }, [parsedAmount, fromChain])
 
 
   const execute = async () => {
     setBusy(true); setError(null); setResult(null); setStep('Initiating bridge...'); setInterceptedTxHash(null)
     try {
       const walletObj = wallets[0]
-      if (!walletObj) throw new Error('Chưa kết nối ví. Vui lòng kết nối ví trước.')
+      if (!walletObj) throw new Error('No connected wallet. Please connect your wallet first.')
 
       let kitKey = process.env.NEXT_PUBLIC_CIRCLE_KIT_KEY
       if (!kitKey) {
@@ -1377,7 +1392,7 @@ function BridgeTab() {
           console.error('Failed to fetch CIRCLE_KIT_KEY from server:', e)
         }
       }
-      if (!kitKey) throw new Error('CIRCLE_KIT_KEY chưa được cấu hình (Vui lòng cấu hình CIRCLE_KIT_KEY hoặc NEXT_PUBLIC_CIRCLE_KIT_KEY trên Vercel).')
+      if (!kitKey) throw new Error('CIRCLE_KIT_KEY is not configured (Please configure CIRCLE_KIT_KEY or NEXT_PUBLIC_CIRCLE_KIT_KEY on Vercel).')
 
       // Switch to source chain
       const targetChainId = CHAIN_ID_MAP[fromChain]
@@ -1386,18 +1401,18 @@ function BridgeTab() {
           await walletObj.switchChain(targetChainId)
         } catch (err) {
           console.error('Failed to switch chain:', err)
-          throw new Error(`Vui lòng chuyển ví sang mạng ${source.label} để thực hiện bridge.`)
+          throw new Error(`Please switch your wallet network to ${source.label} to perform bridge.`)
         }
       }
 
       const rawProvider = await walletObj.getEthereumProvider()
 
-      const provider = { ...rawProvider } as any
+      const provider = { ...rawProvider } as unknown as { request?: (args: { method: string; params?: unknown[] }) => Promise<unknown> }
       if (rawProvider.request) {
-        provider.request = async (args: any) => {
+        provider.request = async (args: { method: string; params?: unknown[] }) => {
           const res = await rawProvider.request(args)
           if (args?.method === 'eth_sendTransaction' && typeof res === 'string' && res.startsWith('0x')) {
-            const txParams = args?.params?.[0]
+            const txParams = args?.params?.[0] as { data?: string } | undefined
             const isApproval = typeof txParams?.data === 'string' && (
               txParams.data.startsWith('0x095ea7b3') || // approve
               txParams.data.startsWith('0x39509351')    // increaseAllowance
@@ -1450,22 +1465,25 @@ function BridgeTab() {
           import('@circle-fin/app-kit'),
           import('@circle-fin/adapter-viem-v2')
         ])
-        return { AppKit: appKitMod.AppKit, createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider }
+        return {
+          AppKit: appKitMod.AppKit as new () => unknown,
+          createViemAdapterFromProvider: adapterMod.createViemAdapterFromProvider as (args: { provider: unknown }) => Promise<unknown>
+        }
       })()
 
       const kit = new sdk.AppKit()
-      const adapter = await sdk.createViemAdapterFromProvider({ provider: provider as any })
+      const adapter = await sdk.createViemAdapterFromProvider({ provider })
 
       setStep('Prompting bridge transaction in wallet...')
-      const result = await (kit as any).bridge({
-        from: { adapter, chain: fromChain as any },
-        to: { adapter, chain: toChain as any, useForwarder: true } as any,
+      const result = await (kit as { bridge: (args: unknown) => Promise<{ state: string; steps?: Array<{ state: string; errorMessage?: string; txHash?: string; explorerUrl?: string }> }> }).bridge({
+        from: { adapter, chain: fromChain as unknown as import('viem').Chain },
+        to: { adapter, chain: toChain as unknown as import('viem').Chain, useForwarder: true } as unknown as import('viem').Chain,
         amount,
         config: { transferSpeed: speed, kitKey },
       })
 
       if (result.state === 'error') {
-        const failedStep = result.steps?.find((s: any) => s.state === 'error')
+        const failedStep = result.steps?.find((s) => s.state === 'error')
         throw new Error(failedStep?.errorMessage || 'Bridge failed')
       }
 
@@ -1474,8 +1492,8 @@ function BridgeTab() {
         amount,
         fromChain,
         toChain,
-        txHash: result.steps?.find((s: any) => s.txHash)?.txHash ?? null,
-        explorerUrl: result.steps?.find((s: any) => s.explorerUrl)?.explorerUrl ?? null,
+        txHash: result.steps?.find((s) => s.txHash)?.txHash ?? null,
+        explorerUrl: result.steps?.find((s) => s.explorerUrl)?.explorerUrl ?? null,
       })
       setAmount('')
       window.dispatchEvent(new Event('gw:credits-changed'))
@@ -1581,8 +1599,6 @@ function BridgeTab() {
               <div className="text-amber-400">Min bridge: {MIN_BRIDGE} USDC</div>
             ) : exceedsBal ? (
               <div className="text-red-400">Insufficient balance ({balance.formatted} USDC on {source.label})</div>
-            ) : estimating ? (
-              <div className="flex items-center gap-2 text-white/55"><Loader2 className="h-3 w-3 animate-spin" />Estimating fees...</div>
             ) : estimate ? (
               <>
                 <div className="flex justify-between"><span className="text-white/55">Bridge amount</span><span className="text-white">{parsedAmount.toFixed(2)} USDC</span></div>

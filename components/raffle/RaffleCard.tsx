@@ -1,9 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { Calendar, Users, Trophy, ChevronRight, Orbit, ExternalLink } from 'lucide-react'
+import { Calendar, Users, Trophy, ChevronRight, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface Raffle {
   id: string

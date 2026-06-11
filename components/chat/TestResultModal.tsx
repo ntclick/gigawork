@@ -101,7 +101,7 @@ export function TestResultModal({ isOpen, onClose, deploymentId, workflowTitle }
             <div className="flex flex-col items-center gap-3 py-8">
               <Loader2 className="h-8 w-8 animate-spin text-[var(--giga-accent)]" />
               <p className="font-pixel-body text-xs text-[var(--giga-accent)] animate-pulse">
-                ĐANG KIỂM TRA DEPLOYMENT...
+                RUNNING DEPLOYMENT TEST...
               </p>
             </div>
           )}
@@ -113,15 +113,15 @@ export function TestResultModal({ isOpen, onClose, deploymentId, workflowTitle }
                 <XCircle className="h-6 w-6" />
               </div>
               <div className="text-center">
-                <p className="font-pixel-body text-xs text-red-400 uppercase mb-1">Lỗi kết nối</p>
-                <p className="text-[11px] text-white/50">{error}</p>
+                <p className="font-pixel-body text-xs text-red-400 uppercase mb-1">Connection Error</p>
+                <p className="text-[11px] text-white/55">{error}</p>
               </div>
               <button
                 type="button"
                 onClick={runTest}
                 className="mt-2 bg-[var(--giga-accent)] px-4 py-2 font-pixel-body text-[10px] text-black font-bold hover:bg-yellow-300 active:scale-95 transition shadow-[2px_2px_0_0_#000]"
               >
-                THỬ LẠI
+                RETRY
               </button>
             </div>
           )}
@@ -141,7 +141,7 @@ export function TestResultModal({ isOpen, onClose, deploymentId, workflowTitle }
               {data.nodeResults.length === 0 ? (
                 <div className="text-center py-6 border border-dashed border-white/10 bg-black/10">
                   <p className="font-pixel-body text-[10px] text-white/40 uppercase">
-                    Chưa có kết quả. Workflow chưa chạy lần nào.
+                    No results. The workflow has not run yet.
                   </p>
                 </div>
               ) : (
@@ -157,7 +157,7 @@ export function TestResultModal({ isOpen, onClose, deploymentId, workflowTitle }
                   onClick={runTest}
                   className="bg-white/10 border border-white/10 hover:bg-white/15 px-4 py-2 font-pixel-body text-[10px] text-white uppercase transition active:scale-95"
                 >
-                  LÀM MỚI
+                  REFRESH
                 </button>
               </div>
             </div>
@@ -228,9 +228,8 @@ function NodeResultCard({ node }: { node: NodeResult }) {
         </div>
       )}
 
-      {/* No output */}
       {!output && (
-        <p className="text-[10px] text-white/30 italic">Chưa có output</p>
+        <p className="text-[10px] text-white/30 italic">No output</p>
       )}
     </div>
   )

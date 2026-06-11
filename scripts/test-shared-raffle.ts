@@ -121,11 +121,11 @@ async function main() {
         topics: log.topics,
       })
       if (decoded.eventName === 'RaffleDrawn' && decoded.args) {
-        const args = decoded.args as any
+        const args = decoded.args as { raffleId?: bigint }
         raffleId = Number(args.raffleId)
         break
       }
-    } catch (e) {
+    } catch {
       // skip
     }
   }

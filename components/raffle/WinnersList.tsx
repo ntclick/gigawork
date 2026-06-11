@@ -1,6 +1,6 @@
 'use client'
 
-import { Trophy, Compass, Star, Loader2, Activity } from 'lucide-react'
+import { Trophy, Compass, Star, Activity } from 'lucide-react'
 
 interface Winner {
   id: string

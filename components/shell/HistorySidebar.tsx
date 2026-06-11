@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
-import { Plus, Search, X, Wallet, LogOut, MessageSquare, Activity, Briefcase, Image as ImageIcon, Globe, TrendingUp } from 'lucide-react'
+import { Plus, Search, X, Wallet, LogOut } from 'lucide-react'
 
 import { useUI } from './UIShell'
 
@@ -47,21 +47,14 @@ function shortAddr(a: string) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`
 }
 
-/**
- * Pick a category icon from the workflow prompt — quick keyword match so the
- * sidebar feels alive without an LLM round-trip.
- */
-function iconFor(prompt: string) {
-  const p = prompt.toLowerCase()
-  if (/sentiment|twitter|reddit|x\.com/.test(p)) return Activity
-  if (/portfolio|rebalanc|hedge/.test(p)) return Briefcase
-  if (/nft|mint/.test(p)) return ImageIcon
-  if (/scrap|crawl|web|news/.test(p)) return Globe
-  if (/trade|buy|sell|signal|long|short/.test(p)) return TrendingUp
-  return MessageSquare
+const STATUS_DOT: Record<string, string> = {
+  running: 'bg-cyan-400 animate-pulse',
+  streaming: 'bg-cyan-400 animate-pulse',
+  submitted: 'bg-cyan-400 animate-pulse',
+  completed: 'bg-emerald-400',
+  failed: 'bg-red-500',
+  settling: 'bg-amber-400 animate-pulse',
 }
-
-const ACTIVE_STATUSES = new Set(['running', 'streaming', 'submitted'])
 
 export function HistorySidebar() {
   const [items, setItems] = useState<Workflow[]>([])
@@ -74,11 +67,10 @@ export function HistorySidebar() {
   const { login } = useLogin()
   const { logout } = useLogout()
 
-  // Fetch workflow list — refresh on drawer open + every 15s.
   useEffect(() => {
     if (!ready) return
     if (!authenticated) {
-      setItems([])
+      setTimeout(() => { setItems([]) }, 0)
       return
     }
     const refresh = () =>
@@ -94,14 +86,14 @@ export function HistorySidebar() {
       clearInterval(t)
       window.removeEventListener('gw:credits-changed', onBust)
     }
-  }, [])
+  }, [ready, authenticated])
+
   useEffect(() => {
     if (historyOpen && authenticated) {
       fetch('/api/workflows', { cache: 'no-store' }).then((r) => r.json()).then((j) => setItems(j.workflows ?? [])).catch(() => {})
     }
   }, [historyOpen, authenticated])
 
-  // Fetch user balance
   useEffect(() => {
     const refresh = () => fetch('/api/me', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => {})
     refresh()
@@ -120,93 +112,84 @@ export function HistorySidebar() {
   const groups: Record<string, Workflow[]> = { today: [], week: [], month: [], older: [] }
   for (const w of filtered) groups[bucket(w.createdAt)]!.push(w)
 
-  // ─── Inner content (shared between desktop aside + mobile drawer) ──────
   const inner = (
-    <div className="giga-theme flex h-full flex-col bg-[var(--giga-sidebar)] text-[var(--giga-text)]">
-      {/* Header — title only on desktop; X close on mobile */}
-      <div className="flex items-center justify-between px-6 pt-5 pb-2 md:pt-6 md:pb-3">
-        <Link href="/" onClick={closeHistory} className="flex-1">
-          <h1 className="font-pixel-header text-3xl font-bold text-white text-center md:text-4xl">
-            GigaWork
-          </h1>
+    <div className="flex h-full flex-col bg-[#0c0e14]" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+        <Link href="/" onClick={closeHistory}>
+          <span className="text-sm font-semibold tracking-tight text-white">
+            Giga<span className="gw-gradient-text">Work</span>
+          </span>
         </Link>
         <button
-          onClick={(e) => {
-            e.preventDefault()
-            closeHistory()
-          }}
+          onClick={(e) => { e.preventDefault(); closeHistory() }}
           aria-label="Close"
-          className="md:hidden inline-flex h-8 w-8 items-center justify-center rounded text-white/55 hover:text-white"
+          className="md:hidden inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/8 hover:text-white"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* + New Workflow */}
-      <div className="px-6 pt-2 pb-4">
+      {/* New Workflow */}
+      <div className="px-3 pb-3">
         <Link
           href="/"
           onClick={closeHistory}
-          className="flex w-full items-center justify-center gap-2 border-2 border-white/20 bg-[var(--giga-panel)] py-2 px-4 text-white transition hover:bg-[var(--giga-accent)]"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500/15 to-violet-500/10 border border-cyan-500/20 py-2 px-3 text-xs font-medium text-cyan-300 transition hover:border-cyan-500/35 hover:from-cyan-500/20 hover:to-violet-500/15"
         >
-          <Plus className="h-4 w-4" />
-          <span className="text-base">New Workflow</span>
+          <Plus className="h-3.5 w-3.5" />
+          New Workflow
         </Link>
       </div>
 
       {/* Search */}
-      <div className="px-6 pb-3">
-        <div className="flex items-center gap-2 border-2 border-white/10 bg-[var(--giga-dark)]/60 px-2 py-1.5">
-          <Search className="h-3 w-3 text-white/40" />
+      <div className="px-3 pb-3">
+        <div className="gw-input flex items-center gap-2 px-2.5 py-1.5">
+          <Search className="h-3 w-3 shrink-0 text-white/30" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search workflows…"
-            className="flex-1 bg-transparent text-sm text-white/90 outline-none placeholder:text-white/30"
+            placeholder="Search…"
+            className="flex-1 bg-transparent text-xs text-white/85 outline-none placeholder:text-white/25"
           />
         </div>
       </div>
 
       {/* Workflow list */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-3 text-base">
+      <nav className="flex-1 overflow-y-auto px-2 pb-2">
         {filtered.length === 0 && (
-          <div className="px-3 pt-6 text-center text-sm text-white/35">
-            No workflows yet.<br />
-            <span className="text-xs">Type a task to get started →</span>
+          <div className="px-3 pt-8 text-center text-xs text-white/25">
+            No workflows yet.
           </div>
         )}
         {(['today', 'week', 'month', 'older'] as const).map((k) => {
           const list = groups[k]
           if (!list || list.length === 0) return null
           return (
-            <div key={k} className="mb-3">
-              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-white/35">
+            <div key={k} className="mb-2">
+              <div className="px-2 pt-3 pb-1 text-[9px] font-semibold uppercase tracking-widest text-white/25">
                 {LABELS[k]}
               </div>
-              <ul className="space-y-1">
+              <ul className="space-y-0.5">
                 {list.map((w) => {
-                  const Icon = iconFor(w.prompt)
                   const active = activeId === w.id
-                  const running = ACTIVE_STATUSES.has(w.status)
+                  const dotClass = STATUS_DOT[w.status] ?? 'bg-white/20'
                   return (
                     <li key={w.id}>
                       <Link
                         href={`/workflow/${w.id}`}
                         onClick={closeHistory}
                         className={[
-                          'flex items-center gap-3 rounded p-2 cursor-pointer transition',
+                          'group flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition',
                           active
-                            ? 'bg-[var(--giga-panel)]/60 border-l-4 border-[var(--giga-accent)] pl-1'
-                            : 'border-l-4 border-transparent pl-1 hover:bg-white/5',
+                            ? 'bg-white/8 text-white'
+                            : 'text-white/55 hover:bg-white/5 hover:text-white/85',
                         ].join(' ')}
                       >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center bg-[var(--giga-dark)]/60 border border-white/10 text-white/70">
-                          <Icon className="h-3.5 w-3.5" />
-                        </span>
-                        <span className={`flex-1 truncate text-sm leading-snug ${active ? 'text-white' : 'text-white/75'}`}>
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
+                        <span className="flex-1 truncate text-xs leading-relaxed">
                           {shortTitle(w.prompt)}
                         </span>
-                        {running && <span className="text-green-400 text-sm">📈</span>}
                       </Link>
                     </li>
                   )
@@ -218,52 +201,45 @@ export function HistorySidebar() {
       </nav>
 
       {/* User profile footer */}
-      <div className="border-t-2 border-[var(--giga-border-shadow, var(--giga-panel))] bg-[var(--giga-dark)]/60 p-4">
+      <div className="border-t border-white/[0.05] p-3">
         {!ready ? (
-          <div className="flex h-12 items-center text-xs text-white/40">Đang tải…</div>
+          <div className="flex h-10 items-center text-xs text-white/25">Loading…</div>
         ) : !authenticated ? (
           <button
             onClick={() => login()}
-            className="flex w-full items-center justify-center gap-2 border-2 border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-cyan-100 transition hover:bg-cyan-400/20"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/8 px-3 py-2 text-xs text-cyan-300 transition hover:bg-cyan-400/15"
           >
-            <Wallet className="h-4 w-4" />
-            <span>Kết nối ví</span>
+            <Wallet className="h-3.5 w-3.5" />
+            Connect wallet
           </button>
         ) : (
-          <div className="flex items-center gap-3">
-            <div
-              data-pixel
-              className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden border-2 border-indigo-400 bg-indigo-900"
-              aria-hidden="true"
-            >
-              <svg height="40" viewBox="0 0 40 40" width="40" xmlns="http://www.w3.org/2000/svg">
-                <rect fill="#3a3a5e" height="4" width="20" x="10" y="16"></rect>
-                <rect fill="#3a3a5e" height="4" width="12" x="14" y="12"></rect>
-                <rect fill="#3a3a5e" height="4" width="8" x="16" y="8"></rect>
-                <rect fill="#3a3a5e" height="4" width="4" x="18" y="4"></rect>
-                <rect fill="#fcdbb6" height="8" width="12" x="14" y="20"></rect>
-                <rect fill="#000" height="2" width="2" x="16" y="22"></rect>
-                <rect fill="#000" height="2" width="2" x="22" y="22"></rect>
-                <rect fill="#fff" height="8" width="16" x="12" y="28"></rect>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500/40 to-cyan-500/30 border border-white/10">
+              <svg height="28" viewBox="0 0 40 40" width="28">
+                <rect fill="#3a3a5e" height="4" width="20" x="10" y="16" />
+                <rect fill="#3a3a5e" height="4" width="12" x="14" y="12" />
+                <rect fill="#3a3a5e" height="4" width="8" x="16" y="8" />
+                <rect fill="#3a3a5e" height="4" width="4" x="18" y="4" />
+                <rect fill="#fcdbb6" height="8" width="12" x="14" y="20" />
+                <rect fill="#000" height="2" width="2" x="16" y="22" />
+                <rect fill="#000" height="2" width="2" x="22" y="22" />
+                <rect fill="#fff" height="8" width="16" x="12" y="28" />
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-base text-white">
+              <div className="truncate text-xs font-medium text-white/80">
                 {user?.email?.address ?? (user?.wallet?.address ? shortAddr(user.wallet.address) : 'Adventurer')}
               </div>
-              <div className="mt-0.5 inline-flex items-center gap-1 border border-[#3b82f6] bg-[#1e3a8a] px-2 text-white">
-                <span className="text-[#60a5fa]">($)</span>
-                <span className="text-xs">
-                  {(me?.credits ?? 0).toLocaleString()} cr
-                </span>
+              <div className="mt-0.5 text-[10px] text-white/35">
+                {(me?.credits ?? 0).toLocaleString()} credits
               </div>
             </div>
             <button
               onClick={() => logout()}
               title="Log out"
-              className="ml-1 inline-flex h-7 w-7 items-center justify-center text-white/40 hover:text-red-300"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-white/25 transition hover:bg-red-500/10 hover:text-red-400"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-3 w-3" />
             </button>
           </div>
         )}
@@ -274,9 +250,11 @@ export function HistorySidebar() {
   return (
     <>
       {/* Desktop: static aside */}
-      <aside className="hidden h-full w-64 shrink-0 flex-col border-r-2 border-[var(--giga-panel)] md:flex">
-        {inner}
-      </aside>
+      {historyOpen && (
+        <aside className="hidden h-full w-60 shrink-0 flex-col md:flex">
+          {inner}
+        </aside>
+      )}
 
       {/* Mobile: slide-in drawer */}
       {historyOpen && (
@@ -285,7 +263,7 @@ export function HistorySidebar() {
           <aside
             className="gw-drawer-panel gw-drawer-left md:hidden"
             role="dialog"
-            aria-label="Lịch sử workflow"
+            aria-label="Workflow history"
           >
             {inner}
           </aside>

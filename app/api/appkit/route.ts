@@ -8,23 +8,30 @@
  *   { action: 'estimateBridge', amount, fromChain?, toChain?, speed? }
  */
 import { NextResponse } from 'next/server'
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits } from 'viem'
+import { createPublicClient, createWalletClient, http, parseUnits, type Chain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 import { getCurrentUser, AuthRequiredError } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
+interface AppKitInstance {
+  bridge(args: unknown): Promise<unknown>
+  estimateBridge(args: unknown): Promise<unknown>
+  swap(args: unknown): Promise<unknown>
+  estimateSwap(args: unknown): Promise<unknown>
+}
+
 // Module-level cache for heavy dynamic imports to optimize API response speed
-let cachedAppKit: any = null
-let cachedAdapter: any = null
+let cachedAppKit: unknown = null
+let cachedAdapter: unknown = null
 
 async function getAppKit() {
   if (!cachedAppKit) {
     const mod = await import('@circle-fin/app-kit')
     cachedAppKit = mod.AppKit
   }
-  return cachedAppKit
+  return cachedAppKit as { new (): AppKitInstance }
 }
 
 async function getAdapter() {
@@ -32,7 +39,7 @@ async function getAdapter() {
     const mod = await import('@circle-fin/adapter-viem-v2')
     cachedAdapter = mod.createViemAdapterFromPrivateKey
   }
-  return cachedAdapter
+  return cachedAdapter as (args: { privateKey: string }) => unknown
 }
 
 // ── Arc Testnet chain definition ────────────────────────────────
@@ -63,7 +70,7 @@ const ERC20_ABI = [
     outputs: [{ name: '', type: 'uint256' }] },
   { name: 'decimals', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint8' }] },
-]
+] as const
 
 const TELLER_ABI = [
   // deposit(uint256 _assets, address _receiver) → uint256 (USDC → USYC)
@@ -81,7 +88,7 @@ const TELLER_ABI = [
       { name: '_account', type: 'address' },
     ],
     outputs: [{ name: '', type: 'uint256' }] },
-]
+] as const
 
 // ── Token symbol → address mapping ─────────────────────────────
 const TOKEN_MAP: Record<string, `0x${string}`> = {
@@ -141,7 +148,7 @@ export async function POST(req: Request) {
   const normalizeAmount = (v: unknown): string | null => {
     if (v == null) return null
     if (typeof v === 'string' || typeof v === 'number') return String(v)
-    if (typeof v === 'object' && 'amount' in (v as any)) return String((v as any).amount)
+    if (typeof v === 'object' && v !== null && 'amount' in v) return String((v as { amount: unknown }).amount)
     return null
   }
 
@@ -160,10 +167,10 @@ export async function POST(req: Request) {
       }
 
       const account = privateKeyToAccount(pk as `0x${string}`)
-      const publicClient = createPublicClient({ chain: arcTestnet as any, transport: http() })
+      const publicClient = createPublicClient({ chain: arcTestnet as Chain, transport: http() })
       const walletClient = createWalletClient({
         account,
-        chain: arcTestnet as any,
+        chain: arcTestnet as Chain,
         transport: http(),
       })
 
@@ -202,7 +209,7 @@ export async function POST(req: Request) {
             abi: ERC20_ABI,
             functionName: 'approve',
             args: [CONTRACTS.TELLER, amountWei],
-          } as any)
+          })
           await publicClient.waitForTransactionReceipt({ hash: approveTx })
         }
 
@@ -212,7 +219,7 @@ export async function POST(req: Request) {
           abi: TELLER_ABI,
           functionName: 'deposit',
           args: [amountWei, account.address],
-        } as any)
+        })
         const receipt = await publicClient.waitForTransactionReceipt({ hash: depositTx })
 
         return NextResponse.json({
@@ -243,7 +250,7 @@ export async function POST(req: Request) {
             abi: ERC20_ABI,
             functionName: 'approve',
             args: [CONTRACTS.TELLER, amountWei],
-          } as any)
+          })
           await publicClient.waitForTransactionReceipt({ hash: approveTx })
         }
 
@@ -253,7 +260,7 @@ export async function POST(req: Request) {
           abi: TELLER_ABI,
           functionName: 'redeem',
           args: [amountWei, account.address, account.address],
-        } as any)
+        })
         const receipt = await publicClient.waitForTransactionReceipt({ hash: redeemTx })
 
         return NextResponse.json({
@@ -282,22 +289,43 @@ export async function POST(req: Request) {
     const kit = new AppKitClass()
     const adapter = createViemAdapter({ privateKey: pk })
 
+    // Helper interface for AppKit target chain typing
+    type BridgeTarget = {
+      adapter: unknown
+      chain: 'Ethereum_Sepolia' | 'Arc_Testnet'
+      useForwarder?: boolean
+    }
+
+    // Helper type for AppKit bridge return value
+    type BridgeStep = {
+      name: string
+      state: string
+      txHash?: string
+      explorerUrl?: string
+      errorMessage?: string
+    }
+
+    type BridgeResult = {
+      state: string
+      steps?: BridgeStep[]
+    }
+
     // ── BRIDGE ──────────────────────────────────────────────
     if (action === 'bridge') {
       if (!amount || Number(amount) <= 0) {
         return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
       }
-      const source = (fromChain ?? 'Ethereum_Sepolia') as string
-      const dest = (toChain ?? 'Arc_Testnet') as string
-      const result = await kit.bridge({
-        from: { adapter, chain: source as any },
-        to: { adapter, chain: dest as any, useForwarder: true } as any,
+      const source = (fromChain ?? 'Ethereum_Sepolia') as 'Ethereum_Sepolia' | 'Arc_Testnet'
+      const dest = (toChain ?? 'Arc_Testnet') as 'Ethereum_Sepolia' | 'Arc_Testnet'
+      const result = (await kit.bridge({
+        from: { adapter, chain: source },
+        to: { adapter, chain: dest, useForwarder: true } as unknown as BridgeTarget,
         amount,
-        config: { transferSpeed: (speed ?? 'FAST') as any } as any,
-      })
+        config: { transferSpeed: speed ?? 'FAST' } as unknown as Record<string, unknown>,
+      })) as BridgeResult
 
-      if ((result as any).state === 'error') {
-        const failedStep = (result as any).steps?.find((s: any) => s.state === 'error')
+      if (result.state === 'error') {
+        const failedStep = result.steps?.find((s) => s.state === 'error')
         throw new Error(failedStep?.errorMessage || 'Bridge failed')
       }
 
@@ -307,9 +335,9 @@ export async function POST(req: Request) {
         amount,
         fromChain: source,
         toChain: dest,
-        txHash: (result as any).steps?.find((s: any) => s.txHash)?.txHash ?? null,
-        explorerUrl: (result as any).steps?.find((s: any) => s.explorerUrl)?.explorerUrl ?? null,
-        steps: (result as any).steps?.map((s: any) => ({
+        txHash: result.steps?.find((s) => s.txHash)?.txHash ?? null,
+        explorerUrl: result.steps?.find((s) => s.explorerUrl)?.explorerUrl ?? null,
+        steps: result.steps?.map((s) => ({
           name: s.name,
           state: s.state,
           txHash: s.txHash,
@@ -318,27 +346,35 @@ export async function POST(req: Request) {
       })
     }
 
+    // Helper type for AppKit bridge estimation
+    type BridgeEstimateResult = {
+      fees?: Array<{
+        amount?: string | number | { amount: string | number }
+        type?: string
+      }>
+    }
+
     // ── ESTIMATE BRIDGE ─────────────────────────────────────
     if (action === 'estimateBridge') {
       if (!amount || Number(amount) <= 0) {
         return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
       }
-      const source = (fromChain ?? 'Ethereum_Sepolia') as string
-      const dest = (toChain ?? 'Arc_Testnet') as string
-      const est = await kit.estimateBridge({
-        from: { adapter, chain: source as any },
-        to: { adapter, chain: dest as any, useForwarder: true } as any,
+      const source = (fromChain ?? 'Ethereum_Sepolia') as 'Ethereum_Sepolia' | 'Arc_Testnet'
+      const dest = (toChain ?? 'Arc_Testnet') as 'Ethereum_Sepolia' | 'Arc_Testnet'
+      const est = (await kit.estimateBridge({
+        from: { adapter, chain: source },
+        to: { adapter, chain: dest, useForwarder: true } as unknown as BridgeTarget,
         amount,
-        config: { transferSpeed: (speed ?? 'FAST') as any } as any,
-      })
+        config: { transferSpeed: speed ?? 'FAST' } as unknown as Record<string, unknown>,
+      })) as BridgeEstimateResult
 
       let feeTotal = 0
       let providerFee = 0
       let forwarderFee = 0
       let kitFee = 0
-      for (const f of (est as any).fees || []) {
+      for (const f of est.fees || []) {
         if (f.amount == null) continue
-        const n = parseFloat(typeof f.amount === 'object' ? f.amount.amount : f.amount)
+        const n = parseFloat(typeof f.amount === 'object' ? String(f.amount.amount) : String(f.amount))
         if (isNaN(n)) continue
         feeTotal += n
         if (f.type === 'provider') providerFee += n
@@ -356,8 +392,16 @@ export async function POST(req: Request) {
         forwarderFee,
         kitFee,
         amountReceived,
-        fees: (est as any).fees || [],
+        fees: est.fees || [],
       })
+    }
+
+    // Helper types for AppKit Swap
+    type SwapResult = {
+      amountOut: unknown
+      txHash?: string
+      explorerUrl?: string
+      fees?: unknown[]
     }
 
     // ── SWAP (USDC ↔ EURC via App-Kit) ──────────────────────
@@ -375,24 +419,30 @@ export async function POST(req: Request) {
       const resolvedTokenIn = TOKEN_MAP[tokenIn] ?? tokenIn
       const resolvedTokenOut = TOKEN_MAP[tokenOut] ?? tokenOut
 
-      const result = await kit.swap({
-        from: { adapter, chain: 'Arc_Testnet' as any },
-        tokenIn: resolvedTokenIn as any,
-        tokenOut: resolvedTokenOut as any,
+      const result = (await kit.swap({
+        from: { adapter, chain: 'Arc_Testnet' as const },
+        tokenIn: resolvedTokenIn as 'USDC' | 'EURC',
+        tokenOut: resolvedTokenOut as 'USDC' | 'EURC',
         amountIn: amount,
         config: { kitKey, slippageBps: 100 },
-      })
+      })) as SwapResult
       return NextResponse.json({
         ok: true,
         action: 'swap',
         tokenIn,
         tokenOut,
         amountIn: amount,
-        amountOut: normalizeAmount((result as any).amountOut),
-        txHash: (result as any).txHash ?? null,
-        explorerUrl: (result as any).explorerUrl ?? null,
-        fees: (result as any).fees ?? [],
+        amountOut: normalizeAmount(result.amountOut),
+        txHash: result.txHash ?? null,
+        explorerUrl: result.explorerUrl ?? null,
+        fees: result.fees ?? [],
       })
+    }
+
+    type SwapEstimateResult = {
+      estimatedOutput?: unknown
+      amountOut?: unknown
+      fees?: unknown[]
     }
 
     // ── ESTIMATE SWAP (USDC ↔ EURC) ─────────────────────────
@@ -411,21 +461,21 @@ export async function POST(req: Request) {
       const resolvedTokenOut = TOKEN_MAP[tokenOut] ?? tokenOut
 
       try {
-        const est = await kit.estimateSwap({
-          from: { adapter, chain: 'Arc_Testnet' as any },
-          tokenIn: resolvedTokenIn as any,
-          tokenOut: resolvedTokenOut as any,
+        const est = (await kit.estimateSwap({
+          from: { adapter, chain: 'Arc_Testnet' as const },
+          tokenIn: resolvedTokenIn as 'USDC' | 'EURC',
+          tokenOut: resolvedTokenOut as 'USDC' | 'EURC',
           amountIn: amount,
           config: { kitKey },
-        })
+        })) as SwapEstimateResult
         return NextResponse.json({
           ok: true,
           action: 'estimateSwap',
-          estimatedOutput: normalizeAmount((est as any).estimatedOutput) ?? normalizeAmount((est as any).amountOut),
-          fees: (est as any).fees ?? [],
+          estimatedOutput: normalizeAmount(est.estimatedOutput) ?? normalizeAmount(est.amountOut),
+          fees: est.fees ?? [],
         })
-      } catch (err: any) {
-        const errMsg = err?.message || String(err)
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err)
         console.warn('[/api/appkit] estimateSwap App-Kit error, using stablecoin fallback:', errMsg)
         
         // Dynamic rates simulation to keep the UI rate calculation fully responsive even if Circle\'s route is missing

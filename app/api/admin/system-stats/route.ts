@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
-import { users, workflows, skills, deployments, raffles, creditLedger } from '@/lib/db/schema'
+import { users, workflows, skills, deployments, raffles, creditLedger, nanopaymentEvents } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { OrbitportSDK } from '@spacecomputer-io/orbitport-sdk-ts'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     // 1. User Statistics
     const usersCountRes = await db.select({ count: sql<number>`count(*)::int` }).from(users)
@@ -53,6 +53,29 @@ export async function GET(request: Request) {
       .from(raffles)
       .where(eq(raffles.drawn, true))
     const completedRaffles = completedRafflesRes[0]?.count ?? 0
+
+    // 4.5. x402 Nanopayment Stats
+    const totalNanopaymentsRes = await db
+      .select({
+        count: sql<number>`count(*)::int`,
+        sum: sql<string>`coalesce(sum(${nanopaymentEvents.amountUsdc}::numeric), 0)`
+      })
+      .from(nanopaymentEvents)
+    const totalNanopaymentCalls = totalNanopaymentsRes[0]?.count ?? 0
+    const totalNanopaymentRevenue = parseFloat(totalNanopaymentsRes[0]?.sum ?? '0')
+
+    const recentNanopayments = await db
+      .select({
+        id: nanopaymentEvents.id,
+        skillName: nanopaymentEvents.skillName,
+        amountUsdc: nanopaymentEvents.amountUsdc,
+        buyerAddress: nanopaymentEvents.buyerAddress,
+        status: nanopaymentEvents.status,
+        createdAt: nanopaymentEvents.createdAt,
+      })
+      .from(nanopaymentEvents)
+      .orderBy(sql`${nanopaymentEvents.createdAt} desc`)
+      .limit(20)
 
     // 5. Recent System Activity Ledger
     const recentActivity = await db
@@ -102,8 +125,11 @@ export async function GET(request: Request) {
         completedRaffles,
         spaceComputerStatus,
         spaceComputerDetail,
+        totalNanopaymentCalls,
+        totalNanopaymentRevenue: totalNanopaymentRevenue.toFixed(3),
       },
       recentActivity,
+      recentNanopayments,
     })
   } catch (error) {
     console.error('❌ [/api/admin/system-stats] Error:', error)

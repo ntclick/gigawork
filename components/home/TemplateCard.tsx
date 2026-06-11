@@ -7,11 +7,10 @@
  *   - Structured (template has skillName) → click opens inline config form.
  *   - Free-text (template.freeTextOnly) → click loads slotted/text prompt.
  */
-import { ChevronDown, Play, Sparkles } from 'lucide-react'
+import { ChevronDown, Sparkles } from 'lucide-react'
 
 import type { WorkflowTemplate } from '@/lib/workflowTemplates'
 import { useSkill } from '@/lib/hooks/useSkills'
-import { TemplateForm } from './TemplateForm'
 
 interface Props {
   template: WorkflowTemplate
@@ -50,12 +49,10 @@ const CATEGORY_ACCENT: Record<string, { text: string; bg: string; border: string
 
 export function TemplateCard({
   template,
-  expanded,
   dimmed,
   userCredits,
   onToggle,
   onFillFreeText,
-  onSubmit,
 }: Props) {
   const isStructured = !!template.skillName && !template.freeTextOnly
   const skill = useSkill(template.skillName)

@@ -42,8 +42,18 @@ export function useUI(): UIState {
 }
 
 export function UIShell({ children }: { children: ReactNode }) {
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
+
+  // Initialize drawer states for responsiveness on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      const t = setTimeout(() => {
+        setHistoryOpen(false)
+      }, 0)
+      return () => clearTimeout(t)
+    }
+  }, [])
 
   const openHistory = useCallback(() => setHistoryOpen(true), [])
   const closeHistory = useCallback(() => setHistoryOpen(false), [])

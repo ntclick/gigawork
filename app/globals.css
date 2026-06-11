@@ -12,62 +12,144 @@
 }
 
 html {
-  background-color: #0f131c;
-  color: #d1d1e0;
+  background-color: #08090d;
+  color: #e2e8f0;
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 body {
-  background-color: #0f131c;
-  color: #d1d1e0;
+  background-color: #08090d;
+  color: #e2e8f0;
 }
 
 /* ════════════════════════════════════════════════════════════════
-   GigaWork pixel theme — used on home + workflow editor pages.
-   Two palettes: home uses the dark-navy pixel theme, workflow editor
-   uses the warmer "giga" palette (#1a182b / #ffcc4d accent).
-   ════════════════════════════════════════════════════════════════ */
-
-/* Workflow editor palette — matches the "GigaWork - Workflow Editor" mockup */
+   GigaWork Minimalist Design System */
 :root {
-  --giga-dark: #1a182b;
-  --giga-panel: #24213d;
-  --giga-sidebar: #2d2a4a;
-  --giga-accent: #ffcc4d;
-  --giga-accent-dim: #c79e2c;
-  --giga-text: #d1d1e0;
-  --giga-border-shadow: #000;
+  /* ── Base surfaces ── */
+  --gw-bg:       #08090d;
+  --gw-surface:  #0e1016;
+  --gw-surface2: #141720;
+  --gw-border:   rgba(255,255,255,0.07);
+
+  /* ── Accent palette ── */
+  --gw-cyan:     #22d3ee;
+  --gw-violet:   #a855f7;
+  --gw-emerald:  #10b981;
+  --gw-amber:    #f59e0b;
+  --gw-rose:     #f43f5e;
+
+  /* ── Text ── */
+  --gw-text:     #e2e8f0;
+  --gw-text-dim: rgba(226,232,240,0.5);
+
+  /* Legacy aliases — keep for existing components */
+  --giga-dark:   #0e1016;
+  --giga-panel:  #141720;
+  --giga-sidebar: #0c0e14;
+  --giga-accent: #22d3ee;
+  --giga-accent-dim: #0e7490;
+  --giga-text:   #e2e8f0;
+  --giga-border-shadow: rgba(0,0,0,0.6);
 
   /* Node colors per step type */
-  --giga-node-blue: #4c648a;
-  --giga-node-yellow: #a68c3c;
-  --giga-node-yellow-glow: #ffcc4d;
-  --giga-node-green: #3e6a62;
-  --giga-node-red: #7a4248;
-  --giga-node-decision: #3e4f6e;
-  /* Pink — for notification agents (email, telegram, push) */
-  --giga-node-pink: #8e3a6a;
-  --giga-node-pink-glow: #f472b6;
-  /* Violet — reserved for future LLM/synthesis agents */
-  --giga-node-violet: #5e3a8e;
+  --giga-node-blue:         #2a4a7a;
+  --giga-node-yellow:       #6b5200;
+  --giga-node-yellow-glow:  #22d3ee;
+  --giga-node-green:        #1a4a3a;
+  --giga-node-red:          #5a2232;
+  --giga-node-decision:     #2a3a5e;
+  --giga-node-pink:         #5e2a4a;
+  --giga-node-pink-glow:    #f472b6;
+  --giga-node-violet:       #3e1a6e;
 }
 
-/* 4-side black pixel border (no border-radius) — matches `pixel-border` in HTML */
+/* Legacy pixel borders — kept for backward compat, now invisible on dark bg */
 .pixel-border {
-  box-shadow:
-    0 -4px 0 0 var(--giga-border-shadow),
-    0 4px 0 0 var(--giga-border-shadow),
-    -4px 0 0 0 var(--giga-border-shadow),
-    4px 0 0 0 var(--giga-border-shadow);
+  box-shadow: 0 0 0 1px var(--gw-border);
+  border-radius: 8px;
+}
+.pixel-border-sm {
+  box-shadow: 0 0 0 1px var(--gw-border);
+  border-radius: 6px;
 }
 
-/* Smaller 2px pixel border — for compact UI like avatar frames */
-.pixel-border-sm {
-  box-shadow:
-    0 -2px 0 0 var(--giga-border-shadow),
-    0 2px 0 0 var(--giga-border-shadow),
-    -2px 0 0 0 var(--giga-border-shadow),
-    2px 0 0 0 var(--giga-border-shadow);
+/* ── Glass card — primary surface ── */
+.gw-glass-card {
+  background: rgba(14,16,22,0.7);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid var(--gw-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: border-color 240ms, box-shadow 240ms;
 }
+.gw-glass-card:hover {
+  border-color: rgba(34,211,238,0.2);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(34,211,238,0.12), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* ── Gradient text ── */
+.gw-gradient-text {
+  background: linear-gradient(135deg, var(--gw-cyan) 0%, var(--gw-violet) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Primary button ── */
+.gw-btn-primary {
+  background: linear-gradient(135deg, var(--gw-cyan), #0891b2);
+  color: #000d12;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  transition: box-shadow 220ms, transform 180ms;
+}
+.gw-btn-primary:hover {
+  box-shadow: 0 0 24px rgba(34,211,238,0.45);
+  transform: translateY(-1px);
+}
+.gw-btn-primary:active { transform: translateY(0); }
+
+/* ── Secondary button ── */
+.gw-btn-secondary {
+  background: rgba(255,255,255,0.05);
+  color: var(--gw-text);
+  border: 1px solid var(--gw-border);
+  border-radius: 8px;
+  transition: background 220ms, border-color 220ms;
+}
+.gw-btn-secondary:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+}
+
+/* ── Violet button ── */
+.gw-btn-violet {
+  background: linear-gradient(135deg, var(--gw-violet), #7c3aed);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  transition: box-shadow 220ms, transform 180ms;
+}
+.gw-btn-violet:hover {
+  box-shadow: 0 0 24px rgba(168,85,247,0.45);
+  transform: translateY(-1px);
+}
+
+/* ── Input field ── */
+.gw-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--gw-border);
+  border-radius: 8px;
+  color: var(--gw-text);
+  transition: border-color 220ms, box-shadow 220ms;
+}
+.gw-input:focus {
+  outline: none;
+  border-color: rgba(34,211,238,0.35);
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.08);
+}
+.gw-input::placeholder { color: rgba(226,232,240,0.28); }
 
 /* Canvas grid (smaller dots, lighter) — for workflow editor */
 .giga-grid-bg {
@@ -94,8 +176,8 @@ body {
    Default body font = Geist Sans (readable at small sizes). VT323 is now
    opt-in via `.font-pixel-body` for hashes/addresses only. */
 .giga-theme {
-  background-color: var(--giga-dark);
-  color: var(--giga-text);
+  background-color: var(--gw-bg);
+  color: var(--gw-text);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
@@ -103,7 +185,7 @@ body {
 .giga-theme h1,
 .giga-theme h2,
 .giga-theme h3 {
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
 }
 
 /* Node multi-shadow helpers — emulates the inner colored ring + outer black border */
@@ -896,21 +978,22 @@ button, a, .gw-transition {
   flex: 1 1 0% !important;
   width: 100% !important;
   overflow: hidden !important;
-  background-color: #030208 !important;
-  height: calc(100dvh - 64px) !important; /* MainHeader height is exactly 64px (h-16) */
+  background-color: var(--gw-bg) !important;
+  height: calc(100dvh - 56px) !important; /* MainHeader height is 56px */
   position: relative !important;
 }
 
 .gw-app-rail {
   display: flex !important;
-  width: 96px !important;
+  width: 56px !important;
   flex-shrink: 0 !important;
   flex-direction: column !important;
   align-items: center !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
-  background-color: #0a0815 !important;
-  padding-top: 24px !important;
-  padding-bottom: 24px !important;
+  border-right: 1px solid var(--gw-border) !important;
+  background-color: var(--gw-surface) !important;
+  padding-top: 16px !important;
+  padding-bottom: 16px !important;
+  gap: 4px !important;
   z-index: 20 !important;
   height: 100% !important;
 }
@@ -930,14 +1013,14 @@ button, a, .gw-transition {
   flex-direction: row !important;
   align-items: center !important;
   justify-content: space-between !important;
-  height: 56px !important;
-  min-height: 56px !important;
+  height: 52px !important;
+  min-height: 52px !important;
   flex-shrink: 0 !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
-  background-color: rgba(12, 9, 25, 0.55) !important;
-  backdrop-filter: blur(16px) !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  border-bottom: 1px solid var(--gw-border) !important;
+  background-color: rgba(8,9,13,0.8) !important;
+  backdrop-filter: blur(20px) !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
   z-index: 20 !important;
 }
 
@@ -951,7 +1034,7 @@ button, a, .gw-transition {
   min-height: 0 !important;
 }
 
-/* 🚀 Ultra-Premium Cyberpunk Aesthetics Styles */
+/* Active border glow */
 .gw-active-cyber-border {
   position: relative;
 }
@@ -961,8 +1044,8 @@ button, a, .gw-transition {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  border: 1.5px solid rgba(0, 229, 255, 0.45);
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+  border: 1px solid rgba(34,211,238,0.35);
+  box-shadow: 0 0 12px rgba(34,211,238,0.18);
   animation: gw-pulse-soft 2s infinite ease-in-out;
 }
 
@@ -970,9 +1053,8 @@ button, a, .gw-transition {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .gw-prompt-glow-focus:focus-within {
-  border-color: rgba(255, 204, 77, 0.5) !important;
-  background-color: rgba(26, 24, 43, 0.85) !important;
-  box-shadow: 0 0 25px rgba(255, 204, 77, 0.15), inset 0 0 10px rgba(255, 204, 77, 0.05) !important;
+  border-color: rgba(34,211,238,0.35) !important;
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.08) !important;
 }
 
 /* 🟢 Authentic Neon Nodes Glow Effects */

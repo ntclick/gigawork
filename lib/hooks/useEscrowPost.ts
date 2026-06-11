@@ -15,13 +15,8 @@
  */
 import { useWallets } from '@privy-io/react-auth'
 import { useCallback, useState } from 'react'
-import { createPublicClient, createWalletClient, custom, http, parseUnits, type Hex } from 'viem'
+import { createWalletClient, custom, parseUnits, type Hex } from 'viem'
 import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
-
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(),
-})
 
 export type EscrowStep =
   | 'idle'

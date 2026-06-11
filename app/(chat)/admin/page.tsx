@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,7 +10,6 @@ import {
   Cpu,
   Activity,
   Orbit,
-  Trophy,
   Loader2,
   AlertTriangle,
   RefreshCw,
@@ -33,6 +32,8 @@ interface SystemStats {
   completedRaffles: number
   spaceComputerStatus: string
   spaceComputerDetail: string
+  totalNanopaymentCalls?: number
+  totalNanopaymentRevenue?: string
 }
 
 interface RecentActivity {
@@ -43,17 +44,27 @@ interface RecentActivity {
   userWallet?: string | null
 }
 
+interface RecentNanopayment {
+  id: string
+  skillName: string
+  amountUsdc: string
+  buyerAddress: string
+  status: string
+  createdAt: string
+}
+
 export default function AdminConsolePage() {
   const activeWallet = useActiveWallet()
   const isAdmin = activeWallet?.address?.toLowerCase() === '0xafe6dd950dc2cf561e8daba1725e0e6840f70549'
 
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [activity, setActivity] = useState<RecentActivity[]>([])
+  const [recentNanopayments, setRecentNanopayments] = useState<RecentNanopayment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [copiedId, setCopiedId] = useState<string>('')
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -64,18 +75,22 @@ export default function AdminConsolePage() {
       }
       setStats(json.stats)
       setActivity(json.recentActivity || [])
+      setRecentNanopayments(json.recentNanopayments || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse GigaWork system data.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (isAdmin) {
-      fetchStats()
+      const t = setTimeout(() => {
+        fetchStats()
+      }, 0)
+      return () => clearTimeout(t)
     }
-  }, [isAdmin])
+  }, [isAdmin, fetchStats])
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
@@ -293,6 +308,21 @@ export default function AdminConsolePage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Card 9: x402 Nanopayments */}
+                  <div className="border border-white/5 bg-slate-900/40 backdrop-blur-md rounded-xl p-5 relative overflow-hidden group hover:border-amber-500/30 transition-all duration-300">
+                    <div className="absolute right-0 top-0 h-24 w-24 bg-gradient-to-br from-amber-500/5 to-transparent blur-xl rounded-full" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider">x402 Nanopayments</span>
+                      <Coins className="h-5 w-5 text-amber-500 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <div className="mt-4">
+                      <span className="text-3xl font-extrabold text-slate-100">${stats.totalNanopaymentRevenue || '0.000'}</span>
+                      <div className="text-[10px] text-slate-500 mt-1 font-medium">
+                        {stats.totalNanopaymentCalls || 0} API calls settled off-chain
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Recent activity ledger */}
@@ -364,6 +394,78 @@ export default function AdminConsolePage() {
                                   isPositive ? 'text-emerald-400' : 'text-rose-400'
                                 }`}>
                                   {isPositive ? `+${act.delta}` : act.delta} cr
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent Nanopayment Activity */}
+                <div className="border border-white/5 bg-slate-950/40 rounded-xl overflow-hidden backdrop-blur-sm">
+                  <div className="p-4 border-b border-white/5 bg-slate-900/20 flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                      <Coins className="h-4 w-4 text-amber-500 animate-pulse" />
+                      Recent x402 Nanopayment Logs (Live Settlement Feed)
+                    </h3>
+                    <span className="text-[9px] text-amber-500 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded tracking-wide uppercase font-mono">
+                      x402 Flow
+                    </span>
+                  </div>
+                  {recentNanopayments.length === 0 ? (
+                    <div className="py-12 text-center text-xs text-slate-500 italic">
+                      No recent nanopayment settlements found.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/5 bg-slate-900/40 text-slate-400 font-semibold font-mono text-[10px] uppercase">
+                            <th className="p-4">Event ID</th>
+                            <th className="p-4">Buyer Wallet</th>
+                            <th className="p-4">Agent Skill Name</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4 text-right">Payment USDC</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recentNanopayments.map((np) => {
+                            return (
+                              <tr key={np.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                                <td className="p-4 font-mono text-[11px] text-slate-200">
+                                  {np.id.slice(0, 18)}...
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-400 bg-slate-900/40 border border-white/5 px-2 py-1 rounded w-fit">
+                                    <span>{np.buyerAddress.slice(0, 6)}...{np.buyerAddress.slice(-4)}</span>
+                                    <button
+                                      onClick={() => handleCopy(np.buyerAddress, np.id)}
+                                      className="text-slate-600 hover:text-slate-400 transition-colors"
+                                      title="Copy Address"
+                                    >
+                                      {copiedId === np.id ? (
+                                        <Check className="h-3 w-3 text-emerald-400" />
+                                      ) : (
+                                        <Copy className="h-3 w-3" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-slate-300 font-medium">{np.skillName}</td>
+                                <td className="p-4">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                                    np.status === 'settled'
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  }`}>
+                                    {np.status}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-right font-extrabold font-mono text-base text-emerald-400">
+                                  +{parseFloat(np.amountUsdc).toFixed(3)} USDC
                                 </td>
                               </tr>
                             )
