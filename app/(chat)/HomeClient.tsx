@@ -3,7 +3,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePrivy } from '@privy-io/react-auth'
-import { ArrowRight, Pencil, Network, Loader2 } from 'lucide-react'
+import {
+  ArrowRight,
+  Bot,
+  FileText,
+  Loader2,
+  Network,
+  Radio,
+  ShieldCheck,
+  Sparkles,
+  WalletCards,
+  Zap,
+} from 'lucide-react'
 
 import { MainHeader } from '@/components/shell/MainHeader'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
@@ -14,17 +25,33 @@ import { toast } from '@/components/ui/toast'
 function getSkillActionName(name: string): string {
   switch (name) {
     case 'crypto-scanner': return 'Scan'
+    case 'social-sentiment': return 'Sentiment'
+    case 'polymarket-pulse': return 'Odds'
     case 'report-composer':
     case 'report-composer-fast':
-      return 'Summarize'
-    case 'telegram-sender': return 'Push alert'
-    case 'defi-yields': return 'Find pools'
-    case 'whale-tracker': return 'Monitor wallet'
-    case 'trading-signals': return 'Analyze RSI'
+      return 'Report'
+    case 'telegram-sender': return 'Telegram'
     case 'email-sender': return 'Email'
-    default: return name
+    case 'defi-yields': return 'Yield'
+    case 'dca-executor': return 'DCA'
+    case 'whale-tracker': return 'Wallet'
+    case 'trading-signals': return 'Signals'
+    default: return name.replace(/-/g, ' ')
   }
 }
+
+const CATEGORY_COPY: Record<WorkflowTemplate['category'], string> = {
+  research: 'Research',
+  'on-chain': 'On-chain',
+  execution: 'Execution',
+  analysis: 'Analysis',
+}
+
+const EXAMPLE_PROMPTS = [
+  'Track BTC + ETH 4h signals and send me a digest',
+  'Watch a whale wallet and flag transfers over $100k',
+  'Find Polymarket odds shifts with volume context',
+]
 
 export function HomeClient() {
   const router = useRouter()
@@ -38,7 +65,7 @@ export function HomeClient() {
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+    el.style.height = `${Math.min(el.scrollHeight, 260)}px`
   }, [prompt])
 
   const submit = useCallback(async (text: string) => {
@@ -80,6 +107,11 @@ export function HomeClient() {
     }
   }
 
+  const fillPrompt = (text: string) => {
+    setPrompt(text)
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
   return (
     <>
       <MainHeader />
@@ -87,316 +119,602 @@ export function HomeClient() {
         <AppRail />
         <HistorySidebar />
 
-        <main className="flex flex-1 flex-col overflow-y-auto orch-container bg-[#08090d]">
+        <main className="orch-container flex flex-1 flex-col overflow-y-auto">
           <style dangerouslySetInnerHTML={{ __html: `
             .orch-container {
-              --color-background-primary: #12101f;
-              --color-background-secondary: #1a172e;
-              --color-background-tertiary: #08090d;
-              --color-border-tertiary: rgba(255, 255, 255, 0.08);
-              --color-text-primary: #ffffff;
-              --color-text-secondary: rgba(255, 255, 255, 0.4);
-              --font-sans: var(--font-sans), system-ui, sans-serif;
-              --font-mono: var(--font-mono), monospace;
-              --border-radius-lg: 12px;
-              --border-radius-md: 8px;
+              position: relative;
+              isolation: isolate;
+              background:
+                radial-gradient(circle at 22% 0%, rgba(34, 211, 238, 0.11), transparent 28%),
+                radial-gradient(circle at 78% 6%, rgba(113, 112, 255, 0.16), transparent 30%),
+                linear-gradient(180deg, #07080b 0%, #08090d 48%, #06070a 100%);
+              color: #f7f8f8;
+              font-feature-settings: "cv01", "ss03";
             }
-            .orch-body {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              padding: 40px 24px 36px;
+            .orch-container::before {
+              content: '';
+              position: absolute;
+              inset: 0;
+              z-index: -2;
+              background-image:
+                linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+              background-size: 72px 72px;
+              mask-image: linear-gradient(to bottom, rgba(0,0,0,0.7), rgba(0,0,0,0.08) 68%, transparent);
+            }
+            .orch-container::after {
+              content: '';
+              position: absolute;
+              inset: 0;
+              z-index: -1;
+              background: radial-gradient(ellipse at center top, transparent 0%, rgba(0,0,0,0.2) 45%, rgba(0,0,0,0.5) 100%);
+              pointer-events: none;
+            }
+            .orch-shell {
               width: 100%;
+              max-width: 1180px;
+              margin: 0 auto;
+              padding: 56px 32px 72px;
             }
-            .orch-hero {
-              text-align: center;
+            .orch-hero-grid {
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) 360px;
+              gap: 28px;
+              align-items: end;
               margin-bottom: 24px;
             }
-            .orch-hero h1 {
-              font-size: 22px;
-              font-weight: 500;
-              color: #fff;
-              letter-spacing: -0.4px;
-              margin-bottom: 6px;
+            .orch-eyebrow {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              width: fit-content;
+              border: 1px solid rgba(255,255,255,0.08);
+              background: rgba(255,255,255,0.035);
+              color: #8a8f98;
+              border-radius: 999px;
+              padding: 7px 11px;
+              font-size: 11px;
+              font-weight: 590;
+              letter-spacing: 0.11em;
+              text-transform: uppercase;
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
             }
-            .orch-hero p {
+            .orch-eyebrow .live-dot,
+            .route-dot {
+              width: 7px;
+              height: 7px;
+              border-radius: 999px;
+              background: #10b981;
+              box-shadow: 0 0 12px rgba(16, 185, 129, 0.55);
+            }
+            .orch-copy h1 {
+              max-width: 720px;
+              margin: 18px 0 12px;
+              color: #f7f8f8;
+              font-size: clamp(36px, 5.4vw, 64px);
+              font-weight: 590;
+              letter-spacing: -0.062em;
+              line-height: 0.98;
+            }
+            .orch-copy p {
+              max-width: 640px;
+              color: #8a8f98;
+              font-size: 16px;
+              line-height: 1.7;
+            }
+            .orch-capabilities {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              margin-top: 20px;
+            }
+            .orch-capabilities span {
+              display: inline-flex;
+              align-items: center;
+              gap: 7px;
+              border: 1px solid rgba(255,255,255,0.08);
+              background: rgba(255,255,255,0.03);
+              border-radius: 999px;
+              padding: 8px 11px;
+              color: #d0d6e0;
               font-size: 12px;
-              color: rgba(255, 255, 255, 0.3);
-              line-height: 1.6;
+              font-weight: 510;
             }
-            .composer {
-              width: 100%;
-              max-width: 560px;
-              background: rgba(255, 255, 255, 0.03);
-              border: 0.5px solid rgba(255, 255, 255, 0.09);
-              border-radius: 10px;
-              overflow: hidden;
-              transition: border-color 0.2s;
-              margin-bottom: 36px;
+            .route-panel {
+              border: 1px solid rgba(255,255,255,0.085);
+              background:
+                linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.022)),
+                rgba(13, 15, 22, 0.92);
+              border-radius: 18px;
+              padding: 18px;
+              box-shadow: 0 28px 80px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06);
             }
-            .composer:focus-within {
-              border-color: rgba(167, 139, 250, 0.35);
-            }
-            .composer textarea {
-              width: 100%;
-              background: transparent;
-              border: none;
-              padding: 14px 16px 10px;
-              font-size: 13px;
-              color: rgba(255, 255, 255, 0.65);
-              font-family: inherit;
-              resize: none;
-              min-height: 72px;
-              outline: none;
-              line-height: 1.6;
-            }
-            .composer textarea::placeholder {
-              color: rgba(255, 255, 255, 0.18);
-            }
-            .composer-foot {
+            .route-topline {
               display: flex;
               align-items: center;
               justify-content: space-between;
-              padding: 8px 12px 10px;
-              border-top: 0.5px solid rgba(255, 255, 255, 0.05);
-            }
-            .hint {
+              color: #62666d;
               font-size: 11px;
-              color: rgba(255, 255, 255, 0.16);
-            }
-            .go {
-              padding: 5px 14px;
-              background: rgba(167, 139, 250, 0.15);
-              border: 0.5px solid rgba(167, 139, 250, 0.3);
-              border-radius: 6px;
-              color: #a78bfa;
-              font-size: 12px;
-              font-weight: 500;
-              cursor: pointer;
-              display: flex;
-              align-items: center;
-              gap: 5px;
-              transition: all 0.2s;
-            }
-            .go:hover:not(:disabled) {
-              background: rgba(167, 139, 250, 0.25);
-            }
-            .go:disabled {
-              opacity: 0.4;
-              cursor: not-allowed;
-            }
-            .orch-label {
-              width: 100%;
-              max-width: 640px;
-              font-size: 11px;
-              color: rgba(255, 255, 255, 0.2);
-              letter-spacing: 0.1em;
+              font-weight: 590;
+              letter-spacing: 0.08em;
               text-transform: uppercase;
               margin-bottom: 16px;
+            }
+            .route-list {
+              display: grid;
+              gap: 10px;
+            }
+            .route-item {
+              display: grid;
+              grid-template-columns: 34px minmax(0,1fr);
+              gap: 11px;
+              align-items: center;
+              border: 1px solid rgba(255,255,255,0.06);
+              background: rgba(255,255,255,0.027);
+              border-radius: 12px;
+              padding: 10px;
+            }
+            .route-icon {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 34px;
+              height: 34px;
+              border-radius: 10px;
+              color: #828fff;
+              background: rgba(113,112,255,0.11);
+              border: 1px solid rgba(113,112,255,0.17);
+            }
+            .route-item strong {
+              display: block;
+              color: #f7f8f8;
+              font-size: 13px;
+              font-weight: 590;
+              letter-spacing: -0.01em;
+            }
+            .route-item span {
+              display: block;
+              color: #62666d;
+              font-size: 12px;
+              margin-top: 2px;
+            }
+            .composer-panel {
+              overflow: hidden;
+              border: 1px solid rgba(255,255,255,0.09);
+              background:
+                linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025)),
+                rgba(11, 12, 18, 0.94);
+              border-radius: 22px;
+              box-shadow: 0 32px 110px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.07);
+              margin-bottom: 30px;
+            }
+            .composer-header {
               display: flex;
               align-items: center;
-              gap: 10px;
+              justify-content: space-between;
+              gap: 16px;
+              border-bottom: 1px solid rgba(255,255,255,0.07);
+              padding: 15px 18px;
             }
-            .orch-label::after {
-              content: '';
-              flex: 1;
-              height: 0.5px;
-              background: rgba(255, 255, 255, 0.05);
+            .composer-title {
+              display: inline-flex;
+              align-items: center;
+              gap: 9px;
+              color: #d0d6e0;
+              font-size: 13px;
+              font-weight: 590;
             }
-            .orch-grid {
-              width: 100%;
-              max-width: 640px;
-              display: grid;
-              grid-template-columns: repeat(3, minmax(0, 1fr));
-              gap: 10px;
+            .composer-meta {
+              color: #62666d;
+              font-family: var(--font-geist-mono), ui-monospace, monospace;
+              font-size: 11px;
             }
-            @media (max-width: 768px) {
-              .orch-grid {
-                grid-template-columns: 1fr;
-              }
-            }
-            @media (min-width: 769px) and (max-width: 1024px) {
-              .orch-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-              }
-            }
-            .wf-card {
-              background: #0e0e14;
-              border: 0.5px solid rgba(255, 255, 255, 0.07);
-              border-radius: 10px;
-              padding: 14px;
-              cursor: pointer;
-              transition: border-color 0.18s, background 0.18s;
-              display: flex;
-              flex-direction: column;
-              gap: 10px;
+            .composer-input {
               position: relative;
             }
-            .wf-card:hover {
-              border-color: rgba(167, 139, 250, 0.25);
-              background: #111119;
+            .composer-input textarea {
+              width: 100%;
+              min-height: 126px;
+              max-height: 260px;
+              resize: none;
+              border: none;
+              outline: none;
+              background: transparent;
+              color: #f7f8f8;
+              padding: 22px 22px 12px;
+              font: inherit;
+              font-size: 15px;
+              line-height: 1.65;
             }
-            .wf-head {
+            .composer-input textarea::placeholder {
+              color: rgba(208, 214, 224, 0.3);
+            }
+            .prompt-examples {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              padding: 0 18px 18px;
+            }
+            .prompt-chip {
+              border: 1px solid rgba(255,255,255,0.075);
+              background: rgba(255,255,255,0.03);
+              color: #8a8f98;
+              border-radius: 999px;
+              padding: 7px 10px;
+              font-size: 12px;
+              transition: border-color 160ms, color 160ms, background 160ms;
+            }
+            .prompt-chip:hover {
+              border-color: rgba(113,112,255,0.32);
+              background: rgba(113,112,255,0.08);
+              color: #d0d6e0;
+            }
+            .composer-actions {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 14px;
+              border-top: 1px solid rgba(255,255,255,0.07);
+              background: rgba(255,255,255,0.018);
+              padding: 13px 14px 14px 18px;
+            }
+            .composer-hint {
+              color: #62666d;
+              font-size: 12px;
+            }
+            .run-button {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              min-height: 40px;
+              border: 1px solid rgba(130,143,255,0.42);
+              background: linear-gradient(180deg, #7775ff, #5e6ad2);
+              color: #fff;
+              border-radius: 10px;
+              padding: 0 15px;
+              font-size: 13px;
+              font-weight: 590;
+              box-shadow: 0 12px 34px rgba(94,106,210,0.28), inset 0 1px 0 rgba(255,255,255,0.22);
+              transition: transform 160ms, filter 160ms, opacity 160ms;
+            }
+            .run-button:hover:not(:disabled) {
+              transform: translateY(-1px);
+              filter: brightness(1.05);
+            }
+            .run-button:disabled {
+              cursor: not-allowed;
+              opacity: 0.42;
+              transform: none;
+              box-shadow: none;
+            }
+            .templates-section {
+              border: 1px solid rgba(255,255,255,0.07);
+              background: rgba(255,255,255,0.018);
+              border-radius: 22px;
+              padding: 18px;
+            }
+            .templates-head {
+              display: flex;
+              align-items: end;
+              justify-content: space-between;
+              gap: 18px;
+              padding: 2px 2px 16px;
+            }
+            .templates-kicker {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              color: #7170ff;
+              font-size: 11px;
+              font-weight: 590;
+              letter-spacing: 0.11em;
+              text-transform: uppercase;
+            }
+            .templates-head h2 {
+              margin-top: 6px;
+              color: #f7f8f8;
+              font-size: 22px;
+              font-weight: 590;
+              letter-spacing: -0.035em;
+            }
+            .templates-head p {
+              color: #62666d;
+              font-size: 13px;
+            }
+            .templates-count {
+              border: 1px solid rgba(255,255,255,0.08);
+              background: rgba(255,255,255,0.035);
+              color: #8a8f98;
+              border-radius: 999px;
+              padding: 7px 10px;
+              font-family: var(--font-geist-mono), ui-monospace, monospace;
+              font-size: 11px;
+              white-space: nowrap;
+            }
+            .workflow-grid {
+              display: grid;
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              gap: 12px;
+            }
+            .wf-card {
+              position: relative;
+              display: flex;
+              min-height: 236px;
+              flex-direction: column;
+              overflow: hidden;
+              border: 1px solid rgba(255,255,255,0.08);
+              background: linear-gradient(180deg, rgba(255,255,255,0.052), rgba(255,255,255,0.022));
+              border-radius: 16px;
+              padding: 15px;
+              transition: transform 180ms, border-color 180ms, background 180ms;
+            }
+            .wf-card::before {
+              content: '';
+              position: absolute;
+              inset: 0 0 auto 0;
+              height: 2px;
+              background: linear-gradient(90deg, rgba(113,112,255,0.08), var(--card-accent, #7170ff), rgba(34,211,238,0.06));
+              opacity: 0.8;
+            }
+            .wf-card:hover {
+              transform: translateY(-2px);
+              border-color: color-mix(in srgb, var(--card-accent, #7170ff) 38%, rgba(255,255,255,0.08));
+              background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+            }
+            .wf-card-research { --card-accent: #22d3ee; }
+            .wf-card-on-chain { --card-accent: #10b981; }
+            .wf-card-execution { --card-accent: #f59e0b; }
+            .wf-card-analysis { --card-accent: #a78bfa; }
+            .wf-top {
               display: flex;
               align-items: flex-start;
               justify-content: space-between;
-              gap: 8px;
+              gap: 10px;
+              margin-bottom: 14px;
             }
-            .wf-title {
-              font-size: 12px;
-              font-weight: 500;
-              color: #d4d4dc;
-              line-height: 1.35;
-              flex: 1;
-            }
-            .status-dot {
-              width: 6px;
-              height: 6px;
-              border-radius: 50%;
-              flex-shrink: 0;
-              margin-top: 3px;
-            }
-            .s-live {
-              background: #a78bfa;
-            }
-            .s-idle {
-              background: rgba(255, 255, 255, 0.18);
-            }
-            .s-warn {
-              background: #c98a1f;
-            }
-            .agents-row {
-              display: flex;
-              flex-wrap: wrap;
-              gap: 5px;
-            }
-            .agent-chip {
-              display: flex;
+            .wf-badge {
+              display: inline-flex;
               align-items: center;
-              gap: 4px;
+              gap: 7px;
+              border: 1px solid color-mix(in srgb, var(--card-accent, #7170ff) 28%, transparent);
+              background: color-mix(in srgb, var(--card-accent, #7170ff) 12%, transparent);
+              color: color-mix(in srgb, var(--card-accent, #7170ff) 82%, #ffffff);
+              border-radius: 999px;
+              padding: 5px 8px;
               font-size: 10px;
-              color: rgba(255, 255, 255, 0.35);
-              background: rgba(255, 255, 255, 0.04);
-              border: 0.5px solid rgba(255, 255, 255, 0.08);
-              padding: 2px 7px;
-              border-radius: 4px;
-              white-space: nowrap;
+              font-weight: 590;
+              letter-spacing: 0.07em;
+              text-transform: uppercase;
             }
-            .agent-chip.live {
-              color: rgba(167, 139, 250, 0.8);
-              background: rgba(167, 139, 250, 0.07);
-              border-color: rgba(167, 139, 250, 0.18);
-            }
-            .ac-dot {
-              width: 4px;
-              height: 4px;
-              border-radius: 50%;
-              background: rgba(255, 255, 255, 0.25);
-            }
-            .ac-dot.live {
-              background: #a78bfa;
-            }
-            .flow {
-              display: flex;
-              align-items: center;
-              gap: 4px;
-              flex-wrap: wrap;
-            }
-            .fn {
-              font-size: 10px;
-              color: rgba(255, 255, 255, 0.28);
-              white-space:nowrap;
-            }
-            .fa {
-              color: rgba(167, 139, 250, 0.4);
-              font-size: 10px;
-            }
-            .use-btn {
-              width: 100%;
-              padding: 6px 0;
-              background: transparent;
-              border: 0.5px solid rgba(255, 255, 255, 0.09);
-              border-radius: 6px;
-              color: rgba(255, 255, 255, 0.35);
-              font-size: 11px;
-              cursor: pointer;
-              transition: all 0.15s;
-              display: flex;
+            .wf-emoji {
+              display: inline-flex;
               align-items: center;
               justify-content: center;
+              width: 32px;
+              height: 32px;
+              border: 1px solid rgba(255,255,255,0.08);
+              background: rgba(255,255,255,0.035);
+              border-radius: 11px;
+              font-size: 17px;
+            }
+            .wf-title {
+              color: #f7f8f8;
+              font-size: 15px;
+              font-weight: 590;
+              letter-spacing: -0.02em;
+              line-height: 1.25;
+              margin-bottom: 7px;
+            }
+            .wf-desc {
+              color: #8a8f98;
+              font-size: 12px;
+              line-height: 1.55;
+            }
+            .wf-agents {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 6px;
+              margin: 14px 0 12px;
+            }
+            .agent-chip {
+              display: inline-flex;
+              align-items: center;
               gap: 5px;
-              margin-top: 2px;
+              max-width: 100%;
+              border: 1px solid rgba(255,255,255,0.075);
+              background: rgba(0,0,0,0.12);
+              color: #d0d6e0;
+              border-radius: 7px;
+              padding: 4px 7px;
+              font-family: var(--font-geist-mono), ui-monospace, monospace;
+              font-size: 10px;
+              line-height: 1;
+            }
+            .agent-chip::before {
+              content: '';
+              width: 5px;
+              height: 5px;
+              border-radius: 999px;
+              background: var(--card-accent, #7170ff);
+            }
+            .wf-flow {
+              display: flex;
+              flex-wrap: wrap;
+              align-items: center;
+              gap: 5px;
+              margin-top: auto;
+              padding-top: 2px;
+              color: #62666d;
+              font-size: 11px;
+            }
+            .wf-flow strong {
+              color: #d0d6e0;
+              font-weight: 510;
+            }
+            .wf-arrow {
+              color: color-mix(in srgb, var(--card-accent, #7170ff) 55%, #62666d);
+            }
+            .use-btn {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              width: 100%;
+              min-height: 36px;
+              margin-top: 14px;
+              border: 1px solid rgba(255,255,255,0.09);
+              background: rgba(255,255,255,0.025);
+              color: #d0d6e0;
+              border-radius: 10px;
+              font-size: 12px;
+              font-weight: 510;
+              transition: border-color 160ms, color 160ms, background 160ms;
             }
             .use-btn:hover {
-              background: rgba(167, 139, 250, 0.1);
-              border-color: rgba(167, 139, 250, 0.25);
-              color: #a78bfa;
+              border-color: color-mix(in srgb, var(--card-accent, #7170ff) 40%, rgba(255,255,255,0.08));
+              background: color-mix(in srgb, var(--card-accent, #7170ff) 10%, rgba(255,255,255,0.025));
+              color: #f7f8f8;
+            }
+            @media (max-width: 1280px) {
+              .workflow-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            }
+            @media (max-width: 1024px) {
+              .orch-shell { padding: 42px 22px 56px; }
+              .orch-hero-grid { grid-template-columns: 1fr; align-items: start; }
+              .route-panel { max-width: 560px; }
+              .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
+            @media (max-width: 640px) {
+              .orch-shell { padding: 28px 14px 42px; }
+              .orch-copy h1 { font-size: 38px; }
+              .composer-header,
+              .composer-actions,
+              .templates-head { align-items: flex-start; flex-direction: column; }
+              .workflow-grid { grid-template-columns: 1fr; }
+              .route-panel { display: none; }
             }
           ` }} />
 
-          <div className="orch-body">
-            {/* Hero */}
-            <div className="orch-hero">
-              <h1>What should the agents do?</h1>
-              <p>Describe a task — Hermes will plan and dispatch the right AI agents.</p>
-            </div>
+          <div className="orch-shell">
+            <section className="orch-hero-grid" aria-label="Workflow launcher intro">
+              <div className="orch-copy">
+                <div className="orch-eyebrow">
+                  <span className="live-dot" />
+                  Agent workbench
+                </div>
+                <h1>Put crypto agents to work from one prompt.</h1>
+                <p>
+                  Describe the outcome. GigaWork routes the task through scanners,
+                  wallet monitors, trading analysts, and report senders — then opens
+                  a live workflow you can inspect.
+                </p>
+                <div className="orch-capabilities" aria-label="Capabilities">
+                  <span><ShieldCheck className="h-3.5 w-3.5" /> Arc settlement</span>
+                  <span><WalletCards className="h-3.5 w-3.5" /> Wallet-aware jobs</span>
+                  <span><Radio className="h-3.5 w-3.5" /> Live execution stream</span>
+                </div>
+              </div>
 
-            {/* Composer Box */}
-            <div className="composer">
-              <textarea
-                ref={textareaRef}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder="e.g. Scan BTC on-chain metrics and send a Telegram alert…"
-                disabled={submitting}
-              />
-              <div className="composer-foot">
-                <span className="hint">Shift+Enter for newline</span>
+              <aside className="route-panel" aria-label="Agent routing preview">
+                <div className="route-topline">
+                  <span>Routing preview</span>
+                  <span className="route-dot" />
+                </div>
+                <div className="route-list">
+                  <div className="route-item">
+                    <div className="route-icon"><Bot className="h-4 w-4" /></div>
+                    <div><strong>Planner selects agents</strong><span>Maps prompt to the right skill chain</span></div>
+                  </div>
+                  <div className="route-item">
+                    <div className="route-icon"><Zap className="h-4 w-4" /></div>
+                    <div><strong>Workers run in sequence</strong><span>On-chain, market, and execution tools</span></div>
+                  </div>
+                  <div className="route-item">
+                    <div className="route-icon"><FileText className="h-4 w-4" /></div>
+                    <div><strong>Report + artifacts ship</strong><span>Final brief, logs, and workflow state</span></div>
+                  </div>
+                </div>
+              </aside>
+            </section>
+
+            <section className="composer-panel" aria-label="Create workflow">
+              <div className="composer-header">
+                <div className="composer-title">
+                  <Sparkles className="h-4 w-4 text-[#828fff]" />
+                  New agent task
+                </div>
+                <div className="composer-meta">Enter to run · Shift+Enter newline</div>
+              </div>
+              <div className="composer-input">
+                <textarea
+                  ref={textareaRef}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={handleKey}
+                  placeholder="Example: Scan BTC on-chain metrics, compare 4h signals, and send a Telegram alert if momentum turns bearish…"
+                  disabled={submitting}
+                />
+              </div>
+              <div className="prompt-examples" aria-label="Example prompts">
+                {EXAMPLE_PROMPTS.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    className="prompt-chip"
+                    onClick={() => fillPrompt(example)}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+              <div className="composer-actions">
+                <span className="composer-hint">
+                  Pick a template below if you want a pre-wired agent chain.
+                </span>
                 <button
-                  className="go"
+                  className="run-button"
                   onClick={() => submit(prompt)}
                   disabled={!prompt.trim() || submitting || !ready}
                 >
                   {submitting ? (
                     <>
-                      Running <Loader2 className="h-3 w-3 animate-spin" />
+                      Launching <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     </>
                   ) : (
                     <>
-                      Run <ArrowRight className="h-3.5 w-3.5" />
+                      Launch workflow <ArrowRight className="h-4 w-4" />
                     </>
                   )}
                 </button>
               </div>
-            </div>
+            </section>
 
-            {/* Workflow Templates Header */}
-            <div className="orch-label">
-              <Network className="h-3.5 w-3.5 mr-1" />
-              Workflow templates
-            </div>
+            <section className="templates-section" aria-label="Workflow templates">
+              <div className="templates-head">
+                <div>
+                  <div className="templates-kicker"><Network className="h-3.5 w-3.5" /> Workflow templates</div>
+                  <h2>Start from a proven agent chain.</h2>
+                  <p>Structured prompts for common crypto research, monitoring, and execution workflows.</p>
+                </div>
+                <div className="templates-count">{WORKFLOW_TEMPLATES.length} templates</div>
+              </div>
 
-            {/* Grid of Templates */}
-            <div className="orch-grid">
-              {WORKFLOW_TEMPLATES.map((tpl) => (
-                <TemplateCard
-                  key={tpl.id}
-                  template={tpl}
-                  onUse={(p) => {
-                    setPrompt(p)
-                    textareaRef.current?.focus()
-                  }}
-                />
-              ))}
-            </div>
+              <div className="workflow-grid">
+                {WORKFLOW_TEMPLATES.map((tpl) => (
+                  <TemplateCard
+                    key={tpl.id}
+                    template={tpl}
+                    onUse={fillPrompt}
+                  />
+                ))}
+              </div>
 
-            {/* Not logged in notice */}
-            {ready && !authenticated && (
-              <p className="mt-8 text-center text-xs text-white/30">
-                Connect your wallet via the header to create workflows.
-              </p>
-            )}
+              {ready && !authenticated && (
+                <p className="mt-5 text-center text-xs text-white/35">
+                  Connect your wallet via the header to create workflows.
+                </p>
+              )}
+            </section>
           </div>
         </main>
       </div>
@@ -411,48 +729,43 @@ function TemplateCard({
   template: WorkflowTemplate
   onUse: (prompt: string) => void
 }) {
-  let statusClass = 's-idle'
-  let chipClass = ''
-  let dotClass = ''
-  
-  if (template.id.includes('scanner') || template.id.includes('whale') || template.id.includes('signals')) {
-    statusClass = 's-live'
-    chipClass = 'live'
-    dotClass = 'live'
-  } else if (template.id.includes('yield')) {
-    statusClass = 's-idle'
-  }
-
   const steps = [template.skillName, ...(template.followupSkills || [])].filter(Boolean) as string[]
+  const visibleAgents = template.uses.slice(0, 3)
+  const hiddenAgents = Math.max(0, template.uses.length - visibleAgents.length)
 
   return (
-    <div className="wf-card">
-      <div className="wf-head">
-        <span className="wf-title">{template.title}</span>
-        <span className={`status-dot ${statusClass}`}></span>
+    <article className={`wf-card wf-card-${template.category}`}>
+      <div className="wf-top">
+        <span className="wf-badge">{CATEGORY_COPY[template.category]}</span>
+        <span className="wf-emoji" aria-hidden>{template.emoji}</span>
       </div>
-      <div className="agents-row">
-        {template.uses.map((s) => (
-          <span key={s} className={`agent-chip ${chipClass}`}>
-            <span className={`ac-dot ${dotClass}`}></span>
-            {s}
-          </span>
+
+      <h3 className="wf-title">{template.title}</h3>
+      <p className="wf-desc">{template.desc}</p>
+
+      <div className="wf-agents" aria-label="Agents used">
+        {visibleAgents.map((s) => (
+          <span key={s} className="agent-chip">{s}</span>
         ))}
+        {hiddenAgents > 0 && <span className="agent-chip">+{hiddenAgents}</span>}
       </div>
-      <div className="flow">
-        {steps.map((s, idx) => (
-          <React.Fragment key={s}>
-            <span className="fn">{getSkillActionName(s)}</span>
-            {idx < steps.length - 1 && <span className="fa">→</span>}
+
+      <div className="wf-flow" aria-label="Workflow steps">
+        {(steps.length ? steps : template.uses).slice(0, 4).map((s, idx, arr) => (
+          <React.Fragment key={`${s}-${idx}`}>
+            <strong>{getSkillActionName(s)}</strong>
+            {idx < arr.length - 1 && <span className="wf-arrow">→</span>}
           </React.Fragment>
         ))}
       </div>
+
       <button
+        type="button"
         className="use-btn"
-        onClick={() => onUse(template.prompt)}
+        onClick={() => onUse(template.slottedPrompt ?? template.prompt)}
       >
-        <Pencil className="h-3 w-3" /> Use prompt
+        Use this chain <ArrowRight className="h-3.5 w-3.5" />
       </button>
-    </div>
+    </article>
   )
 }
