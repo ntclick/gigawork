@@ -86,6 +86,24 @@ const MIGRATIONS: Array<[label: string, sqlText: string]> = [
        created_at timestamptz not null default now()
      )`,
   ],
+  [
+    'workflow_events.create',
+    `create table if not exists workflow_events (
+       id uuid primary key default gen_random_uuid(),
+       workflow_id uuid not null references workflows(id) on delete cascade,
+       node_id uuid references nodes(id) on delete set null,
+       skill_name text,
+       agent_id text,
+       type text not null,
+       status text,
+       message text,
+       payload jsonb not null default '{}'::jsonb,
+       quote_id text,
+       payment_id text,
+       tx_hash text,
+       created_at timestamptz not null default now()
+     )`,
+  ],
 
   // ── credit_ledger.tx_hash unique (top-up replay guard) ───────
   [
@@ -184,9 +202,13 @@ const MIGRATIONS: Array<[label: string, sqlText: string]> = [
   ['rls.nodes', `alter table nodes disable row level security`],
   ['rls.messages', `alter table messages disable row level security`],
   ['rls.nanopayment_events', `alter table nanopayment_events disable row level security`],
+  ['rls.workflow_events', `alter table workflow_events disable row level security`],
 
   // ── Indexes ──────────────────────────────────────────────────
   ['idx.nanopayment_events_workflow', `create index if not exists nanopayment_events_workflow_id_idx on nanopayment_events(workflow_id)`],
+  ['idx.workflow_events_workflow', `create index if not exists workflow_events_workflow_id_idx on workflow_events(workflow_id)`],
+  ['idx.workflow_events_node', `create index if not exists workflow_events_node_id_idx on workflow_events(node_id)`],
+  ['idx.workflow_events_created_at', `create index if not exists workflow_events_created_at_idx on workflow_events(created_at)`],
 
   ['idx.credit_ledger_user', `create index if not exists credit_ledger_user_idx on credit_ledger(user_id, created_at desc)`],
   ['idx.workflows_user', `create index if not exists workflows_user_idx on workflows(user_id, created_at desc)`],
