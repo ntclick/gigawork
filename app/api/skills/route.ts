@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 
-import { listSkills } from '@/lib/skills/registry'
+import { listAgents } from '@/lib/agents/registry'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const rows = await listSkills()
+  const rows = await listAgents()
   return NextResponse.json({ skills: rows })
 }

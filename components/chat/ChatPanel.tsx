@@ -218,7 +218,7 @@ export const ChatPanel = React.memo(function ChatPanel({
         <>
           <div className="gw-drawer-backdrop md:hidden" onClick={closeChat} role="presentation" />
           <div
-            className="gw-drawer-panel gw-drawer-right md:hidden"
+            className="gw-drawer-panel gw-drawer-right flex flex-col md:hidden"
             role="dialog"
             aria-label="Brain chat"
           >

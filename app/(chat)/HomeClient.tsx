@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { usePrivy } from '@privy-io/react-auth'
 import {
   ArrowRight,
@@ -60,6 +61,10 @@ export function HomeClient() {
   const [submitting, setSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Live stats and agents list
+  const [tickerStats, setTickerStats] = useState({ onlineAgents: 0, jobsSettled: 0, totalPaidUsdc: 0.0 })
+  const [agentsList, setAgentsList] = useState<any[]>([])
+
   // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current
@@ -67,6 +72,36 @@ export function HomeClient() {
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 260)}px`
   }, [prompt])
+
+  // Fetch live ticker stats and agents roster
+  useEffect(() => {
+    const loadSystemData = async () => {
+      try {
+        const skillsRes = await fetch('/api/skills', { cache: 'no-store' })
+        const skillsData = await skillsRes.json()
+        const list = skillsData.skills ?? []
+        setAgentsList(list)
+
+        const activeCount = list.filter((a: any) => a.status === 'online' || a.status === 'busy').length
+
+        const statsRes = await fetch('/api/admin/system-stats', { cache: 'no-store' })
+        const statsData = await statsRes.json()
+        if (statsData.success && statsData.stats) {
+          const stats = statsData.stats
+          setTickerStats({
+            onlineAgents: activeCount,
+            jobsSettled: stats.totalNanopaymentCalls ? parseInt(stats.totalNanopaymentCalls) : 0,
+            totalPaidUsdc: stats.totalNanopaymentRevenue ? parseFloat(stats.totalNanopaymentRevenue) : 0.0,
+          })
+        } else {
+          setTickerStats((prev) => ({ ...prev, onlineAgents: activeCount }))
+        }
+      } catch (err) {
+        console.error('Failed to fetch system stats ticker data:', err)
+      }
+    }
+    loadSystemData()
+  }, [])
 
   const submit = useCallback(async (text: string) => {
     const t = text.trim()
@@ -333,7 +368,7 @@ export function HomeClient() {
               display: flex;
               flex-wrap: wrap;
               gap: 8px;
-              padding: 0 18px 18px;
+              padding: 18px;
             }
             .prompt-chip {
               border: 1px solid rgba(255,255,255,0.075);
@@ -439,7 +474,7 @@ export function HomeClient() {
             .wf-card {
               position: relative;
               display: flex;
-              min-height: 236px;
+              min-height: 256px;
               flex-direction: column;
               overflow: hidden;
               border: 1px solid rgba(255,255,255,0.08);
@@ -581,7 +616,7 @@ export function HomeClient() {
             @media (max-width: 1024px) {
               .orch-shell { padding: 42px 22px 56px; }
               .orch-hero-grid { grid-template-columns: 1fr; align-items: start; }
-              .route-panel { max-width: 560px; }
+              .route-panel { display: none; }
               .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             }
             @media (max-width: 640px) {
@@ -600,9 +635,9 @@ export function HomeClient() {
               <div className="orch-copy">
                 <div className="orch-eyebrow">
                   <span className="live-dot" />
-                  Agent workbench
+                  Agent Economy
                 </div>
-                <h1>Put crypto agents to work from one prompt.</h1>
+                <h1>Describe a task. Hermes hires the right agents and pays them per call.</h1>
                 <p>
                   Describe the outcome. GigaWork routes the task through scanners,
                   wallet monitors, trading analysts, and report senders — then opens
@@ -622,7 +657,7 @@ export function HomeClient() {
                 </div>
                 <div className="route-list">
                   <div className="route-item">
-                    <div className="route-icon"><Bot className="h-4 w-4" /></div>
+                     <div className="route-icon"><Bot className="h-4 w-4" /></div>
                     <div><strong>Planner selects agents</strong><span>Maps prompt to the right skill chain</span></div>
                   </div>
                   <div className="route-item">
@@ -655,6 +690,23 @@ export function HomeClient() {
                   disabled={submitting}
                 />
               </div>
+
+              {/* Stats Ticker */}
+              <div className="px-[22px] py-2 border-t border-b border-white/[0.04] bg-white/[0.01] flex items-center justify-center gap-1 sm:gap-2 text-[11px] font-mono text-white/40">
+                <span className="flex items-center gap-1 shrink-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <span className="text-white/70 font-semibold">{tickerStats.onlineAgents}</span> agents online
+                </span>
+                <span className="shrink-0">·</span>
+                <span className="shrink-0">
+                  <span className="text-white/70 font-semibold">{tickerStats.jobsSettled.toLocaleString()}</span> jobs settled
+                </span>
+                <span className="shrink-0">·</span>
+                <span className="shrink-0">
+                  <span className="text-white/70 font-semibold">{tickerStats.totalPaidUsdc.toFixed(2)}</span> USDC paid out
+                </span>
+              </div>
+
               <div className="prompt-examples" aria-label="Example prompts">
                 {EXAMPLE_PROMPTS.map((example) => (
                   <button
@@ -705,16 +757,80 @@ export function HomeClient() {
                     key={tpl.id}
                     template={tpl}
                     onUse={fillPrompt}
+                    agentsList={agentsList}
                   />
                 ))}
               </div>
-
-              {ready && !authenticated && (
-                <p className="mt-5 text-center text-xs text-white/35">
-                  Connect your wallet via the header to create workflows.
-                </p>
-              )}
             </section>
+
+            {/* Khối B — Live Agent Roster */}
+            <section className="templates-section mt-8" aria-label="Live Agent Roster">
+              <div className="templates-head">
+                <div>
+                  <div className="templates-kicker text-emerald-400">
+                    <span className="relative flex h-1.5 w-1.5 mr-1 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </span>
+                    Live Agent Roster
+                  </div>
+                  <h2>Active Agent Providers</h2>
+                  <p>Real-time registry lookup of available ERC-8004 agents and their pricing.</p>
+                </div>
+                <div className="templates-count border-emerald-400/20 text-emerald-400 font-mono">
+                  {agentsList.filter((a) => a.status === 'online').length} online
+                </div>
+              </div>
+
+              {agentsList.length === 0 ? (
+                <div className="flex h-32 items-center justify-center text-xs text-white/30 italic">
+                  No agents active in the registry.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 mt-4">
+                  {agentsList.slice(0, 4).map((agent) => {
+                    const stars = agent.reputation != null ? (agent.reputation / 20).toFixed(1) : null
+                    const statusColor = agent.status === 'online' ? 'bg-emerald-400 animate-pulse' : agent.status === 'busy' ? 'bg-amber-400 animate-pulse' : 'bg-white/20'
+                    return (
+                      <div key={agent.slug} className="border border-white/[0.08] bg-white/[0.02] hover:border-white/15 rounded-xl p-3.5 flex flex-col justify-between transition-colors">
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[9px] uppercase font-mono tracking-wider text-white/40">{agent.category}</span>
+                            <span className="flex items-center gap-1.5">
+                              <span className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
+                              <span className="text-[9px] uppercase font-mono text-white/50">{agent.status}</span>
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-semibold text-white/90 truncate mb-1">{agent.name}</h4>
+                          <p className="text-[11px] text-white/35 font-mono mb-3">{agent.pricePerCall} USDC/call</p>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-white/[0.04] pt-2 text-[10px]">
+                          <span className="text-white/40 font-mono">{agent.totalCalls} calls</span>
+                          {stars ? (
+                            <span className="text-amber-400 font-semibold">{stars}★ reputation</span>
+                          ) : (
+                            <span className="text-cyan-400 bg-cyan-400/10 px-1.5 py-0.5 rounded font-mono text-[9px] font-bold">NEW</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Footer link to Directory */}
+              <div className="mt-4 flex justify-end">
+                <Link href="/agents" className="text-xs text-[#828fff] hover:underline flex items-center gap-1 font-semibold">
+                  Browse all agents →
+                </Link>
+              </div>
+            </section>
+
+            {ready && !authenticated && (
+              <p className="mt-5 text-center text-xs text-white/35">
+                Connect your wallet via the header to create workflows.
+              </p>
+            )}
           </div>
         </main>
       </div>
@@ -725,13 +841,47 @@ export function HomeClient() {
 function TemplateCard({
   template,
   onUse,
+  agentsList,
 }: {
   template: WorkflowTemplate
   onUse: (prompt: string) => void
+  agentsList: any[]
 }) {
   const steps = [template.skillName, ...(template.followupSkills || [])].filter(Boolean) as string[]
   const visibleAgents = template.uses.slice(0, 3)
   const hiddenAgents = Math.max(0, template.uses.length - visibleAgents.length)
+
+  // Dynamic estimate of the cost
+  let estimatedCost = 0
+  template.uses.forEach((skillSlug) => {
+    const agent = agentsList.find((a) => a.slug === skillSlug)
+    if (agent) {
+      estimatedCost += parseFloat(agent.pricePerCall)
+    } else {
+      const fallbackCost = skillSlug === 'report-composer' ? 0.01 :
+                           skillSlug === 'crypto-scanner' ? 0.005 :
+                           skillSlug === 'defi-yields' ? 0.005 :
+                           skillSlug === 'trading-signals' ? 0.005 :
+                           skillSlug === 'whale-tracker' ? 0.008 :
+                           skillSlug === 'telegram-sender' ? 0.002 :
+                           skillSlug === 'email-sender' ? 0.002 : 0.01
+      estimatedCost += fallbackCost
+    }
+  })
+
+  // Pretty chain preview names
+  const shortChainNames = template.uses.map((slug) => {
+    switch (slug) {
+      case 'crypto-scanner': return 'Birdeye'
+      case 'trading-signals': return 'RSI Agent'
+      case 'telegram-sender': return 'Telegram Bot'
+      case 'email-sender': return 'Email Bot'
+      case 'defi-yields': return 'Yield Hunter'
+      case 'whale-tracker': return 'Whale Tracker'
+      case 'report-composer': return 'Composer'
+      default: return getSkillActionName(slug)
+    }
+  })
 
   return (
     <article className={`wf-card wf-card-${template.category}`}>
@@ -743,20 +893,19 @@ function TemplateCard({
       <h3 className="wf-title">{template.title}</h3>
       <p className="wf-desc">{template.desc}</p>
 
-      <div className="wf-agents" aria-label="Agents used">
-        {visibleAgents.map((s) => (
-          <span key={s} className="agent-chip">{s}</span>
-        ))}
-        {hiddenAgents > 0 && <span className="agent-chip">+{hiddenAgents}</span>}
-      </div>
-
-      <div className="wf-flow" aria-label="Workflow steps">
-        {(steps.length ? steps : template.uses).slice(0, 4).map((s, idx, arr) => (
-          <React.Fragment key={`${s}-${idx}`}>
-            <strong>{getSkillActionName(s)}</strong>
-            {idx < arr.length - 1 && <span className="wf-arrow">→</span>}
+      {/* Mini Agent Chain Preview */}
+      <div className="wf-agents mt-3" aria-label="Mini agent chain preview">
+        {shortChainNames.map((name, idx) => (
+          <React.Fragment key={idx}>
+            <span className="agent-chip">{name}</span>
+            {idx < shortChainNames.length - 1 && <span className="text-[9px] text-white/20 self-center">→</span>}
           </React.Fragment>
         ))}
+      </div>
+
+      <div className="wf-flow" aria-label="Estimated Cost">
+        <span>Estimated Cost:</span>
+        <strong className="ml-1 text-cyan-400 font-mono">~{estimatedCost.toFixed(3)} USDC</strong>
       </div>
 
       <button

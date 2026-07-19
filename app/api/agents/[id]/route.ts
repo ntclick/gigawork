@@ -7,10 +7,11 @@ import { nanopaymentEvents } from '@/lib/db/schema'
 
 export const dynamic = 'force-dynamic'
 
-type RouteCtx = { params: Promise<{ name: string }> }
+type RouteCtx = { params: Promise<{ id: string }> }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
-  const { name } = await ctx.params
+  const { id } = await ctx.params
+  const name = id
   
   // 1. Get endpoint config
   const config = getEndpointConfig(name)

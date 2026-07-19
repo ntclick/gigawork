@@ -4,7 +4,7 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUp, Tv, Terminal, Network, ListChecks } from 'lucide-react'
+import { ArrowUp, Tv, Terminal, Network, Coins } from 'lucide-react'
 
 import { WorkflowCanvas, buildFromMessages } from '@/components/chat/WorkflowCanvas'
 import { WorkflowDocPanel } from '@/components/chat/WorkflowDocPanel'
@@ -593,7 +593,7 @@ export default function WorkflowPage() {
                 {/* View mode tabs */}
                 <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.03] p-0.5">
                   {(['steps', 'theater', 'interaction', 'canvas'] as const).map((mode) => {
-                    const Icon = mode === 'steps' ? ListChecks : mode === 'theater' ? Tv : mode === 'interaction' ? Terminal : Network
+                    const Icon = mode === 'steps' ? Coins : mode === 'theater' ? Tv : mode === 'interaction' ? Terminal : Network
                     return (
                       <button
                         key={mode}
@@ -606,7 +606,7 @@ export default function WorkflowPage() {
                         }`}
                       >
                         <Icon className="h-3 w-3 shrink-0" />
-                        {mode === 'steps' ? 'Steps' : mode === 'theater' ? 'Theater' : mode === 'interaction' ? 'Terminal' : 'DAG'}
+                        {mode === 'steps' ? 'Economy' : mode === 'theater' ? 'Theater' : mode === 'interaction' ? 'Terminal' : 'DAG'}
                       </button>
                     )
                   })}

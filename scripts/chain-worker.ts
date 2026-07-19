@@ -19,75 +19,116 @@ async function runWorker() {
   const { chainJobs } = await import('../lib/db/schema')
   const { settleWorkflowJob, cacheReputation, processFailedReputation } = await import('../lib/ai/finalizeWorkflow')
 
+  let lastSyncTime = 0
+  const SYNC_INTERVAL_MS = 30_000
+
   while (true) {
-    // 1. Fetch one pending job
-    const [job] = await db
-      .select()
-      .from(chainJobs)
-      .where(eq(chainJobs.status, 'pending'))
-      .limit(1)
-
-    if (!job) {
-      // No jobs — sleep for 2 seconds and check again
-      await new Promise((r) => setTimeout(r, 2000))
-      continue
-    }
-
-    console.log(`[worker] Processing job ${job.id} (kind: ${job.kind}, workflow: ${job.workflowId})...`)
-
-    // 2. Mark job as running
-    await db
-      .update(chainJobs)
-      .set({ status: 'running', attempts: job.attempts + 1, updatedAt: new Date() })
-      .where(eq(chainJobs.id, job.id))
-
     try {
-      const payload = job.payload as Record<string, unknown>
-      
-      const { workflows } = await import('../lib/db/schema')
-      if (job.kind === 'erc8183_settle') {
-        const finalMarkdown = (payload.finalMarkdown as string) || ''
-        const [wf] = await db.select({ erc8183JobId: workflows.erc8183JobId }).from(workflows).where(eq(workflows.id, job.workflowId)).limit(1)
-        if (wf?.erc8183JobId) {
-          const ok = await settleWorkflowJob(job.workflowId, finalMarkdown)
-          if (!ok) throw new Error('ERC-8183 settlement function returned false (likely RPC timeout)')
-        } else {
-          console.log(`[worker] Skipped ERC-8183 settlement: no jobId found for workflow ${job.workflowId}`)
+      // Periodic on-chain status synchronization
+      if (Date.now() - lastSyncTime > SYNC_INTERVAL_MS) {
+        lastSyncTime = Date.now()
+        console.log('[worker] Running periodic on-chain status cache synchronization...')
+        try {
+          const { agents, jobs } = await import('../lib/db/schema')
+          const { syncAgentReputationScore, syncJobEscrowStatus } = await import('../lib/chain/sync')
+          const { and, sql } = await import('drizzle-orm')
+
+          // 1. Sync active provider agents reputation
+          const activeAgents = await db
+            .select({ id: agents.id })
+            .from(agents)
+            .where(and(eq(agents.agentType, 'provider'), eq(agents.isActive, true)))
+
+          for (const agent of activeAgents) {
+            await syncAgentReputationScore(agent.id)
+          }
+
+          // 2. Sync active non-completed jobs
+          const activeJobs = await db
+            .select({ id: jobs.id })
+            .from(jobs)
+            .where(sql`${jobs.status} not in ('Completed', 'Rejected', 'Expired') and ${jobs.onchainJobId} is not null`)
+
+          for (const job of activeJobs) {
+            await syncJobEscrowStatus(job.id)
+          }
+        } catch (syncErr) {
+          console.error('[worker] Periodic cache sync failed:', syncErr)
         }
-      } 
-      else if (job.kind === 'erc8004_feedback') {
-        const userId = (payload.userId as string) || null
-        const outcome = payload.outcome as 'completed' | 'failed'
-        if (outcome === 'completed') {
-          await cacheReputation(job.workflowId, userId)
-        } else {
-          await processFailedReputation(job.workflowId, userId)
-        }
-      } 
-      else {
-        throw new Error(`Unknown job kind: ${job.kind}`)
       }
 
-      // Mark completed
-      await db
-        .update(chainJobs)
-        .set({ status: 'completed', updatedAt: new Date() })
-        .where(eq(chainJobs.id, job.id))
-      
-      console.log(`🟢 Job ${job.id} completed successfully.`)
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      console.error(`❌ Job ${job.id} failed:`, errorMsg)
+      // 1. Fetch one pending job
+      const [job] = await db
+        .select()
+        .from(chainJobs)
+        .where(eq(chainJobs.status, 'pending'))
+        .limit(1)
 
-      // If attempts >= 3, mark as failed permanently. Otherwise, set back to pending for retry.
-      const status = job.attempts >= 3 ? 'failed' : 'pending'
+      if (!job) {
+        // No jobs — sleep for 2 seconds and check again
+        await new Promise((r) => setTimeout(r, 2000))
+        continue
+      }
+
+      console.log(`[worker] Processing job ${job.id} (kind: ${job.kind}, workflow: ${job.workflowId})...`)
+
+      // 2. Mark job as running
       await db
         .update(chainJobs)
-        .set({ status, lastError: errorMsg, updatedAt: new Date() })
+        .set({ status: 'running', attempts: job.attempts + 1, updatedAt: new Date() })
         .where(eq(chainJobs.id, job.id))
-      
-      // Delay before next tick on error to prevent hot-looping
-      await new Promise((r) => setTimeout(r, 1000))
+
+      try {
+        const payload = job.payload as Record<string, unknown>
+        
+        const { workflows } = await import('../lib/db/schema')
+        if (job.kind === 'erc8183_settle') {
+          const finalMarkdown = (payload.finalMarkdown as string) || ''
+          const [wf] = await db.select({ erc8183JobId: workflows.erc8183JobId }).from(workflows).where(eq(workflows.id, job.workflowId)).limit(1)
+          if (wf?.erc8183JobId) {
+            const ok = await settleWorkflowJob(job.workflowId, finalMarkdown)
+            if (!ok) throw new Error('ERC-8183 settlement function returned false (likely RPC timeout)')
+          } else {
+            console.log(`[worker] Skipped ERC-8183 settlement: no jobId found for workflow ${job.workflowId}`)
+          }
+        } 
+        else if (job.kind === 'erc8004_feedback') {
+          const userId = (payload.userId as string) || null
+          const outcome = payload.outcome as 'completed' | 'failed'
+          if (outcome === 'completed') {
+            await cacheReputation(job.workflowId, userId)
+          } else {
+            await processFailedReputation(job.workflowId, userId)
+          }
+        } 
+        else {
+          throw new Error(`Unknown job kind: ${job.kind}`)
+        }
+
+        // Mark completed
+        await db
+          .update(chainJobs)
+          .set({ status: 'completed', updatedAt: new Date() })
+          .where(eq(chainJobs.id, job.id))
+        
+        console.log(`🟢 Job ${job.id} completed successfully.`)
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        console.error(`❌ Job ${job.id} failed:`, errorMsg)
+
+        // If attempts >= 3, mark as failed permanently. Otherwise, set back to pending for retry.
+        const status = job.attempts >= 3 ? 'failed' : 'pending'
+        await db
+          .update(chainJobs)
+          .set({ status, lastError: errorMsg, updatedAt: new Date() })
+          .where(eq(chainJobs.id, job.id))
+        
+        // Delay before next tick on error to prevent hot-looping
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+    } catch (loopErr) {
+      console.error('[worker] Error in worker loop (likely connection error):', loopErr)
+      await new Promise((r) => setTimeout(r, 5000))
     }
   }
 }

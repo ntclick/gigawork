@@ -436,8 +436,6 @@ button, a, .gw-transition {
   position: fixed;
   z-index: 61;
   background: #0b0e15;
-  display: flex;
-  flex-direction: column;
 }
 .gw-drawer-right {
   top: 0;

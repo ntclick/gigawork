@@ -15,10 +15,11 @@ import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { creditLedger, messages, nodes, skills } from '@/lib/db/schema'
 
-type RouteCtx = { params: Promise<{ name: string }> }
+type RouteCtx = { params: Promise<{ id: string }> }
 
 export async function GET(_req: Request, ctx: RouteCtx) {
-  const { name } = await ctx.params
+  const { id } = await ctx.params
+  const name = id
 
   const [skill] = await withDbRetry(
     () => db.select().from(skills).where(eq(skills.name, name)).limit(1),

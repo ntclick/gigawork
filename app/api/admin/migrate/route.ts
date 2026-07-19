@@ -104,6 +104,65 @@ const MIGRATIONS: Array<[label: string, sqlText: string]> = [
        created_at timestamptz not null default now()
      )`,
   ],
+  [
+    'agents.create',
+    `create table if not exists agents (
+       id uuid primary key default gen_random_uuid(),
+       onchain_id bigint unique,
+       owner_address text not null,
+       agent_type text,
+       name text,
+       description text,
+       capabilities text[],
+       wallet_id text,
+       wallet_address text,
+       metadata_uri text,
+       reputation_score numeric default '0',
+       is_active boolean default true,
+       created_at timestamptz default now()
+     )`,
+  ],
+  [
+    'jobs.create',
+    `create table if not exists jobs (
+       id uuid primary key default gen_random_uuid(),
+       onchain_job_id bigint unique,
+       client_agent_id uuid references agents(id) on delete cascade,
+       provider_agent_id uuid references agents(id) on delete cascade,
+       status text,
+       budget_usdc numeric,
+       description text,
+       deliverable_hash text,
+       created_at timestamptz default now(),
+       funded_at timestamptz,
+       completed_at timestamptz
+     )`,
+  ],
+  [
+    'negotiations.create',
+    `create table if not exists negotiations (
+       id uuid primary key default gen_random_uuid(),
+       job_id uuid references jobs(id) on delete cascade,
+       agent_id uuid references agents(id) on delete cascade,
+       role text,
+       message text,
+       price_offer numeric,
+       created_at timestamptz default now()
+     )`,
+  ],
+  [
+    'nanopayments.create',
+    `create table if not exists nanopayments (
+       id uuid primary key default gen_random_uuid(),
+       from_agent_id uuid references agents(id) on delete cascade,
+       to_agent_id uuid references agents(id) on delete cascade,
+       amount_usdc numeric,
+       purpose text,
+       status text,
+       "authorization" jsonb,
+       created_at timestamptz default now()
+     )`,
+  ],
 
   // ── credit_ledger.tx_hash unique (top-up replay guard) ───────
   [
@@ -203,6 +262,10 @@ const MIGRATIONS: Array<[label: string, sqlText: string]> = [
   ['rls.messages', `alter table messages disable row level security`],
   ['rls.nanopayment_events', `alter table nanopayment_events disable row level security`],
   ['rls.workflow_events', `alter table workflow_events disable row level security`],
+  ['rls.agents', `alter table agents disable row level security`],
+  ['rls.jobs', `alter table jobs disable row level security`],
+  ['rls.negotiations', `alter table negotiations disable row level security`],
+  ['rls.nanopayments', `alter table nanopayments disable row level security`],
 
   // ── Indexes ──────────────────────────────────────────────────
   ['idx.nanopayment_events_workflow', `create index if not exists nanopayment_events_workflow_id_idx on nanopayment_events(workflow_id)`],

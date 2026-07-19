@@ -129,7 +129,7 @@ export function FocusedStepList() {
         }
         .tl-dot {
           position: absolute;
-          left: -26px;
+          left: -27px;
           width: 10px;
           height: 10px;
           border-radius: 50%;
@@ -151,7 +151,7 @@ export function FocusedStepList() {
         }
         .dot-payment {
           position: absolute;
-          left: -26px;
+          left: -27px;
           width: 10px;
           height: 10px;
           border-radius: 50%;
@@ -334,19 +334,19 @@ export function FocusedStepList() {
           <div className="econ-row">
             <div className="econ-card">
               <div className="econ-label">Total budget</div>
-              <div className="econ-val">{budgetUsdc.toFixed(2)}</div>
+              <div className="econ-val">{budgetUsdc.toFixed(2)} USDC</div>
               <div className="econ-sub">USDC locked in escrow</div>
             </div>
             <div className="econ-card">
               <div className="econ-label">Spent so far</div>
               <div className="econ-val" style={{ color: '#1D9E75' }}>
-                {spentUsdc.toFixed(2)}
+                {spentUsdc.toFixed(2)} USDC
               </div>
               <div className="econ-sub">via x402 · {callCount} calls</div>
             </div>
             <div className="econ-card">
               <div className="econ-label">Remaining</div>
-              <div className="econ-val">{remainingUsdc.toFixed(2)}</div>
+              <div className="econ-val">{remainingUsdc.toFixed(2)} USDC</div>
               <div className="econ-sub">releases on verify</div>
             </div>
           </div>
@@ -445,7 +445,7 @@ export function FocusedStepList() {
                         <div className="dot-payment" style={{ top: '6px' }}></div>
                         <div className={`tl-card payment-row ${newlyAddedIds.has(stepEvent.id) ? 'new' : ''}`}>
                           <span className="payment-label">
-                            ⚡ x402 · {parseFloat(stepEvent.amountUsdc).toFixed(2)} USDC → {step.agentAddress ? shortAddr(step.agentAddress) : '0x...'} · EIP-3009 signed · queued for settlement
+                            ⚡ x402 · {parseFloat(stepEvent.amountUsdc).toFixed(2)} USDC → {step.agentAddress ? shortAddr(step.agentAddress) : '0x...'} · settled
                           </span>
                         </div>
                       </div>
@@ -472,7 +472,7 @@ export function FocusedStepList() {
                   <div key={agentName} className="earnings-bar">
                     <div className="eb-head">
                       <span className="eb-name truncate max-w-[160px]">{agentName}</span>
-                      <span className="eb-val">{earnings > 0 ? earnings.toFixed(2) : '—'}</span>
+                      <span className="eb-val">{earnings > 0 ? `${earnings.toFixed(2)} USDC` : '—'}</span>
                     </div>
                     <div className="bar-track">
                       <div className="bar-fill" style={{ width: `${percent}%` }}></div>

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, timestamp, integer, index, boolean } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, jsonb, timestamp, integer, index, boolean, bigint, numeric } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -255,4 +255,67 @@ export const nanopaymentEvents = pgTable('nanopayment_events', {
 
 export type NanopaymentEvent = typeof nanopaymentEvents.$inferSelect
 export type NewNanopaymentEvent = typeof nanopaymentEvents.$inferInsert
+
+export const agents = pgTable('agents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  onchainId: bigint('onchain_id', { mode: 'bigint' }).unique(),
+  ownerAddress: text('owner_address').notNull(),
+  agentType: text('agent_type'), // 'client' | 'provider'
+  name: text('name'),
+  description: text('description'),
+  capabilities: text('capabilities').array(),
+  walletId: text('wallet_id'),
+  walletAddress: text('wallet_address'),
+  metadataUri: text('metadata_uri'),
+  reputationScore: numeric('reputation_score').default('0'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+})
+
+export type Agent = typeof agents.$inferSelect
+export type NewAgent = typeof agents.$inferInsert
+
+export const jobs = pgTable('jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  onchainJobId: bigint('onchain_job_id', { mode: 'bigint' }).unique(),
+  clientAgentId: uuid('client_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+  providerAgentId: uuid('provider_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+  status: text('status'), // 'Open' | 'Funded' | 'Submitted' | 'Completed' | 'Rejected' | 'Expired'
+  budgetUsdc: numeric('budget_usdc'),
+  description: text('description'),
+  deliverableHash: text('deliverable_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  fundedAt: timestamp('funded_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+})
+
+export type Job = typeof jobs.$inferSelect
+export type NewJob = typeof jobs.$inferInsert
+
+export const negotiations = pgTable('negotiations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  jobId: uuid('job_id').references(() => jobs.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+  role: text('role'), // 'client' | 'provider'
+  message: text('message'),
+  priceOffer: numeric('price_offer'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+})
+
+export type Negotiation = typeof negotiations.$inferSelect
+export type NewNegotiation = typeof negotiations.$inferInsert
+
+export const nanopayments = pgTable('nanopayments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  fromAgentId: uuid('from_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+  toAgentId: uuid('to_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+  amountUsdc: numeric('amount_usdc'),
+  purpose: text('purpose'), // 'negotiation_fee' | 'task_fee' | 'evaluation_fee'
+  status: text('status'), // 'pending' | 'settled'
+  authorization: jsonb('authorization'), // EIP-3009 signed payload
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+})
+
+export type Nanopayment = typeof nanopayments.$inferSelect
+export type NewNanopayment = typeof nanopayments.$inferInsert
 

@@ -4,7 +4,7 @@ import { and, eq } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, workflows } from '@/lib/db/schema'
-import { listSkills } from '@/lib/skills/registry'
+import { listAgents } from '@/lib/agents/registry'
 import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { HERMES_SYSTEM_PROMPT } from './prompts'
 import { buildBrainTools } from './tools'
@@ -162,14 +162,14 @@ export async function streamBrain(opts: {
   uiMessages: UIMessage[]
   /** Internal retry counter — callers should not set this */ _retry?: number
 }) {
-  const allSkills = await listSkills()
-  const skills = allSkills.filter((s) => !s.agentTokenId || s.livenessStatus === 'ACTIVE')
-  const skillCard = skills
+  const allAgents = await listAgents()
+  const activeAgents = allAgents.filter((a) => a.status !== 'offline')
+  const skillCard = activeAgents
     .map((s) => {
       const m = (s.manifest ?? {}) as Record<string, unknown>
       const kw = Array.isArray(m.best_for_keywords) ? (m.best_for_keywords as string[]).join(', ') : ''
-      const cat = (m.category as string) ?? 'general'
-      const cost = (m.cost_credits as number) ?? 10
+      const cat = s.category
+      const price = s.pricePerCall
       const desc = (m.description as string) ?? ''
       // Critical: surface input_schema so Kimi knows what fields to put in
       // dispatchSkill's `input` object. Without this it sends `input: {}`.
@@ -185,7 +185,7 @@ export async function streamBrain(opts: {
             })
             .join('\n')
         : '    - (no schema)'
-      return `**${s.name}** · ${cat} · ${cost} credits\n  ${desc}\n  keywords: ${kw}\n  input fields:\n${inputDoc}`
+      return `**${s.slug}** (Display Name: "${s.name}") · ${cat} · ${price} USDC/call\n  ${desc}\n  keywords: ${kw}\n  input fields:\n${inputDoc}`
     })
     .join('\n\n')
 
@@ -327,8 +327,8 @@ export async function streamBrain(opts: {
 
             const rawJson: Record<string, unknown> = {}
             for (const n of completedNodes) {
-              const matchedSkill = skills.find((s) => s.id === n.skillId)
-              const skillName = matchedSkill ? matchedSkill.name : 'unknown'
+              const matchedSkill = allAgents.find((s: any) => s.id === n.skillId)
+              const skillName = matchedSkill ? matchedSkill.slug : 'unknown'
               rawJson[skillName] = n.output
             }
 

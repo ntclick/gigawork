@@ -11,6 +11,7 @@ export interface SkillWithLiveness extends Skill {
   livenessUptime30d?: number | null
   consecutiveJobFailures?: number | null
   lastHeartbeatAt?: string | null
+  agentAddress?: string | null
 }
 
 export async function listSkills(): Promise<SkillWithLiveness[]> {
@@ -20,6 +21,7 @@ export async function listSkills(): Promise<SkillWithLiveness[]> {
         .select({
           skill: skills,
           liveness: agentLiveness,
+          wallet: users.wallet,
         })
         .from(skills)
         .leftJoin(users, eq(skills.ownerId, users.id))
@@ -34,6 +36,7 @@ export async function listSkills(): Promise<SkillWithLiveness[]> {
     livenessUptime30d: r.liveness?.uptime30dPct ?? null,
     consecutiveJobFailures: r.liveness?.consecutiveJobFailures ?? null,
     lastHeartbeatAt: r.liveness?.lastHeartbeatAt?.toISOString() ?? null,
+    agentAddress: r.wallet ?? null,
   }))
 }
 
@@ -44,6 +47,7 @@ export async function getSkillByName(name: string): Promise<SkillWithLiveness | 
         .select({
           skill: skills,
           liveness: agentLiveness,
+          wallet: users.wallet,
         })
         .from(skills)
         .leftJoin(users, eq(skills.ownerId, users.id))
@@ -60,6 +64,7 @@ export async function getSkillByName(name: string): Promise<SkillWithLiveness | 
     livenessUptime30d: row.liveness?.uptime30dPct ?? null,
     consecutiveJobFailures: row.liveness?.consecutiveJobFailures ?? null,
     lastHeartbeatAt: row.liveness?.lastHeartbeatAt?.toISOString() ?? null,
+    agentAddress: row.wallet ?? null,
   }
 }
 

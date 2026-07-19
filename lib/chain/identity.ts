@@ -204,10 +204,21 @@ export async function getAgentURI(tokenId: string): Promise<string | null> {
 // reflects within half a minute without polling-storm churn.
 const onChainCache = new Map<string, { value: string | null; expires: number }>()
 const ON_CHAIN_TTL_MS = 30_000
+const ownershipCache = new Map<string, { value: boolean; expires: number }>()
+const OWNERSHIP_TTL_MS = 30_000
 
 export function invalidateOnChainIdentityCache(wallet?: string): void {
-  if (!wallet) onChainCache.clear()
-  else onChainCache.delete(wallet.toLowerCase())
+  if (!wallet) {
+    onChainCache.clear()
+    ownershipCache.clear()
+  } else {
+    onChainCache.delete(wallet.toLowerCase())
+    for (const key of ownershipCache.keys()) {
+      if (key.endsWith(`:${wallet.toLowerCase()}`)) {
+        ownershipCache.delete(key)
+      }
+    }
+  }
 }
 
 export async function checkOnChainIdentity(wallet: string): Promise<string | null> {
@@ -277,6 +288,9 @@ export async function verifyTokenOwnership(
   wallet: string,
 ): Promise<boolean> {
   if (!IDENTITY_REGISTRY) return false
+  const key = `${tokenId}:${wallet.toLowerCase()}`
+  const cached = ownershipCache.get(key)
+  if (cached && cached.expires > Date.now()) return cached.value
   try {
     const owner = await publicClient.readContract({
       address: IDENTITY_REGISTRY,
@@ -284,7 +298,9 @@ export async function verifyTokenOwnership(
       functionName: 'ownerOf',
       args: [BigInt(tokenId)],
     })
-    return owner.toLowerCase() === getAddress(wallet).toLowerCase()
+    const value = owner.toLowerCase() === getAddress(wallet).toLowerCase()
+    ownershipCache.set(key, { value, expires: Date.now() + OWNERSHIP_TTL_MS })
+    return value
   } catch (err) {
     // Token doesn't exist or RPC failure — treat as not-owned so the
     // caller clears the stale cache. Safer than trusting cached data.

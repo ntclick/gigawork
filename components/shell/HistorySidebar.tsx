@@ -261,7 +261,7 @@ export function HistorySidebar() {
         <>
           <div className="gw-drawer-backdrop md:hidden" onClick={closeHistory} role="presentation" />
           <aside
-            className="gw-drawer-panel gw-drawer-left md:hidden"
+            className="gw-drawer-panel gw-drawer-left flex flex-col md:hidden"
             role="dialog"
             aria-label="Workflow history"
           >

@@ -54,6 +54,17 @@ export interface Skill {
   livenessUptime30d?: number | null
   consecutiveJobFailures?: number | null
   lastHeartbeatAt?: string | null
+
+  // AgentInfo fields:
+  address: string
+  slug: string
+  category: string
+  pricePerCall: string
+  reputation: number | null
+  status: 'online' | 'busy' | 'offline' | 'unknown'
+  totalEarnings: string
+  totalCalls: number
+  source: 'on-chain' | 'cache' | 'fallback'
 }
 
 let CACHE: Skill[] | null = null

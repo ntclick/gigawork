@@ -17,6 +17,7 @@ if (!RPC_URL) throw new Error('ARC_RPC_URL missing')
 export const publicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(RPC_URL, { batch: true }),
+  pollingInterval: 500,
 })
 
 // Non-batch client for waitForTransactionReceipt — batch transport
@@ -25,6 +26,7 @@ export const publicClient = createPublicClient({
 export const pollingClient = createPublicClient({
   chain: arcTestnet,
   transport: http(RPC_URL, { batch: false }),
+  pollingInterval: 500,
 })
 
 export const adminAccount = PK ? privateKeyToAccount(PK as `0x${string}`) : null
@@ -59,7 +61,7 @@ export const validatorWallet = validatorAccount
 const queuesByAddress: Record<string, Promise<unknown>> = {}
 const noncesByAddress: Record<string, number | null> = {}
 
-async function sendTransactionForAccount(
+export async function sendTransactionForAccount(
   account: ReturnType<typeof privateKeyToAccount>,
   args: { to: `0x${string}`; data?: Hex; value?: bigint }
 ): Promise<Hex> {
