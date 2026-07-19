@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { MainHeader } from '@/components/shell/MainHeader'
 import { AppRail } from '@/components/shell/AppRail'
@@ -10,13 +10,7 @@ import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import {
   Briefcase,
   Loader2,
-  DollarSign,
-  ArrowRight,
-  ShieldCheck,
-  Clock,
-  Send,
   AlertTriangle,
-  Award,
   CheckCircle2,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -66,60 +60,58 @@ export default function JobRoomPage() {
   const [actionError, setActionError] = useState('')
   const [actionSuccess, setActionSuccess] = useState('')
 
+  const [prevId, setPrevId] = useState(id)
+  if (id !== prevId) {
+    setPrevId(id)
+    setLoading(true)
+  }
+
   // Form inputs for completion
   const [rating, setRating] = useState('5')
   const [comment, setComment] = useState('Excellent delivery.')
 
-  const fetchRoomData = async () => {
-    try {
-      // Fetch job details (custom server route is /api/jobs/[id]/fund style, but we can query general jobs or add a /api/jobs/[id] route)
-      // Wait, we don't have a direct /api/jobs/[id] API endpoint in Phase 5 but we can easily call /api/jobs/create or get all and filter!
-      // Wait, let's look at getJobById from lib/supabase/jobs.ts. Since we need to retrieve it, let's check if we implemented GET /api/jobs/[id].
-      // No, we didn't implement GET /api/jobs/[id] in our routing!
-      // Ah! Let's verify this. In Phase 5, we had:
-      // - `/api/jobs/create`
-      // - `/api/jobs/[id]/fund`
-      // - `/api/jobs/[id]/submit`
-      // - `/api/jobs/[id]/complete`
-      // But we didn't write a GET `/api/jobs/[id]` endpoint!
-      // Let's create `app/api/jobs/[id]/route.ts` right now to return the job details so the room page can fetch it!
-      // This is an extremely critical detail to make the page functional. Let's write the API file first or fetch it from a general list.
-      // Writing a GET route is much cleaner. Let's call a general fetch first or let's create a GET route!
-      // Let's fetch all and filter for now, or write the GET route. Creating a GET route is much cleaner. Let's do that right after or query all.
-      const res = await fetch(`/api/negotiate/${id}`) // fetches messages
-      const msgData = await res.json()
-      if (res.ok) {
-        setMessages(msgData.messages || [])
-      }
-
-      // To fetch the job, let's fetch all jobs or let's add a GET api/jobs/[id] route!
-      // Let's implement /api/jobs/[id] GET route.
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const fetchJobDetails = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/jobs/${id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setJob(data.job)
-      }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const refreshRoom = useCallback(() => {
+    setRefreshTrigger((prev) => prev + 1)
+  }, [])
 
   useEffect(() => {
-    if (id) {
-      fetchJobDetails()
-      fetchRoomData()
+    if (!id) return
+    let active = true
+
+    const fetchRoomData = async () => {
+      try {
+        const res = await fetch(`/api/negotiate/${id}`)
+        const msgData = await res.json()
+        if (res.ok && active) {
+          setMessages(msgData.messages || [])
+        }
+      } catch (err) {
+        console.error(err)
+      }
     }
-  }, [id])
+
+    const fetchJobDetails = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${id}`)
+        if (res.ok && active) {
+          const data = await res.json()
+          setJob(data.job)
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    fetchJobDetails()
+    fetchRoomData()
+
+    return () => {
+      active = false
+    }
+  }, [id, refreshTrigger])
 
   const handleFund = async () => {
     setActionLoading(true)
@@ -130,7 +122,7 @@ export default function JobRoomPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to fund escrow')
       setActionSuccess('Escrow funded successfully on-chain!')
-      fetchJobDetails()
+      refreshRoom()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Funding failed')
     } finally {
@@ -151,7 +143,7 @@ export default function JobRoomPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to submit deliverable')
       setActionSuccess('Deliverable submitted successfully on-chain!')
-      fetchJobDetails()
+      refreshRoom()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Submission failed')
     } finally {
@@ -172,7 +164,7 @@ export default function JobRoomPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to complete job')
       setActionSuccess('Job completed, USDC released, and reputation updated on-chain!')
-      fetchJobDetails()
+      refreshRoom()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Completion failed')
     } finally {

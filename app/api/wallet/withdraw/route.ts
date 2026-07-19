@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getAgentById } from '@/lib/supabase/agents'
 import { sendAgentTransaction } from '@/lib/circle/wallet'
 import { USDC_CONTRACT } from '@/contracts/addresses'
-import { parseUnits, encodeFunctionData, type Hex } from 'viem'
+import { parseUnits, encodeFunctionData } from 'viem'
 import { publicClient } from '@/lib/chain/client'
 import { getCurrentUser } from '@/lib/auth/session'
 

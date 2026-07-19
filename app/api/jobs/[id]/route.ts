@@ -8,13 +8,11 @@ type RouteCtx = { params: Promise<{ id: string }> }
 export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
     const { id } = await ctx.params
-
     const job = await getJobById(id)
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // Convert BigInt to string for JSON serialization
     const serialized = {
       ...job,
       onchainJobId: job.onchainJobId?.toString() || null,

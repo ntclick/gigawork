@@ -125,7 +125,7 @@ export async function getReputationScore(tokenId: string): Promise<number> {
       args: [BigInt(tokenId)],
     })
     return Number(score)
-  } catch (err) {
+  } catch {
     // If method doesn't exist on older mock contracts, fail gracefully
     return 0
   }

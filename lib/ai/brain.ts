@@ -327,7 +327,7 @@ export async function streamBrain(opts: {
 
             const rawJson: Record<string, unknown> = {}
             for (const n of completedNodes) {
-              const matchedSkill = allAgents.find((s: any) => s.id === n.skillId)
+              const matchedSkill = allAgents.find((s: { id: string; slug: string }) => s.id === n.skillId)
               const skillName = matchedSkill ? matchedSkill.slug : 'unknown'
               rawJson[skillName] = n.output
             }

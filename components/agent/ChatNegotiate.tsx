@@ -2,7 +2,17 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { Send, DollarSign, Loader2, User } from 'lucide-react'
+import { Send, DollarSign, Loader2 } from 'lucide-react'
+
+interface SupabaseNegotiation {
+  id: string
+  job_id: string
+  agent_id: string
+  role: string
+  message: string
+  price_offer: string
+  created_at: string
+}
 
 interface ChatMessage {
   id: string
@@ -59,7 +69,7 @@ export function ChatNegotiate({
           filter: `job_id=eq.${jobId}`,
         },
         async (payload) => {
-          const newMsg = payload.new as any
+          const newMsg = payload.new as unknown as SupabaseNegotiation
           
           // Resolve sender agent details
           const senderAgent = agents[newMsg.agent_id] || { name: 'Unknown Agent', walletAddress: '' }
@@ -99,8 +109,8 @@ export function ChatNegotiate({
           const data = await res.json()
           const newMsgs = data.messages || []
           
-          const formatted = newMsgs.map((newMsg: any) => {
-            const senderAgent = agents[newMsg.agentId] || { name: newMsg.agentName || 'Unknown Agent', walletAddress: newMsg.agentWallet || '' }
+          const formatted = newMsgs.map((newMsg: ChatMessage) => {
+            const senderAgent = agents[newMsg.agentId || ''] || { name: newMsg.agentName || 'Unknown Agent', walletAddress: newMsg.agentWallet || '' }
             return {
               id: newMsg.id,
               jobId: newMsg.jobId,

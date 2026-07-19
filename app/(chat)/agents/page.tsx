@@ -4,8 +4,8 @@
  * /agents — list of all registered ERC-8004 skills with metadata + on-chain badge.
  */
 import Link from 'next/link'
-import { useMemo, useState, useEffect } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Plus, Search, Copy, Check, Loader2, ShieldAlert, X, HelpCircle } from 'lucide-react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { ArrowLeft, ExternalLink, Plus, Search, Copy, Check, ShieldAlert, X, HelpCircle } from 'lucide-react'
 
 import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
@@ -26,6 +26,13 @@ const CATEGORY_META: Record<string, { label: string; color: string }> = {
   general:      { label: 'General',      color: 'text-white/50 bg-white/5 border-white/10' },
 }
 
+interface AgentManifest {
+  description?: string
+  best_for_keywords?: string[]
+  disabled?: boolean
+  price_override?: string
+}
+
 interface Agent {
   address: string
   name: string
@@ -37,7 +44,7 @@ interface Agent {
   totalEarnings: string
   totalCalls: number
   source: 'on-chain' | 'cache' | 'fallback'
-  manifest?: any
+  manifest?: AgentManifest
   agentTokenId?: string | null
   agentTxHash?: string | null
 }
@@ -54,25 +61,33 @@ export default function AgentsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [copiedRegistry, setCopiedRegistry] = useState(false)
 
-  const loadAgents = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/skills', { cache: 'no-store' })
-      const data = await res.json()
-      if (res.ok) {
-        setAgents(data.skills ?? [])
-      }
-    } catch (err) {
-      console.error('Failed to load agents:', err)
-      toast.error('Load error', 'Failed to fetch agent list from the registry.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const onRefresh = useCallback(() => {
+    setRefreshTrigger((prev) => prev + 1)
+  }, [])
 
   useEffect(() => {
+    let active = true
+    const loadAgents = async () => {
+      try {
+        const res = await fetch('/api/skills', { cache: 'no-store' })
+        const data = await res.json()
+        if (res.ok && active) {
+          setAgents(data.skills ?? [])
+        }
+      } catch (err) {
+        console.error('Failed to load agents:', err)
+        toast.error('Load error', 'Failed to fetch agent list from the registry.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
     loadAgents()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [refreshTrigger])
 
   const cats = useMemo(() => {
     const set = new Set(agents.map((a) => a.category))
@@ -213,7 +228,7 @@ export default function AgentsPage() {
                     agent={agent} 
                     isAdmin={isAdmin}
                     adminWalletAddress={activeWallet?.address}
-                    onRefresh={loadAgents}
+                    onRefresh={onRefresh}
                   />
                 ))}
               </div>

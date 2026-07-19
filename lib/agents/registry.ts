@@ -3,6 +3,12 @@ import { nanopaymentEvents } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { IDENTITY_REGISTRY } from '@/contracts/addresses'
 
+interface RegistryManifest {
+  cost_credits?: number
+  price_override?: string
+  disabled?: boolean
+}
+
 export interface AgentInfo {
   address: string              // ERC-8004 identity address
   name: string                 // Display name
@@ -14,7 +20,7 @@ export interface AgentInfo {
   totalEarnings: string        // USDC, "0.00" if no data
   totalCalls: number
   source: 'on-chain' | 'cache' | 'fallback'  // debug info
-  manifest?: any               // Raw manifest containing input_schema, description, keywords, etc.
+  manifest?: RegistryManifest  // Raw manifest containing input_schema, description, keywords, etc.
 }
 
 /**
@@ -69,7 +75,7 @@ async function fetchFromDbSkillsFallback(): Promise<AgentInfo[]> {
   const { listSkills } = await import('@/lib/skills/registry')
   const skills = await listSkills()
   return skills.map(s => {
-    const m = (s.manifest ?? {}) as any
+    const m = (s.manifest as RegistryManifest ?? {})
     const costCredits = m.cost_credits ?? 8
     
     // Override price if manifest has price_override

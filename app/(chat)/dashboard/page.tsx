@@ -7,7 +7,7 @@ import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { JobBoard } from '@/components/agent/JobBoard'
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
-import { LayoutDashboard, Plus, Loader2, Cpu, Briefcase, Wallet, PlusCircle } from 'lucide-react'
+import { LayoutDashboard, Loader2, Cpu, Briefcase, Wallet, PlusCircle } from 'lucide-react'
 import Link from 'next/link'
 
 interface Agent {
@@ -53,71 +53,70 @@ function DashboardContent() {
   const [creatingJob, setCreatingJob] = useState(false)
   const [formError, setFormError] = useState('')
 
-  const fetchDashboardData = async () => {
-    if (!activeWallet?.address) {
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    try {
-      const userAddr = activeWallet.address.toLowerCase()
-      
-      // 1. Fetch all agents
-      const resAgents = await fetch('/api/agents')
-      const dataAgents = await resAgents.json()
-      
-      if (resAgents.ok) {
-        const list: Agent[] = dataAgents.agents
-        
-        // Map agents by ID for fast lookup in job list
-        const mapping: Record<string, { name: string }> = {}
-        list.forEach((a) => {
-          if (a.name) mapping[a.id] = { name: a.name }
-        })
-        setAgentsMap(mapping)
-
-        // Filter user's agents
-        const filteredMyAgents = list.filter((a) => a.ownerAddress.toLowerCase() === userAddr)
-        setMyAgents(filteredMyAgents)
-
-        // Filter all providers (excluding ones user owns, or all)
-        const providers = list.filter((a) => a.agentType === 'provider')
-        setAllProviders(providers)
-
-        // Auto-select first client agent if available
-        const firstClient = filteredMyAgents.find((a) => a.agentType === 'client')
-        if (firstClient) {
-          setClientAgentId(firstClient.id)
-        }
-      }
-
-      // 2. Fetch all jobs
-      const resJobs = await fetch('/api/jobs')
-      if (resJobs.ok) {
-        const dataJobs = await resJobs.json()
-        setMyJobs(dataJobs.jobs || [])
-      }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
+  const [prevHireProviderId, setPrevHireProviderId] = useState(hireProviderId)
+  if (hireProviderId !== prevHireProviderId) {
+    setPrevHireProviderId(hireProviderId)
+    setProviderAgentId(hireProviderId ?? '')
   }
 
   useEffect(() => {
-    if (activeWallet?.address) {
-      fetchDashboardData()
-    } else {
-      setLoading(false)
+    if (!activeWallet?.address) {
+      Promise.resolve().then(() => setLoading(false))
+      return
+    }
+
+    let active = true
+    const fetchDashboardData = async () => {
+      try {
+        const userAddr = activeWallet.address.toLowerCase()
+        
+        // 1. Fetch all agents
+        const resAgents = await fetch('/api/agents')
+        const dataAgents = await resAgents.json()
+        
+        if (resAgents.ok && active) {
+          const list: Agent[] = dataAgents.agents
+          
+          // Map agents by ID for fast lookup in job list
+          const mapping: Record<string, { name: string }> = {}
+          list.forEach((a) => {
+            if (a.name) mapping[a.id] = { name: a.name }
+          })
+          setAgentsMap(mapping)
+
+          // Filter user's agents
+          const filteredMyAgents = list.filter((a) => a.ownerAddress.toLowerCase() === userAddr)
+          setMyAgents(filteredMyAgents)
+
+          // Filter all providers (excluding ones user owns, or all)
+          const providers = list.filter((a) => a.agentType === 'provider')
+          setAllProviders(providers)
+
+          // Auto-select first client agent if available
+          const firstClient = filteredMyAgents.find((a) => a.agentType === 'client')
+          if (firstClient) {
+            setClientAgentId(firstClient.id)
+          }
+        }
+
+        // 2. Fetch all jobs
+        const resJobs = await fetch('/api/jobs')
+        if (resJobs.ok && active) {
+          const dataJobs = await resJobs.json()
+          setMyJobs(dataJobs.jobs || [])
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    fetchDashboardData()
+    return () => {
+      active = false
     }
   }, [activeWallet?.address])
-
-  useEffect(() => {
-    if (hireProviderId) {
-      setProviderAgentId(hireProviderId)
-    }
-  }, [hireProviderId])
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -195,7 +194,7 @@ function DashboardContent() {
                     
                     {myAgents.length === 0 ? (
                       <div className="text-center py-8 border border-dashed border-white/5 rounded-xl">
-                        <p className="text-sm text-white/40">You don't own any registered agents yet.</p>
+                        <p className="text-sm text-white/40">You don&apos;t own any registered agents yet.</p>
                         <Link href="/" className="mt-3 inline-block rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-1.5 text-xs font-semibold text-white">
                           Register an Agent
                         </Link>

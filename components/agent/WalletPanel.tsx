@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Wallet, ArrowUpRight, Copy, Check, RefreshCw, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Wallet, ArrowUpRight, RefreshCw, Loader2 } from 'lucide-react'
 
 interface WalletPanelProps {
   agentId: string
@@ -11,7 +11,6 @@ interface WalletPanelProps {
 export function WalletPanel({ agentId, ownerAddress }: WalletPanelProps) {
   const [balances, setBalances] = useState<{ usdc: string; native: string } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
   
   // Withdrawal Form State
   const [toAddress, setToAddress] = useState(ownerAddress ?? '')
@@ -20,31 +19,38 @@ export function WalletPanel({ agentId, ownerAddress }: WalletPanelProps) {
   const [withdrawError, setWithdrawError] = useState('')
   const [withdrawSuccess, setWithdrawSuccess] = useState('')
 
-  const fetchBalance = async () => {
+  const [prevAgentId, setPrevAgentId] = useState(agentId)
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId)
     setLoading(true)
-    try {
-      const res = await fetch(`/api/agents/${agentId}/balance`)
-      const data = await res.json()
-      if (res.ok) {
-        setBalances({ usdc: data.usdc, native: data.native })
-      }
-    } catch (err) {
-      console.error('Failed to fetch balance:', err)
-    } finally {
-      setLoading(false)
-    }
   }
+
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const handleRefresh = useCallback(() => {
+    setRefreshTrigger((prev) => prev + 1)
+  }, [])
 
   useEffect(() => {
-    fetchBalance()
-  }, [agentId])
+    let active = true
+    const fetchBalance = async () => {
+      try {
+        const res = await fetch(`/api/agents/${agentId}/balance`)
+        const data = await res.json()
+        if (res.ok && active) {
+          setBalances({ usdc: data.usdc, native: data.native })
+        }
+      } catch (err) {
+        console.error('Failed to fetch balance:', err)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
 
-  const copyAddress = () => {
-    if (!balances) return
-    // Wait, balances endpoint doesn't return wallet address directly or it does? Yes it does: data.walletAddress
-    // Let's retrieve from api output or props.
-    // If not available, we skip
-  }
+    fetchBalance()
+    return () => {
+      active = false
+    }
+  }, [agentId, refreshTrigger])
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,7 +76,7 @@ export function WalletPanel({ agentId, ownerAddress }: WalletPanelProps) {
 
       setWithdrawSuccess(`USDC withdrawn successfully! Tx: ${data.txHash.slice(0, 10)}…`)
       setAmountUsdc('')
-      fetchBalance() // refresh balance
+      handleRefresh() // refresh balance
     } catch (err) {
       setWithdrawError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -86,7 +92,7 @@ export function WalletPanel({ agentId, ownerAddress }: WalletPanelProps) {
           <h3 className="font-semibold text-white">Agent Wallet</h3>
         </div>
         <button
-          onClick={fetchBalance}
+          onClick={handleRefresh}
           disabled={loading}
           className="text-white/40 hover:text-white/80 p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-50 transition"
         >

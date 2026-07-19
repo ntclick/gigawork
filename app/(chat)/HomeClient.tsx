@@ -54,6 +54,12 @@ const EXAMPLE_PROMPTS = [
   'Find Polymarket odds shifts with volume context',
 ]
 
+interface HomeAgent {
+  slug: string
+  status?: string
+  pricePerCall: string
+}
+
 export function HomeClient() {
   const router = useRouter()
   const { ready, authenticated } = usePrivy()
@@ -63,7 +69,7 @@ export function HomeClient() {
 
   // Live stats and agents list
   const [tickerStats, setTickerStats] = useState({ onlineAgents: 0, jobsSettled: 0, totalPaidUsdc: 0.0 })
-  const [agentsList, setAgentsList] = useState<any[]>([])
+  const [agentsList, setAgentsList] = useState<HomeAgent[]>([])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -82,7 +88,7 @@ export function HomeClient() {
         const list = skillsData.skills ?? []
         setAgentsList(list)
 
-        const activeCount = list.filter((a: any) => a.status === 'online' || a.status === 'busy').length
+        const activeCount = list.filter((a: HomeAgent) => a.status === 'online' || a.status === 'busy').length
 
         const statsRes = await fetch('/api/admin/system-stats', { cache: 'no-store' })
         const statsData = await statsRes.json()
@@ -845,12 +851,8 @@ function TemplateCard({
 }: {
   template: WorkflowTemplate
   onUse: (prompt: string) => void
-  agentsList: any[]
+  agentsList: HomeAgent[]
 }) {
-  const steps = [template.skillName, ...(template.followupSkills || [])].filter(Boolean) as string[]
-  const visibleAgents = template.uses.slice(0, 3)
-  const hiddenAgents = Math.max(0, template.uses.length - visibleAgents.length)
-
   // Dynamic estimate of the cost
   let estimatedCost = 0
   template.uses.forEach((skillSlug) => {

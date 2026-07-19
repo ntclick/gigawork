@@ -24,12 +24,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ name: string }
     }
 
     // 2. Modify manifest JSONB
-    const manifest = (skill.manifest ?? {}) as any
+    const manifest = { ...(skill.manifest as Record<string, unknown> ?? {}) }
     if (disabled !== undefined) {
-      manifest.disabled = disabled
+      manifest['disabled'] = disabled
     }
     if (priceOverride !== undefined) {
-      manifest.price_override = priceOverride
+      manifest['price_override'] = priceOverride
     }
 
     // 3. Update in database

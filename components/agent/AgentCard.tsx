@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { BadgeCheck, Copy, Check, Shield, Cpu, Briefcase } from 'lucide-react'
+import { Copy, Check, Shield, Cpu, Briefcase } from 'lucide-react'
 
 interface Agent {
   id: string

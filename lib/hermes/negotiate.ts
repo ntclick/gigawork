@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
 import { agents, negotiations } from '@/lib/db/schema'
-import { eq, and, asc } from 'drizzle-orm'
+import { eq, asc } from 'drizzle-orm'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { generateText } from 'ai'
 import { z } from 'zod'
@@ -117,11 +117,11 @@ Analyze the job description and history. Give your response.`
 
   try {
     const { text } = await generateText({
-      model: llm(config.model) as any,
+      model: llm(config.model) as unknown as Parameters<typeof generateText>[0]['model'],
       prompt,
       system: systemPrompt,
       responseFormat: { type: 'json' },
-    } as any)
+    } as unknown as Parameters<typeof generateText>[0])
 
     const parsed = JSON.parse(text.trim())
     return negotiationResponseSchema.parse(parsed)

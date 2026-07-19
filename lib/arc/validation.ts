@@ -1,4 +1,4 @@
-import { encodeFunctionData, keccak256, parseAbi, toHex, type Hex } from 'viem'
+import { encodeFunctionData, parseAbi, type Hex } from 'viem'
 import { VALIDATION_REGISTRY } from '@/contracts/addresses'
 import { publicClient, sendAdminTransaction, adminAccount } from '../chain/client'
 import { sendAgentTransaction } from '../circle/wallet'

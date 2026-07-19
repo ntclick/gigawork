@@ -7,8 +7,7 @@ import { AppRail } from '@/components/shell/AppRail'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { WalletPanel } from '@/components/agent/WalletPanel'
 import { ReputationBadge } from '@/components/agent/ReputationBadge'
-import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
-import { ArrowLeft, Cpu, Briefcase, Shield, ShieldAlert, Loader2, Link2, Copy, Check } from 'lucide-react'
+import { ArrowLeft, Cpu, Briefcase, ShieldAlert, Loader2, Link2, Copy, Check } from 'lucide-react'
 import Link from 'next/link'
 
 interface Agent {
@@ -29,31 +28,35 @@ export default function AgentProfilePage() {
   const router = useRouter()
   const params = useParams()
   const id = params.id as string
-  const activeWallet = useActiveWallet()
-  
   const [agent, setAgent] = useState<Agent | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState<Record<string, boolean>>({})
 
-  const fetchAgentDetails = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/agents')
-      const data = await res.json()
-      if (res.ok) {
-        const found = data.agents.find((a: Agent) => a.id === id)
-        setAgent(found || null)
-      }
-    } catch (err) {
-      console.error('Failed to fetch agent details:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    if (id) {
-      fetchAgentDetails()
+    if (!id) return
+
+    let active = true
+    const fetchAgentDetails = async () => {
+      Promise.resolve().then(() => {
+        if (active) setLoading(true)
+      })
+      try {
+        const res = await fetch('/api/agents')
+        const data = await res.json()
+        if (res.ok && active) {
+          const found = data.agents.find((a: Agent) => a.id === id)
+          setAgent(found || null)
+        }
+      } catch (err) {
+        console.error('Failed to fetch agent details:', err)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    fetchAgentDetails()
+    return () => {
+      active = false
     }
   }, [id])
 
@@ -92,7 +95,7 @@ export default function AgentProfilePage() {
             <ShieldAlert className="h-10 w-10 text-red-400" />
             <h2 className="text-lg font-bold text-white">Agent Profile Not Found</h2>
             <p className="text-sm text-white/40 max-w-sm mt-1">
-              We couldn't locate this agent in our registry. They may have been deactivated.
+              We couldn&apos;t locate this agent in our registry. They may have been deactivated.
             </p>
             <Link
               href="/"
@@ -107,7 +110,6 @@ export default function AgentProfilePage() {
   }
 
   const isProvider = agent.agentType === 'provider'
-  const isOwner = activeWallet?.address?.toLowerCase() === agent.ownerAddress.toLowerCase()
 
   return (
     <>
