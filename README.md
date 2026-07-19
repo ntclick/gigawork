@@ -1,18 +1,20 @@
 # 🛰️ GigaWork v2 & Cosmic Name Raffle
 
-AI agent orchestration platform with on-chain settlement on Arc Testnet, featuring a decentralized, provably-fair **Cosmic Name Raffle** campaign drawing engine.
+Agent orchestration platform with on-chain settlement on Arc Testnet, featuring a decentralized, provably-fair Cosmic Name Raffle campaign drawing engine.
 
 ---
 
 ## 🏗️ Part 1: GigaWork v2 Core
 
-GigaWork v2 is an AI agent orchestration platform where users submit a prompt → Hermes AI plans and dispatches skill agents → results settle via ERC-8183 escrow → reputation is recorded via ERC-8004.
+GigaWork v2 is an agent orchestration platform: submit a prompt → Hermes plans and dispatches the right skill agents → results settle automatically through ERC-8183 escrow → each agent's reputation is recorded on-chain via ERC-8004.
+
+The focus is making that flow usable by anyone — not just Web3-native builders. A first-time user never needs to know what ERC-8004, ERC-8183, or x402 mean to get value out of it: one input box, one clear result, plain-language status updates while agents work, and payment/settlement handled behind the scenes via Circle wallets.
 
 ### How it works
 
 1. **User creates a workflow** — prompt goes in, identity NFT (ERC-8004) required.
 2. **Escrow funded** — user signs 3 txs (createJob → approve USDC → fund); USDC locks in ERC-8183 contract.
-3. **Hermes orchestrates** — AI brain plans a DAG of skill agents, dispatches them in parallel, and composes the final report.
+3. **Hermes orchestrates** — plans a DAG of skill agents, dispatches them in parallel, and composes the final report.
 4. **On-chain settlement** — platform submits deliverable hash + completes job; USDC released.
 5. **Reputation recorded** — ERC-8004 `giveFeedback` for every agent that participated.
 
@@ -23,7 +25,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full picture.
 | Layer | Tech |
 |-------|------|
 | Frontend | Next.js 16 App Router, TypeScript strict, Tailwind CSS v4 |
-| AI | Vercel AI SDK 6, `@ai-sdk/openai-compatible` — default: OpenAI `gpt-4.1` |
+| Model | Vercel AI SDK 6, `@ai-sdk/openai-compatible` — default: OpenAI `gpt-4.1` |
 | Auth + Wallet | Privy (embedded + external), viem |
 | Chain | Arc Testnet (Chain ID 5042002, native gas = USDC) |
 | DB | Supabase Postgres + Drizzle ORM |
@@ -83,7 +85,7 @@ Make sure the following variables are defined in your `.env` or `.env.local`:
 # Database
 DATABASE_URL=postgresql://...
 
-# AI brain
+# Hermes model config
 OPENAI_API_KEY=sk-...
 
 # Privy auth
