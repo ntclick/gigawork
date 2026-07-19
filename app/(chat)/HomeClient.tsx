@@ -80,15 +80,21 @@ export function HomeClient() {
   useEffect(() => {
     const loadSystemData = async () => {
       try {
-        const skillsRes = await fetch('/api/skills', { cache: 'no-store' })
-        const skillsData = await skillsRes.json()
+        const [skillsRes, statsRes] = await Promise.all([
+          fetch('/api/skills', { cache: 'no-store' }),
+          fetch('/api/admin/system-stats', { cache: 'no-store' }),
+        ])
+
+        const [skillsData, statsData] = await Promise.all([
+          skillsRes.json(),
+          statsRes.json(),
+        ])
+
         const list = skillsData.skills ?? []
         setAgentsList(list)
 
         const activeCount = list.filter((a: AgentInfo) => a.status === 'online' || a.status === 'busy').length
 
-        const statsRes = await fetch('/api/admin/system-stats', { cache: 'no-store' })
-        const statsData = await statsRes.json()
         if (statsData.success && statsData.stats) {
           const stats = statsData.stats
           setTickerStats({
