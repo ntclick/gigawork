@@ -7,9 +7,12 @@ interface RegistryManifest {
   cost_credits?: number
   price_override?: string
   disabled?: boolean
+  display_name?: string
+  category?: string
 }
 
 export interface AgentInfo {
+  id?: string
   address: string              // ERC-8004 identity address
   name: string                 // Display name
   slug: string                 // Slug name (e.g. "crypto-scanner")
@@ -90,6 +93,7 @@ async function fetchFromDbSkillsFallback(): Promise<AgentInfo[]> {
     }
 
     return {
+      id: s.id,
       address: s.agentAddress ?? '0x0000000000000000000000000000000000000000',
       name: m.display_name ?? s.name,
       slug: s.name,
@@ -100,7 +104,7 @@ async function fetchFromDbSkillsFallback(): Promise<AgentInfo[]> {
       totalEarnings: '0.00',
       totalCalls: 0,
       source: 'fallback' as const,
-      manifest: s.manifest,
+      manifest: m,
     }
   })
 }

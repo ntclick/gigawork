@@ -22,6 +22,7 @@ import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { AppRail } from '@/components/shell/AppRail'
 import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from '@/lib/workflowTemplates'
 import { toast } from '@/components/ui/toast'
+import type { AgentInfo } from '@/lib/agents/registry'
 
 function getSkillActionName(name: string): string {
   switch (name) {
@@ -54,11 +55,7 @@ const EXAMPLE_PROMPTS = [
   'Find Polymarket odds shifts with volume context',
 ]
 
-interface HomeAgent {
-  slug: string
-  status?: string
-  pricePerCall: string
-}
+
 
 export function HomeClient() {
   const router = useRouter()
@@ -69,7 +66,7 @@ export function HomeClient() {
 
   // Live stats and agents list
   const [tickerStats, setTickerStats] = useState({ onlineAgents: 0, jobsSettled: 0, totalPaidUsdc: 0.0 })
-  const [agentsList, setAgentsList] = useState<HomeAgent[]>([])
+  const [agentsList, setAgentsList] = useState<AgentInfo[]>([])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -88,7 +85,7 @@ export function HomeClient() {
         const list = skillsData.skills ?? []
         setAgentsList(list)
 
-        const activeCount = list.filter((a: HomeAgent) => a.status === 'online' || a.status === 'busy').length
+        const activeCount = list.filter((a: AgentInfo) => a.status === 'online' || a.status === 'busy').length
 
         const statsRes = await fetch('/api/admin/system-stats', { cache: 'no-store' })
         const statsData = await statsRes.json()
@@ -851,7 +848,7 @@ function TemplateCard({
 }: {
   template: WorkflowTemplate
   onUse: (prompt: string) => void
-  agentsList: HomeAgent[]
+  agentsList: AgentInfo[]
 }) {
   // Dynamic estimate of the cost
   let estimatedCost = 0
