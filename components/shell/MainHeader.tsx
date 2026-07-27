@@ -168,41 +168,22 @@ export function MainHeader() {
 
       {/* Right: ARC badge + wallet + credits + profile */}
       <div className="flex items-center gap-2">
-        {/* ARC Network badge */}
-        <a
-          href={ARC_EXPLORER}
-          target="_blank"
-          rel="noreferrer"
-          title={`Network: ${ARC_NETWORK_LABEL}`}
-          className="hidden items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-white/50 transition hover:border-cyan-400/30 hover:text-cyan-300 sm:flex"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
-          {ARC_NETWORK_LABEL}
-        </a>
-
-        {/* USDC balance */}
+        {/* Unified Finance Balance Pill */}
         {ready && authenticated && wallet && (
           <Link
             href="/finance"
-            className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-white/70 transition hover:border-cyan-400/30 hover:text-white"
-            title={`USDC balance · ${wallet}`}
+            className="flex items-center gap-2 rounded-full border border-cyan-500/20 bg-[#0d101a] px-3 py-1 text-xs text-white transition hover:border-cyan-400/40 shadow-sm"
+            title={`USDC Balance: ${usdc.formatted} | Credits: ${credits?.toLocaleString() ?? 0} cr`}
           >
-            <span className="text-cyan-400 font-mono">$</span>
-            <span className="font-semibold">{usdc.loading ? '—' : usdc.formatted}</span>
-            <span className="hidden text-white/35 sm:inline">USDC</span>
-          </Link>
-        )}
-
-        {/* Credits */}
-        {ready && authenticated && credits !== null && (
-          <Link
-            href="/finance"
-            className="flex items-center gap-1.5 rounded-full border border-violet-400/20 bg-violet-400/8 px-2.5 py-1 text-xs text-violet-300 transition hover:border-violet-400/40 hover:text-violet-200"
-            title={`${credits} credits`}
-          >
-            <Coins className="h-3 w-3" />
-            <span className="font-semibold">{credits.toLocaleString()}</span>
-            <span className="hidden text-violet-400/60 sm:inline">cr</span>
+            <span className="flex items-center gap-1 font-mono text-cyan-300 font-bold">
+              <span>$</span>
+              <span>{usdc.loading ? '—' : usdc.formatted}</span>
+            </span>
+            <span className="text-white/20">·</span>
+            <span className="flex items-center gap-1 font-mono text-violet-300 font-semibold">
+              <Coins className="h-3 w-3 text-violet-400" />
+              <span>{credits !== null ? credits.toLocaleString() : '—'} cr</span>
+            </span>
           </Link>
         )}
 

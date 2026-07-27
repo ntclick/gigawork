@@ -760,56 +760,41 @@ export function FocusedStepList() {
 
           <div className="divider"></div>
 
-          {/* ERC-8183 Escrow Section */}
+          {/* Arc On-Chain Verification Section */}
           <div className="sb-section">
-            <div className="sb-title">ERC-8183 escrow</div>
-            <div className="escrow-row">
-              <span className="escrow-label">Deposited</span>
-              <span className="escrow-val">{budgetUsdc.toFixed(2)} USDC</span>
-            </div>
-            <div className="escrow-row">
-              <span className="escrow-label">Disbursed</span>
-              <span className="escrow-val done">{spentUsdc.toFixed(2)} USDC</span>
-            </div>
-            <div className="escrow-row">
-              <span className="escrow-label">Locked</span>
-              <span className="escrow-val locked">{remainingUsdc.toFixed(2)} USDC</span>
-            </div>
-            <div className="escrow-row" style={{ border: 'none' }}>
-              <span className="escrow-label">Status</span>
-              <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
-                workflowStatus === 'completed'
-                  ? 'bg-[#E1F5EE] text-[#0F6E56]'
-                  : workflowStatus === 'failed'
-                    ? 'bg-red-500/10 text-red-400'
-                    : 'bg-[#FAEEDA] text-[#854F0B]'
-              }`}>
-                {workflowStatus || 'active'}
-              </span>
-            </div>
-          </div>
+            <div className="sb-title">Arc Protocol Proofs</div>
+            <div className="space-y-2 text-[11px] font-mono">
+              <div className="flex items-center justify-between text-white/70">
+                <span>Escrow Status</span>
+                <span className={`px-2 py-0.5 rounded font-bold uppercase ${
+                  workflowStatus === 'completed'
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : workflowStatus === 'failed'
+                      ? 'bg-rose-500/20 text-rose-300'
+                      : 'bg-amber-500/20 text-amber-300'
+                }`}>
+                  {workflowStatus || 'active'}
+                </span>
+              </div>
 
-          <div className="divider"></div>
+              <div className="flex items-center justify-between text-white/50">
+                <span>x402 Payments</span>
+                <span className="text-amber-400 font-semibold">{callCount} calls · {spentUsdc.toFixed(2)} USDC</span>
+              </div>
 
-          {/* x402 Live Feed Section */}
-          <div className="sb-section">
-            <div className="sb-title">x402 live feed</div>
-            {events.length === 0 ? (
-              <div className="text-xs text-white/30 italic">No payments recorded yet</div>
-            ) : (
-              events.slice(0, 5).map(e => (
-                <div key={e.id} className="ticker-item">
-                  <Bolt className="h-3.5 w-3.5 text-[#BA7517] shrink-0" />
-                  <span className="ticker-text truncate">{e.skillName}</span>
-                  <span className="ticker-amt">+{parseFloat(e.amountUsdc).toFixed(2)}</span>
+              {erc8183?.fundTx && (
+                <div className="pt-1 border-t border-white/5">
+                  <div className="text-[10px] text-white/35">Fund Tx</div>
+                  <a
+                    href={`https://testnet.arcscan.app/tx/${erc8183.fundTx}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-400 hover:underline truncate block"
+                  >
+                    {erc8183.fundTx.slice(0, 10)}...{erc8183.fundTx.slice(-6)}
+                  </a>
                 </div>
-              ))
-            )}
-            <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Total settled</span>
-              <span style={{ fontSize: '12px', fontWeight: 500, fontFamily: 'var(--font-mono)', color: '#1D9E75' }}>
-                {spentUsdc.toFixed(2)} USDC
-              </span>
+              )}
             </div>
           </div>
         </div>

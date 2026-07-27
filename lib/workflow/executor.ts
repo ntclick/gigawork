@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { messages, nodes, skills, users } from '@/lib/db/schema'
+import { messages, nodes, skills, users, nanopaymentEvents } from '@/lib/db/schema'
 import { callSkillEndpoint } from '@/lib/skills/registry'
 import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
 import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
@@ -317,9 +317,26 @@ async function executeSingleNodeParallel(opts: {
         })
         return
       }
-      throw err
     }
   }
+
+  // Record x402 nanopayment event for tracking and budget calculations
+  const costUsdc = ((cost || 8) / 100).toFixed(2)
+  let buyerAddress = '0x0000...0000'
+  if (userId && userId !== 'system-guest') {
+    const [u] = await db.select({ wallet: users.wallet }).from(users).where(eq(users.id, userId)).limit(1)
+    if (u?.wallet) buyerAddress = u.wallet
+  }
+  await db
+    .insert(nanopaymentEvents)
+    .values({
+      workflowId,
+      skillName: skill.name,
+      amountUsdc: costUsdc,
+      buyerAddress,
+      status: 'settled',
+    })
+    .catch((err) => console.error('[executor] failed to insert nanopayment event:', err))
 
   // 4. Inject profile credentials
   const inputParams = { ...((node.input as Record<string, unknown> | null) ?? {}) }
