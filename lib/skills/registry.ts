@@ -83,7 +83,7 @@ export async function callSkillEndpoint(
   const isPaid = (manifest.cost_credits as number | undefined ?? 0) > 0
 
   const local = SKILLS[skill.name]
-  if (local && !isPaid) {
+  if (local) {
     return local(input)
   }
 

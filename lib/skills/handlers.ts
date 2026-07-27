@@ -1383,7 +1383,7 @@ export const SKILLS: Record<string, SkillHandler> = {
           ? `Price above EMA20 ($${price} vs $${ema20}) — short-term momentum bullish`
           : `Price below EMA20 ($${price} vs $${ema20}) — short-term momentum bearish`,
       ],
-      binance_mirror: usedHost,
+      binance_mirror: usedSource,
       data_sources: ['binance_ticker_24hr', 'binance_klines'],
       generated_at: new Date().toISOString(),
     }
