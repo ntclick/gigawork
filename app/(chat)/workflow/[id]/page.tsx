@@ -535,11 +535,13 @@ export default function WorkflowPage() {
 
   const dataValue = useMemo(() => ({
     workflowId: id,
+    prompt: snapshot?.workflow?.prompt ?? null,
+    messages,
     viewState,
     refreshViewState,
     erc8183: snapshot?.workflow?.erc8183 ?? null,
     workflowStatus: snapshot?.workflow?.status ?? null,
-  }), [id, viewState, refreshViewState, snapshot?.workflow?.erc8183, snapshot?.workflow?.status])
+  }), [id, snapshot?.workflow?.prompt, messages, viewState, refreshViewState, snapshot?.workflow?.erc8183, snapshot?.workflow?.status])
 
   const uiValue = useMemo(() => ({
     viewMode,

@@ -29,6 +29,8 @@ export type Erc8183Trail = {
 
 export interface WorkflowDataState {
   workflowId: string
+  prompt?: string | null
+  messages?: any[]
   viewState: WorkflowViewState | null
   refreshViewState: () => Promise<void>
   erc8183: Erc8183Trail | null
