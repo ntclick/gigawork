@@ -178,7 +178,7 @@ async function handlePost(req: Request) {
 
   let wf: typeof workflows.$inferSelect
   try {
-    const initialStatus = ERC8183_ENABLED && ERC8183_USER_CLIENT ? 'awaiting_fund' : 'planning'
+    const initialStatus = 'queued'
     const [created] = await withDbRetry(
       () => db
         .insert(workflows)
@@ -198,27 +198,12 @@ async function handlePost(req: Request) {
       { label: 'workflow:seed-message' },
     )
 
-    await emitWorkflowEvent({
+    const { runLocalWorkflowPlanningSimulation } = await import('@/lib/ai/simulation')
+    await runLocalWorkflowPlanningSimulation({
       workflowId: wf.id,
-      type: 'workflow.created',
-      status: initialStatus,
-      message: 'Workflow created',
-      payload: {
-        promptPreview: parsed.data.prompt.slice(0, 160),
-        escrowEnabled: ERC8183_ENABLED,
-        escrowUserClient: ERC8183_USER_CLIENT,
-      },
+      userId: user.id,
+      prompt: parsed.data.prompt,
     })
-    if (!ERC8183_ENABLED || ERC8183_USER_CLIENT) {
-      await emitWorkflowEvent({
-        workflowId: wf.id,
-        type: 'workflow.planning_started',
-        status: initialStatus,
-        message: initialStatus === 'awaiting_fund'
-          ? 'Waiting for escrow funding before planning'
-          : 'Planning workflow',
-      })
-    }
 
   } catch (e) {
     console.error('[/api/workflow] db insert failed', e)

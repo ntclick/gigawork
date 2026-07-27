@@ -211,7 +211,7 @@ export default function WorkflowPage() {
             }
           })
           .catch(() => {})
-      }, 3000)
+      }, 1500)
       return () => clearInterval(interval)
     }
   }, [id, status, snapshot?.workflow?.erc8183?.completeTx, snapshot?.workflow?.erc8183, snapshot?.workflow?.status, setMessages])
