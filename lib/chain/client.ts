@@ -16,8 +16,8 @@ if (!RPC_URL) throw new Error('ARC_RPC_URL missing')
 
 export const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(RPC_URL, { batch: true }),
-  pollingInterval: 500,
+  transport: http(RPC_URL, { batch: true, retryCount: 3, retryDelay: 1000 }),
+  pollingInterval: 1000,
 })
 
 // Non-batch client for waitForTransactionReceipt — batch transport
@@ -25,8 +25,8 @@ export const publicClient = createPublicClient({
 // receipt waits to hang even after the tx confirms on-chain.
 export const pollingClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(RPC_URL, { batch: false }),
-  pollingInterval: 500,
+  transport: http(RPC_URL, { batch: false, retryCount: 3, retryDelay: 1000 }),
+  pollingInterval: 1000,
 })
 
 export const adminAccount = PK ? privateKeyToAccount(PK as `0x${string}`) : null

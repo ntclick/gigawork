@@ -77,6 +77,24 @@ export function buildDeterministicReport(data: Record<string, unknown>, note?: s
     if (record.error) lines.push(`- Status: failed (${compactValue(record.error)})`)
     else lines.push('- Status: completed')
 
+    if (record.supporting || record.counterpoint || record.invalidation) {
+      if (record.verdict) lines.push(`- **Verdict**: ${compactValue(record.verdict)}${record.confidence != null ? ` (${record.confidence}% confidence)` : ''}`)
+      if (Array.isArray(record.supporting) && record.supporting.length > 0) {
+        lines.push(`\n**Why**:`)
+        for (const s of record.supporting) lines.push(`- ${s}`)
+      }
+      if (record.counterpoint) {
+        lines.push(`\n**Strongest counterpoint**:\n${record.counterpoint}`)
+      }
+      if (record.invalidation) {
+        lines.push(`\n**Invalidated if**:\n${record.invalidation}`)
+      }
+      if (record.dataSource || record.source) {
+        lines.push(`\n*Source: ${record.dataSource || record.source}*`)
+      }
+      return lines.join('\n')
+    }
+
     const preferred = [
       'summary',
       'verdict',

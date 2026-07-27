@@ -14,6 +14,7 @@ const TxHash = z.string().regex(/^0x[a-fA-F0-9]{64}$/)
 const Body = z.object({
   workflowId: z.string().uuid(),
   paymentTxHash: TxHash,
+  agentWalletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
 })
 
 export async function POST(req: Request) {
@@ -83,8 +84,9 @@ export async function POST(req: Request) {
       throw new Error(`Recipient mismatch: expected ${adminAccount.address}, got ${tx.to}`)
     }
 
-    if (tx.from.toLowerCase() !== user.wallet.toLowerCase()) {
-      throw new Error(`Sender mismatch: expected user wallet ${user.wallet}, got ${tx.from}`)
+    const expectedSender = parsed.data.agentWalletAddress ?? user.wallet
+    if (tx.from.toLowerCase() !== expectedSender.toLowerCase()) {
+      throw new Error(`Sender mismatch: expected sender ${expectedSender}, got ${tx.from}`)
     }
 
     // Native USDC gas/currency token on Arc Testnet has 18 decimals

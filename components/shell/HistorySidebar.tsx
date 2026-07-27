@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
-import { Plus, Search, X, Wallet, LogOut } from 'lucide-react'
+import { Plus, Search, X, Wallet, LogOut, TrendingUp } from 'lucide-react'
 
 import { useUI } from './UIShell'
 
@@ -130,8 +130,8 @@ export function HistorySidebar() {
         </button>
       </div>
 
-      {/* New Workflow */}
-      <div className="px-3 pb-3">
+      {/* Navigation Buttons */}
+      <div className="px-3 pb-3 space-y-1.5">
         <Link
           href="/"
           onClick={closeHistory}
@@ -139,6 +139,14 @@ export function HistorySidebar() {
         >
           <Plus className="h-3.5 w-3.5" />
           New Workflow
+        </Link>
+        <Link
+          href="/signals"
+          onClick={closeHistory}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-cyan-500/15 border border-amber-500/30 py-2 px-3 text-xs font-bold text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)] transition hover:border-amber-400/50 hover:opacity-95"
+        >
+          <TrendingUp className="h-3.5 w-3.5 text-amber-400" />
+          Track Coin Signals 📈
         </Link>
       </div>
 

@@ -703,3 +703,83 @@ function shortHash(hash: string) {
 function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + '…' : s
 }
+
+export function SignalThesisBlock({
+  thesis,
+}: {
+  thesis: {
+    verdict: string
+    confidence: number
+    supporting: string[]
+    counterpoint: string
+    invalidation: string
+    dataSource: string
+  }
+}) {
+  const isSignal =
+    thesis.verdict.startsWith('Long') ||
+    thesis.verdict.includes('Bullish') ||
+    thesis.verdict.includes('Valid')
+  const isFault =
+    thesis.verdict.startsWith('Short') ||
+    thesis.verdict.includes('Bearish') ||
+    thesis.verdict.includes('Fake') ||
+    thesis.verdict.includes('Skip')
+
+  const badgeBg = isSignal
+    ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+    : isFault
+      ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+      : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+
+  return (
+    <div className="mt-3 rounded-lg border border-white/10 bg-[#0e1016] p-4 text-xs leading-relaxed">
+      <div className="mb-3 flex items-center gap-2">
+        <span className={`font-mono text-xs font-semibold px-2.5 py-0.5 rounded border ${badgeBg}`}>
+          {thesis.verdict}
+        </span>
+        <span className="font-mono text-xs text-white/45">{thesis.confidence}% confidence</span>
+      </div>
+
+      <div className="space-y-3">
+        {thesis.supporting && thesis.supporting.length > 0 && (
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">Why</div>
+            <ul className="list-disc pl-4 space-y-1 text-white/70">
+              {thesis.supporting.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {thesis.counterpoint && (
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              Strongest counterpoint
+            </div>
+            <p className="rounded-md border-l-2 border-amber-500/40 bg-amber-500/5 p-2.5 text-white/75 leading-relaxed">
+              {thesis.counterpoint}
+            </p>
+          </div>
+        )}
+
+        {thesis.invalidation && (
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              Invalidated if
+            </div>
+            <p className="rounded-md border-l-2 border-rose-500/40 bg-rose-500/5 p-2.5 text-white/75 leading-relaxed">
+              {thesis.invalidation}
+            </p>
+          </div>
+        )}
+
+        {thesis.dataSource && (
+          <div className="pt-1 font-mono text-[10px] text-white/30">{thesis.dataSource}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+

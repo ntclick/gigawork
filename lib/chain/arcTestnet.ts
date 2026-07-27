@@ -26,7 +26,7 @@ export const ARC_CHAIN_ID = 5042002
 const PRIMARY_RPC =
   process.env.NEXT_PUBLIC_ARC_RPC ||
   process.env.ARC_RPC_URL ||
-  'https://rpc.testnet.arc.network'
+  'https://arc-testnet.g.alchemy.com/v2/cxzxMQobCJKW1pAWWsPPW'
 
 export const arcTestnet = defineChain({
   id: ARC_CHAIN_ID,

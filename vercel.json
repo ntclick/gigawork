@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/cron/deployment-check",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

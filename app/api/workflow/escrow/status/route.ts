@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 
 import { pollingClient } from '@/lib/chain/client'
 import { db } from '@/lib/db/client'
-import { workflows } from '@/lib/db/schema'
+import { nodes, workflows } from '@/lib/db/schema'
 
 type TxState = 'missing' | 'pending' | 'confirmed' | 'reverted' | 'not_found'
 
@@ -46,6 +46,16 @@ export async function GET(req: NextRequest) {
     complete,
   })
 
+  const wfNodes = await db
+    .select({
+      id: nodes.id,
+      name: nodes.label,
+      skill: nodes.kind,
+      status: nodes.status,
+    })
+    .from(nodes)
+    .where(eq(nodes.workflowId, workflowId))
+
   return NextResponse.json({
     ok: true,
     workflow: {
@@ -54,6 +64,7 @@ export async function GET(req: NextRequest) {
       jobId: wf.erc8183JobId,
       budgetUsdc: wf.erc8183BudgetUsdc,
     },
+    nodes: wfNodes,
     nextAction,
     txs: {
       create,

@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { Check, Copy, FileJson, ScrollText } from 'lucide-react'
 
 import { MarkdownTypewriter } from './Typewriter'
+import { SignalThesisBlock } from './WorkflowDocPanel'
+import { isSignalThesis } from '@/lib/types/thesis'
 
 export function ReportCard({
   summary,
@@ -15,6 +17,7 @@ export function ReportCard({
   const [copied, setCopied] = useState<'md' | 'json' | null>(null)
   const [showJson, setShowJson] = useState(false)
   const stats = getReportStats(summary, raw)
+  const thesis = isSignalThesis(raw.thesis) ? raw.thesis : isSignalThesis(raw) ? raw : null
 
   const copy = async (kind: 'md' | 'json') => {
     const text = kind === 'md' ? summary : JSON.stringify(raw, null, 2)
@@ -43,6 +46,7 @@ export function ReportCard({
 
         <MarkdownTypewriter text={summary} />
 
+        {thesis && <SignalThesisBlock thesis={thesis} />}
 
         <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3 text-xs">
           <button

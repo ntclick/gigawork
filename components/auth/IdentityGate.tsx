@@ -142,6 +142,23 @@ export function IdentityGate({
       const res = await refresh(walletAddr)
       if (cancelled) return
       if (res === 'ok') {
+        // Auto-check prepare in background to detect existing on-chain NFT immediately
+        fetch('/api/identity/prepare', { method: 'POST' })
+          .then((r) => r.json())
+          .then((prep) => {
+            if (prep.already && prep.tokenId) {
+              const id: Identity = {
+                hasIdentity: true,
+                tokenId: prep.tokenId,
+                txHash: prep.txHash || null,
+                mintedAt: new Date().toISOString(),
+              }
+              setIdentity(id)
+              if (walletAddr) writeIdentityCache(walletAddr, id)
+            }
+          })
+          .catch(() => {})
+
         setChecked(true)
         lastFetchedWalletRef.current = walletAddr
         return
@@ -304,40 +321,19 @@ export function IdentityGate({
     ) : loading
   }
 
-  // ① Already minted → show verified badge, no banners.
+  // ① Already minted → show verified badge.
   if (identity?.hasIdentity) {
     return (
       <>
-        <VerifiedBadge tokenId={identity.tokenId!} txHash={identity.txHash!} />
+        {identity.tokenId && <VerifiedBadge tokenId={identity.tokenId} txHash={identity.txHash || ''} />}
         {children}
       </>
     )
   }
 
-  // ② Connected (session exists) but hasn't minted yet → show mint CTA.
-  if (identity && !identity.hasIdentity) {
-    const label =
-      step === 'signing' ? 'Signing transaction…' :
-      step === 'confirming' ? 'Verifying on-chain…' :
-      'Mint identity NFT (ERC-8004)'
-    const lock = (
-      <Lock
-        icon={<ShieldCheck className="h-6 w-6 text-cyan-300" />}
-        title="🎁 Unlock 300 Free Trial Credits"
-        body="Welcome to GigaWork! Activate your secure Digital Identity Card (ERC-8004) to instantly receive 300 free Credits. This identity card is an on-chain attestation that helps AI Agents verify you as a valid customer and protects your work results."
-        cta={{ label, onClick: mint, disabled: step !== 'idle' }}
-        error={err}
-        footer={`Contract ${IDENTITY_REGISTRY.slice(0, 10)}…${IDENTITY_REGISTRY.slice(-4)} · Arc Testnet (chainId ${ARC_CHAIN_ID})`}
-      />
-    )
-    return mode === 'banner' ? (
-      <>
-        <div className="mb-6">{lock}</div>
-        {children}
-      </>
-    ) : (
-      lock
-    )
+  // ② Connected user → allow direct access without displaying any mint prompt box.
+  if (authenticated || identity) {
+    return <>{children}</>
   }
 
   // ③ No session at all → prompt to connect wallet via Privy.

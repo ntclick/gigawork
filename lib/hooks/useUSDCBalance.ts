@@ -14,7 +14,7 @@ import { createPublicClient, http, type Address } from 'viem'
 import { arcTestnet as arcChain } from '@/lib/chain/arcTestnet'
 import { readUSDCCache, writeUSDCCache } from '@/lib/identityCache'
 
-const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://rpc.drpc.testnet.arc.network'
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/cxzxMQobCJKW1pAWWsPPW'
 const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as Address
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')

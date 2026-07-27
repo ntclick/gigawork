@@ -78,36 +78,32 @@ export function HomeClient() {
 
   // Fetch live ticker stats and agents roster
   useEffect(() => {
-    const loadSystemData = async () => {
-      try {
-        const [skillsRes, statsRes] = await Promise.all([
-          fetch('/api/skills', { cache: 'no-store' }),
-          fetch('/api/admin/system-stats', { cache: 'no-store' }),
-        ])
+    const loadSystemData = () => {
+      fetch('/api/skills', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.skills) {
+            const list = data.skills
+            setAgentsList(list)
+            const activeCount = list.filter((a: AgentInfo) => a.status === 'online' || a.status === 'busy').length
+            setTickerStats((prev) => ({ ...prev, onlineAgents: activeCount }))
+          }
+        })
+        .catch((err) => console.warn('Failed to load skills:', err))
 
-        const [skillsData, statsData] = await Promise.all([
-          skillsRes.json(),
-          statsRes.json(),
-        ])
-
-        const list = skillsData.skills ?? []
-        setAgentsList(list)
-
-        const activeCount = list.filter((a: AgentInfo) => a.status === 'online' || a.status === 'busy').length
-
-        if (statsData.success && statsData.stats) {
-          const stats = statsData.stats
-          setTickerStats({
-            onlineAgents: activeCount,
-            jobsSettled: stats.totalNanopaymentCalls ? parseInt(stats.totalNanopaymentCalls) : 0,
-            totalPaidUsdc: stats.totalNanopaymentRevenue ? parseFloat(stats.totalNanopaymentRevenue) : 0.0,
-          })
-        } else {
-          setTickerStats((prev) => ({ ...prev, onlineAgents: activeCount }))
-        }
-      } catch (err) {
-        console.error('Failed to fetch system stats ticker data:', err)
-      }
+      fetch('/api/admin/system-stats', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.success && data.stats) {
+            const stats = data.stats
+            setTickerStats((prev) => ({
+              ...prev,
+              jobsSettled: stats.totalNanopaymentCalls ? parseInt(stats.totalNanopaymentCalls) : 0,
+              totalPaidUsdc: stats.totalNanopaymentRevenue ? parseFloat(stats.totalNanopaymentRevenue) : 0.0,
+            }))
+          }
+        })
+        .catch((err) => console.warn('Failed to load system stats:', err))
     }
     loadSystemData()
   }, [])

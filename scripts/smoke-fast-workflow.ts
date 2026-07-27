@@ -3,13 +3,7 @@ import type { UIMessage } from 'ai'
 loadEnv({ path: '.env.local', override: true })
 loadEnv({ path: '.env' })
 
-// DNS Bypass
-if (process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.DATABASE_URL.replace(
-    'aws-1-ap-south-1.pooler.supabase.com',
-    '3.111.225.200'
-  )
-}
+
 
 const ADMIN_WALLET = '0xafe6dd950dc2cf561e8daba1725e0e6840f70549'
 

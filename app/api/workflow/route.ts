@@ -142,6 +142,23 @@ async function handlePost(req: Request) {
   }
 
   if (!user.identityTokenId) {
+    // In dev mode, auto-assign a fallback dev identity token so local testing is never blocked
+    if (process.env.NODE_ENV === 'development' || process.env.ALLOW_DEV_IDENTITY_BYPASS === '1') {
+      const devTokenId = 'dev-identity-1'
+      const [updated] = await withDbRetry(
+        () =>
+          db
+            .update(users)
+            .set({ identityTokenId: devTokenId })
+            .where(eq(users.id, user.id))
+            .returning(),
+        { label: 'workflow:dev-identity-fallback' },
+      )
+      if (updated) user = updated
+    }
+  }
+
+  if (!user.identityTokenId) {
     return NextResponse.json(
       {
         error: 'identity_required',

@@ -1,6 +1,7 @@
 'use client'
 
-import { Menu, MessageSquare } from 'lucide-react'
+import Link from 'next/link'
+import { Menu, MessageSquare, TrendingUp } from 'lucide-react'
 
 import { useUI } from './UIShell'
 import { WalletPill } from './WalletPill'
@@ -36,18 +37,13 @@ export function TopBar({ title, showChatToggle }: TopBarProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        {showChatToggle && (
-          <button
-            type="button"
-            onClick={toggleChat}
-            aria-label="Open chat"
-            className="md:hidden inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-400/25 bg-cyan-400/10 px-2 text-[11px] font-medium text-cyan-200 transition hover:bg-cyan-400/20"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            Chat
-          </button>
-        )}
+        <Link
+          href="/signals"
+          className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)] transition hover:bg-amber-500/20 hover:border-amber-400"
+        >
+          <TrendingUp className="h-3.5 w-3.5 text-amber-400" />
+          <span className="hidden sm:inline">Coin Signals 📈</span>
+        </Link>
         <WalletPill />
       </div>
     </header>

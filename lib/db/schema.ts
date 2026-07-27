@@ -156,6 +156,22 @@ export const deployments = pgTable('deployments', {
 export type Deployment = typeof deployments.$inferSelect
 export type NewDeployment = typeof deployments.$inferInsert
 
+export const deploymentChecks = pgTable('deployment_checks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  deploymentId: uuid('deployment_id').references(() => deployments.id, { onDelete: 'cascade' }).notNull(),
+  workflowId: uuid('workflow_id').references(() => workflows.id, { onDelete: 'cascade' }).notNull(),
+  verdict: text('verdict'),
+  confidence: integer('confidence'),
+  output: jsonb('output'),
+  note: text('note'),
+  checkedAt: timestamp('checked_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('deployment_checks_deployment_id_idx').on(table.deploymentId),
+])
+
+export type DeploymentCheck = typeof deploymentChecks.$inferSelect
+export type NewDeploymentCheck = typeof deploymentChecks.$inferInsert
+
 export const raffles = pgTable('raffles', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),

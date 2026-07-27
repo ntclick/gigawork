@@ -20,7 +20,8 @@ import { usePrivy } from '@privy-io/react-auth'
 
 import { useActiveWallet } from '@/lib/hooks/useActiveWallet'
 import { useCallback, useState } from 'react'
-import { createWalletClient, custom, type Hex } from 'viem'
+import { createWalletClient, custom, http, type Hex } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 
 import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 
@@ -46,7 +47,7 @@ export interface UseValidationAttestReturn {
   items: AttestProgress[]
   /** Count of agentIds the user can sign for. -1 = not yet probed. */
   pendingCount: number
-  attest: (workflowId: string) => Promise<void>
+  attest: (workflowId: string, customPrivateKey?: string) => Promise<void>
   /** Fire-only-fetch: hits /prepare so the UI knows how many proofs
    *  the user needs to sign without popping any wallet. Safe to call
    *  on workflow page mount. */
@@ -92,16 +93,41 @@ export function useValidationAttest(): UseValidationAttestReturn {
   }, [])
 
   const attest = useCallback(
-    async (workflowId: string) => {
+    async (workflowId: string, customPrivateKey?: string) => {
       setError(null)
       setItems([])
       setStep('preparing')
 
-      const wallet = activeWallet
-      if (!wallet) {
-        setStep('error')
-        setError('No wallet connected')
-        return
+      let client: any
+      let signerAddress: `0x${string}`
+
+      if (customPrivateKey) {
+        const acc = privateKeyToAccount(customPrivateKey as `0x${string}`)
+        signerAddress = acc.address
+        const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/cxzxMQobCJKW1pAWWsPPW'
+        client = createWalletClient({
+          account: acc,
+          chain: arcTestnet,
+          transport: http(rpcUrl),
+        })
+      } else {
+        const wallet = activeWallet
+        if (!wallet) {
+          setStep('error')
+          setError('No wallet connected')
+          return
+        }
+        signerAddress = wallet.address as `0x${string}`
+        try {
+          await wallet.switchChain(ARC_CHAIN_ID)
+        } catch (e) {
+          console.warn('[validate] switchChain failed (tolerating)', e)
+        }
+        const provider = await wallet.getEthereumProvider()
+        client = createWalletClient({
+          chain: arcTestnet,
+          transport: custom(provider),
+        })
       }
 
       // Pre-sync cookie to the wallet that will sign — same pattern as
@@ -112,7 +138,7 @@ export function useValidationAttest(): UseValidationAttestReturn {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            wallet: wallet.address.toLowerCase(),
+            wallet: signerAddress.toLowerCase(),
             ...(privyUser?.id ? { privyId: privyUser.id } : {}),
           }),
         })
@@ -157,18 +183,6 @@ export function useValidationAttest(): UseValidationAttestReturn {
       }))
       setItems(initial)
 
-      try {
-        await wallet.switchChain(ARC_CHAIN_ID)
-      } catch (e) {
-        console.warn('[validate] switchChain failed (tolerating)', e)
-      }
-
-      const provider = await wallet.getEthereumProvider()
-      const client = createWalletClient({
-        chain: arcTestnet,
-        transport: custom(provider),
-      })
-
       // ── Per agent: sign request (if needed) + ask server to respond ──
       for (const c of candidates) {
         setItems((prev) =>
@@ -187,7 +201,7 @@ export function useValidationAttest(): UseValidationAttestReturn {
           setStep('signing')
           try {
             requestTx = (await client.sendTransaction({
-              account: wallet.address as `0x${string}`,
+              account: signerAddress,
               to: contract,
               data: c.calldata,
             } as Parameters<typeof client.sendTransaction>[0])) as Hex
