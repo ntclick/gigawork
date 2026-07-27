@@ -75,7 +75,7 @@ export async function runLocalWorkflowPlanningSimulation(opts: {
 
   await db
     .update(workflows)
-    .set({ status: 'planning' })
+    .set({ status: 'queued' })
     .where(eq(workflows.id, workflowId))
 
   const out = {

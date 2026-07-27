@@ -290,7 +290,7 @@ export function buildBrainTools(ctx: BrainContext) {
       const inserted = await db.insert(nodes).values(rows).returning()
       await db
         .update(workflows)
-        .set({ status: 'planning' })
+        .set({ status: 'queued' })
         .where(eq(workflows.id, workflowId))
 
       const out = {
