@@ -3,26 +3,38 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { usePrivy } from '@privy-io/react-auth'
+import { usePrivy, useWallets } from '@privy-io/react-auth'
 import {
+  AlertTriangle,
   ArrowRight,
   Bot,
+  Check,
+  Copy,
   FileText,
   Loader2,
   Network,
   Radio,
   ShieldCheck,
   Sparkles,
+  ToggleLeft,
+  ToggleRight,
+  Wallet,
   WalletCards,
   Zap,
 } from 'lucide-react'
+import { createPublicClient, createWalletClient, custom, http, formatUnits, parseUnits } from 'viem'
+import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
+import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 
 import { MainHeader } from '@/components/shell/MainHeader'
 import { HistorySidebar } from '@/components/shell/HistorySidebar'
 import { AppRail } from '@/components/shell/AppRail'
+import { IdentityGate } from '@/components/auth/IdentityGate'
 import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from '@/lib/workflowTemplates'
 import { toast } from '@/components/ui/toast'
 import type { AgentInfo } from '@/lib/agents/registry'
+
+const ARC_RPC = process.env.NEXT_PUBLIC_ARC_RPC ?? 'https://arc-testnet.g.alchemy.com/v2/cxzxMQobCJKW1pAWWsPPW'
 
 function getSkillActionName(name: string): string {
   switch (name) {
@@ -60,6 +72,7 @@ const EXAMPLE_PROMPTS = [
 export function HomeClient() {
   const router = useRouter()
   const { ready, authenticated } = usePrivy()
+  const { wallets } = useWallets()
   const [prompt, setPrompt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -68,6 +81,18 @@ export function HomeClient() {
   const [tickerStats, setTickerStats] = useState({ onlineAgents: 0, jobsSettled: 0, totalPaidUsdc: 0.0 })
   const [agentsList, setAgentsList] = useState<AgentInfo[]>([])
 
+  // Platform credits & identity from /api/me (same system as Signals)
+  const [userCredits, setUserCredits] = useState<number | null>(null)
+  const [hasIdentityNFT, setHasIdentityNFT] = useState<boolean | null>(null)
+
+  // Delegated Agent Wallet (Session Key)
+  const [agentWallet, setAgentWallet] = useState<{ address: string; privateKey: string } | null>(null)
+  const [agentBalance, setAgentBalance] = useState<string>('0')
+  const [useAgentWallet, setUseAgentWallet] = useState<boolean>(true)
+  const [fundingAgent, setFundingAgent] = useState<boolean>(false)
+  const [topUpAmount, setTopUpAmount] = useState<string>('0.2')
+  const [copiedAddr, setCopiedAddr] = useState<boolean>(false)
+
   // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current
@@ -75,6 +100,93 @@ export function HomeClient() {
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 260)}px`
   }, [prompt])
+
+  // Initialize Delegated Agent Wallet from localStorage
+  useEffect(() => {
+    let pk = localStorage.getItem('gw_agent_private_key')
+    if (!pk) {
+      pk = generatePrivateKey()
+      localStorage.setItem('gw_agent_private_key', pk)
+    }
+    try {
+      const acc = privateKeyToAccount(pk as `0x${string}`)
+      setAgentWallet({ address: acc.address, privateKey: pk })
+    } catch {
+      const newPk = generatePrivateKey()
+      localStorage.setItem('gw_agent_private_key', newPk)
+      const acc = privateKeyToAccount(newPk)
+      setAgentWallet({ address: acc.address, privateKey: newPk })
+    }
+  }, [])
+
+  // Fetch platform credits + identity from /api/me
+  const fetchMe = useCallback(async () => {
+    if (!authenticated) return
+    try {
+      const res = await fetch('/api/me', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      setUserCredits(data.credits ?? 0)
+      setHasIdentityNFT(data.identity?.hasIdentity ?? false)
+    } catch {
+      // silent
+    }
+  }, [authenticated])
+
+  useEffect(() => {
+    fetchMe()
+  }, [fetchMe])
+
+  // Fetch Agent Wallet USDC Balance
+  const fetchAgentBalance = useCallback(async () => {
+    if (!agentWallet) return
+    try {
+      const publicClient = createPublicClient({ chain: arcTestnet, transport: http(ARC_RPC) })
+      const bal = await publicClient.getBalance({ address: agentWallet.address as `0x${string}` })
+      setAgentBalance(formatUnits(bal, 18))
+    } catch {
+      setAgentBalance('0')
+    }
+  }, [agentWallet])
+
+  useEffect(() => {
+    fetchAgentBalance()
+    const timer = setInterval(fetchAgentBalance, 8000)
+    return () => clearInterval(timer)
+  }, [fetchAgentBalance])
+
+  const topUpAgentWallet = async () => {
+    if (!agentWallet || !wallets[0]) return
+    setFundingAgent(true)
+    try {
+      const activeW = wallets[0]
+      await activeW.switchChain(ARC_CHAIN_ID)
+      const amountToFund = parseUnits(topUpAmount || '0.2', 18)
+      const provider = await activeW.getEthereumProvider()
+      const walletClient = createWalletClient({
+        account: activeW.address as `0x${string}`,
+        chain: arcTestnet,
+        transport: custom(provider),
+      })
+      const txHash = await walletClient.sendTransaction({
+        to: agentWallet.address as `0x${string}`,
+        value: amountToFund,
+      })
+      toast.success('Agent wallet funded', `Tx: ${txHash.slice(0, 10)}…`)
+      setTimeout(fetchAgentBalance, 3000)
+    } catch (e) {
+      toast.error('Top up failed', e instanceof Error ? e.message : String(e))
+    } finally {
+      setFundingAgent(false)
+    }
+  }
+
+  const handleCopyAddr = () => {
+    if (!agentWallet) return
+    navigator.clipboard.writeText(agentWallet.address)
+    setCopiedAddr(true)
+    setTimeout(() => setCopiedAddr(false), 2000)
+  }
 
   // Fetch live ticker stats and agents roster
   useEffect(() => {
@@ -679,7 +791,110 @@ export function HomeClient() {
               </aside>
             </section>
 
-            <section className="composer-panel" aria-label="Create workflow">
+            {/* Protocol Metrics Grid — Same transparent Arc proof cards as Signals */}
+            <div className="mb-7 grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 flex flex-col justify-between">
+                <span className="text-[11px] text-cyan-400 font-semibold uppercase tracking-wider">⚡ Micropayments</span>
+                <span className="text-xs sm:text-sm font-bold text-white mt-1">x402 Protocol</span>
+              </div>
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 flex flex-col justify-between">
+                <span className="text-[11px] text-purple-400 font-semibold uppercase tracking-wider">🔒 Escrow Budget</span>
+                <span className="text-xs sm:text-sm font-bold text-white mt-1">ERC-8183 Native</span>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 flex flex-col justify-between">
+                <span className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wider">🛡️ Agent Identity</span>
+                <span className="text-xs sm:text-sm font-bold text-white mt-1">ERC-8004 Verified</span>
+              </div>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex flex-col justify-between">
+                <span className="text-[11px] text-amber-400 font-semibold uppercase tracking-wider">🏆 Reputation</span>
+                <span className="text-xs sm:text-sm font-bold text-white mt-1">Proof Attestation</span>
+              </div>
+            </div>
+
+            <IdentityGate mode="block">
+              {/* Delegated Agent Wallet Control Center — Same as Signals page */}
+              <div className="mb-6 rounded-2xl border border-cyan-500/30 bg-gradient-to-b from-[#0f1424] to-[#090d18] p-4 sm:p-5 shadow-[0_0_30px_rgba(34,211,238,0.1)] relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shrink-0">
+                      <Sparkles className="h-4 w-4 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight">Delegated Agent Wallet (Session Key)</h3>
+                      <p className="text-[11px] text-white/40">Zero-popup auto-signing for Escrow & Attestation proofs</p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setUseAgentWallet(!useAgentWallet)}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs font-semibold transition ${
+                      useAgentWallet
+                        ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.3)]'
+                        : 'border-white/10 bg-white/5 text-white/40'
+                    }`}
+                  >
+                    {useAgentWallet ? <ToggleRight className="h-4 w-4 text-cyan-400" /> : <ToggleLeft className="h-4 w-4" />}
+                    <span>Auto-sign (No Popups): {useAgentWallet ? 'ON' : 'OFF'}</span>
+                  </button>
+                </div>
+
+                {agentWallet && (
+                  <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 items-center">
+                    <div className="rounded-xl border border-white/10 bg-black/40 p-3 space-y-1.5 font-mono text-xs">
+                      <div className="flex items-center justify-between text-white/50 text-[10px]">
+                        <span>Agent Address:</span>
+                        <button type="button" onClick={handleCopyAddr} className="hover:text-cyan-300 transition flex items-center gap-1">
+                          {copiedAddr ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                          {copiedAddr ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <div className="text-cyan-300 font-bold truncate">{agentWallet.address}</div>
+                      <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                        <span className="text-white/40 text-[10px]">Arc Testnet USDC Balance:</span>
+                        <span className="text-emerald-400 font-bold">{parseFloat(agentBalance).toFixed(4)} USDC</span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                        <span className="text-white/40 text-[10px]">Platform Credits (ERC-8004):</span>
+                        {userCredits === null ? (
+                          <span className="text-white/30 text-[10px]">loading…</span>
+                        ) : userCredits > 0 ? (
+                          <span className="text-amber-300 font-bold">{userCredits} cr</span>
+                        ) : (
+                          <span className="text-red-400 font-bold flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" /> 0 cr — Top up needed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={topUpAmount}
+                          onChange={(e) => setTopUpAmount(e.target.value)}
+                          className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs text-white font-mono placeholder-white/20 focus:border-cyan-400 focus:outline-none"
+                          placeholder="0.2"
+                        />
+                        <span className="absolute right-3 top-2.5 font-mono text-xs text-white/40">USDC</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={topUpAgentWallet}
+                        disabled={fundingAgent}
+                        className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-purple-600 px-4 py-2.5 font-bold text-xs text-black shadow-md hover:opacity-90 disabled:opacity-50 transition shrink-0"
+                      >
+                        {fundingAgent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 fill-current" />}
+                        Top Up
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <section className="composer-panel" aria-label="Create workflow">
               <div className="composer-header">
                 <div className="composer-title">
                   <Sparkles className="h-4 w-4 text-[#828fff]" />
@@ -832,6 +1047,7 @@ export function HomeClient() {
                 </Link>
               </div>
             </section>
+            </IdentityGate>
 
             {ready && !authenticated && (
               <p className="mt-5 text-center text-xs text-white/35">
@@ -896,12 +1112,14 @@ function TemplateCard({
       <h3 className="wf-title">{template.title}</h3>
       <p className="wf-desc">{template.desc}</p>
 
-      {/* Mini Agent Chain Preview */}
+      {/* Mini Agent Chain Preview — Active Agent Nodes Roster */}
       <div className="wf-agents mt-3" aria-label="Mini agent chain preview">
         {shortChainNames.map((name, idx) => (
           <React.Fragment key={idx}>
-            <span className="agent-chip">{name}</span>
-            {idx < shortChainNames.length - 1 && <span className="text-[9px] text-white/20 self-center">→</span>}
+            <span className="agent-chip font-medium text-cyan-300/90 border border-white/10 bg-white/5">
+              🤖 {name}
+            </span>
+            {idx < shortChainNames.length - 1 && <span className="text-[9px] text-white/30 self-center">→</span>}
           </React.Fragment>
         ))}
       </div>
