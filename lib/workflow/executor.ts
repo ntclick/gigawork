@@ -100,7 +100,7 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
         nodeId: node.id,
         planToNodeId,
         workflowId,
-        userId,
+        userId: userId ?? 'system-guest',
       }).finally(() => {
         activeExecutions.delete(node.id)
       })
@@ -158,7 +158,7 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
     if (markdown) {
       await publishFinalReport({
         workflowId,
-        userId,
+        userId: userId ?? 'system-guest',
         finalMarkdown: markdown,
         rawJson: { nodes: finalNodes.map((n) => ({ id: n.id, skill: skillMap.get(n.skillId ?? ''), status: n.status })) },
         toolName: 'auto_finalize',
@@ -169,7 +169,7 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
   }
 
   if (hasFailures) {
-    await failWorkflow(workflowId, userId)
+    await failWorkflow(workflowId, userId ?? 'system-guest')
     console.log(`[executor:${workflowId}] Workflow failed due to node failures.`)
   } else {
     // All succeeded but report-composer/report-composer-fast did not run or produce output. Build deterministic fallback report.
@@ -181,7 +181,7 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
     const fallbackMarkdown = buildDeterministicFinalReport(rawJson)
     await publishFinalReport({
       workflowId,
-      userId,
+      userId: userId ?? 'system-guest',
       finalMarkdown: fallbackMarkdown,
       rawJson,
       toolName: 'auto_finalize',
