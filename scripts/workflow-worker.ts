@@ -1,8 +1,15 @@
 import { config as loadEnv } from 'dotenv'
-loadEnv({ path: '.env.local', override: true })
-loadEnv({ path: '.env' })
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
 
-// DNS Bypass
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const ROOT = resolve(__dirname, '..')
+
+loadEnv({ path: resolve(ROOT, '.env.local'), override: true })
+loadEnv({ path: resolve(ROOT, '.env') })
+
+// DNS Bypass — must run before any DB import
 if (process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.DATABASE_URL.replace(
     'aws-1-ap-south-1.pooler.supabase.com',
@@ -14,10 +21,11 @@ import { eq, and } from 'drizzle-orm'
 
 async function runWorker() {
   console.log('⚙️ GigaWork Workflow Worker started. Listening for queued workflows...')
-  
-  const { db } = await import('../lib/db/client')
-  const { workflows } = await import('../lib/db/schema')
-  const { executeWorkflowRun } = await import('../lib/workflow/executor')
+
+  // Dynamic imports AFTER env is loaded — required for dotenv to take effect
+  const { db } = await import('../lib/db/client.js')
+  const { workflows } = await import('../lib/db/schema.js')
+  const { executeWorkflowRun } = await import('../lib/workflow/executor.js')
 
   while (true) {
     try {
@@ -29,7 +37,6 @@ async function runWorker() {
         .limit(1)
 
       if (!wf) {
-        // No queued workflows — sleep for 1 second and check again
         await new Promise((r) => setTimeout(r, 1000))
         continue
       }
@@ -60,7 +67,6 @@ async function runWorker() {
         const errorMsg = err instanceof Error ? err.message : String(err)
         console.error(`❌ Workflow ${wf.id} failed:`, errorMsg)
 
-        // Mark workflow as failed if it threw an error
         await db
           .update(workflows)
           .set({ status: 'failed' })

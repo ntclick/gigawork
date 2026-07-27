@@ -57,6 +57,24 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
       break
     }
 
+    // Fast-fail any pending node whose dependency has already failed
+    for (const n of currentNodes) {
+      if (n.status !== 'pending' || activeExecutions.has(n.id)) continue
+      const deps = n.dependsOn || []
+      const hasFailedDep = deps.some((depSlug) => {
+        const depUuid = planToNodeId.get(depSlug)
+        if (!depUuid) return false
+        const depNode = currentNodes.find((x) => x.id === depUuid)
+        return depNode && depNode.status === 'failed'
+      })
+      if (hasFailedDep) {
+        await db
+          .update(nodes)
+          .set({ status: 'failed', output: { error: 'Skipped: dependency failed' } })
+          .where(eq(nodes.id, n.id))
+      }
+    }
+
     // Find ready nodes: status is 'pending', not currently executing, and ALL dependencies (in dependsOn) are completed
     const readyNodes = currentNodes.filter((n) => {
       if (n.status !== 'pending') return false
@@ -347,7 +365,7 @@ async function executeSingleNodeParallel(opts: {
   // 6. Execute the skill call
   try {
     const output = await withTimeout(skill.name, timeoutLimit, async () => {
-      return (await callSkillEndpoint(skill, inputParams, { workflowId, nodeId })) as Record<string, unknown>
+      return (await callSkillEndpoint(skill, inputParams, { workflowId, nodeId, timeoutMs: timeoutLimit })) as Record<string, unknown>
     })
 
     const completedAt = new Date()

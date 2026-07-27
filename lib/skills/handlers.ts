@@ -1277,7 +1277,30 @@ export const SKILLS: Record<string, SkillHandler> = {
     if (price > ema20) score += 1
     else if (price < ema20) score -= 1
 
-    const verdict = score >= 2 ? 'long' : score <= -2 ? 'short' : 'neutral'
+    const verdictCode = score >= 2 ? 'long' : score <= -2 ? 'short' : 'neutral'
+    const verdict = verdictCode === 'long' ? 'Long' : verdictCode === 'short' ? 'Short' : 'Neutral'
+    const confidence = score >= 3 ? 82 : score >= 2 ? 72 : score <= -3 ? 82 : score <= -2 ? 72 : 50
+
+    const supporting = [
+      rsi > 50 ? `RSI(14) at ${rsi} — bullish momentum.` : `RSI(14) at ${rsi} — bearish momentum.`,
+      macd.hist > 0 ? `MACD histogram positive (+${round2(macd.hist)}).` : `MACD histogram negative (${round2(macd.hist)}).`,
+      price > ema20 ? `Price ($${price}) above EMA20 ($${ema20}).` : `Price ($${price}) below EMA20 ($${ema20}).`,
+      ema50 > ema200 ? `EMA50 ($${ema50}) above EMA200 ($${ema200}) — uptrend regime.` : `EMA50 ($${ema50}) below EMA200 ($${ema200}) — downtrend regime.`,
+    ]
+
+    const counterpoint = rsi > 68
+      ? `RSI(14) at ${rsi} is near overbought territory (>70) — potential short-term pullbacks.`
+      : rsi < 32
+        ? `RSI(14) at ${rsi} is near oversold territory (<30) — potential bounce.`
+        : `Mixed indicator strength across short vs long-term moving averages.`
+
+    const invalidation = verdictCode === 'long'
+      ? `Price closing below EMA50 ($${ema50}) or RSI(14) falling below 45.`
+      : verdictCode === 'short'
+        ? `Price closing above EMA50 ($${ema50}) or RSI(14) crossing above 55.`
+        : `Breakout above EMA20 ($${ema20}) or breakdown below EMA50 ($${ema50}).`
+
+    const source = `Binance ${symbol} ${tf} klines, RSI(14) + MACD + EMA(20,50,200)`
 
     return {
       symbol,
@@ -1293,10 +1316,15 @@ export const SKILLS: Record<string, SkillHandler> = {
       ema_50: ema50,
       ema_200: ema200,
       verdict,
+      confidence,
+      supporting,
+      counterpoint,
+      invalidation,
+      source,
       reasoning:
-        verdict === 'long'
+        verdictCode === 'long'
           ? 'Multiple bullish indicators align.'
-          : verdict === 'short'
+          : verdictCode === 'short'
             ? 'Multiple bearish indicators align.'
             : 'Mixed signals — no clear directional edge.',
       signals: [

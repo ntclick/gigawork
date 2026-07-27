@@ -12,7 +12,7 @@ WORKDIR /app
 # Install dependencies based on the preferred package manager
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm config set dangerouslyAllowAllBuilds true
-RUN pnpm i --frozen-lockfile
+RUN pnpm i --no-frozen-lockfile
 
 # 2. Rebuild the source code only when needed
 FROM base AS builder

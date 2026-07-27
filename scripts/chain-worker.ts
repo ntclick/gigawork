@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 loadEnv({ path: '.env.local', override: true })
 loadEnv({ path: '.env' })
 
-// DNS Bypass
+// DNS Bypass — must run before any DB import
 if (process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.DATABASE_URL.replace(
     'aws-1-ap-south-1.pooler.supabase.com',
@@ -10,14 +10,16 @@ if (process.env.DATABASE_URL) {
   )
 }
 
-import { eq } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 
 async function runWorker() {
   console.log('⛓️ GigaWork Chain Worker started. Listening for pending chain jobs...')
-  
-  const { db } = await import('../lib/db/client')
-  const { chainJobs } = await import('../lib/db/schema')
-  const { settleWorkflowJob, cacheReputation, processFailedReputation } = await import('../lib/ai/finalizeWorkflow')
+
+  // Dynamic imports AFTER env is loaded — required for dotenv to take effect
+  const { db } = await import('../lib/db/client.js')
+  const { chainJobs, agents, jobs, workflows } = await import('../lib/db/schema.js')
+  const { settleWorkflowJob, cacheReputation, processFailedReputation } = await import('../lib/ai/finalizeWorkflow.js')
+  const { syncAgentReputationScore, syncJobEscrowStatus } = await import('../lib/chain/sync.js')
 
   let lastSyncTime = 0
   const SYNC_INTERVAL_MS = 30_000
@@ -29,10 +31,6 @@ async function runWorker() {
         lastSyncTime = Date.now()
         console.log('[worker] Running periodic on-chain status cache synchronization...')
         try {
-          const { agents, jobs } = await import('../lib/db/schema')
-          const { syncAgentReputationScore, syncJobEscrowStatus } = await import('../lib/chain/sync')
-          const { and, sql } = await import('drizzle-orm')
-
           // 1. Sync active provider agents reputation
           const activeAgents = await db
             .select({ id: agents.id })
@@ -65,7 +63,6 @@ async function runWorker() {
         .limit(1)
 
       if (!job) {
-        // No jobs — sleep for 2 seconds and check again
         await new Promise((r) => setTimeout(r, 2000))
         continue
       }
@@ -80,8 +77,7 @@ async function runWorker() {
 
       try {
         const payload = job.payload as Record<string, unknown>
-        
-        const { workflows } = await import('../lib/db/schema')
+
         if (job.kind === 'erc8183_settle') {
           const finalMarkdown = (payload.finalMarkdown as string) || ''
           const [wf] = await db.select({ erc8183JobId: workflows.erc8183JobId }).from(workflows).where(eq(workflows.id, job.workflowId)).limit(1)
@@ -91,8 +87,7 @@ async function runWorker() {
           } else {
             console.log(`[worker] Skipped ERC-8183 settlement: no jobId found for workflow ${job.workflowId}`)
           }
-        } 
-        else if (job.kind === 'erc8004_feedback') {
+        } else if (job.kind === 'erc8004_feedback') {
           const userId = (payload.userId as string) || null
           const outcome = payload.outcome as 'completed' | 'failed'
           if (outcome === 'completed') {
@@ -100,8 +95,7 @@ async function runWorker() {
           } else {
             await processFailedReputation(job.workflowId, userId)
           }
-        } 
-        else {
+        } else {
           throw new Error(`Unknown job kind: ${job.kind}`)
         }
 
@@ -110,7 +104,7 @@ async function runWorker() {
           .update(chainJobs)
           .set({ status: 'completed', updatedAt: new Date() })
           .where(eq(chainJobs.id, job.id))
-        
+
         console.log(`🟢 Job ${job.id} completed successfully.`)
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
@@ -122,8 +116,7 @@ async function runWorker() {
           .update(chainJobs)
           .set({ status, lastError: errorMsg, updatedAt: new Date() })
           .where(eq(chainJobs.id, job.id))
-        
-        // Delay before next tick on error to prevent hot-looping
+
         await new Promise((r) => setTimeout(r, 1000))
       }
     } catch (loopErr) {

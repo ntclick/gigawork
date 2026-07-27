@@ -77,7 +77,7 @@ export async function getSkillByName(name: string): Promise<SkillWithLiveness | 
 export async function callSkillEndpoint(
   skill: Skill,
   input: Record<string, unknown>,
-  opts?: { workflowId?: string; nodeId?: string },
+  opts?: { workflowId?: string; nodeId?: string; timeoutMs?: number },
 ): Promise<unknown> {
   const manifest = (skill.manifest ?? {}) as Record<string, unknown>
   const isPaid = (manifest.cost_credits as number | undefined ?? 0) > 0
@@ -87,8 +87,9 @@ export async function callSkillEndpoint(
     return local(input)
   }
 
+  const timeoutMs = opts?.timeoutMs ?? 8_000
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 20_000)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
