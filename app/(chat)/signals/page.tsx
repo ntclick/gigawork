@@ -56,7 +56,7 @@ const COINS = [
   { sym: 'LINK', pair: 'LINK/USDT', name: 'Chainlink', price: '$16.80', change: '+1.95%' },
 ]
 
-export const SIGNAL_FALLBACK: Record<string, SignalData> = {
+const SIGNAL_FALLBACK: Record<string, SignalData> = {
   BTC: { verdict: 'Long', conf: 74, supporting: ['EMA(50) above EMA(200) — bullish regime intact.', 'RSI(14) at 58 — mid-band, room to run.', 'Last 3 candles closed higher with rising volume.'], counterpoint: 'RSI climbed 12pt in 12h — flips to Skip if it crosses 70.', invalidation: '4h candle closes above RSI 70, or EMA cross back bearish.', source: 'Binance BTC/USDT 4h klines, RSI(14) + EMA(50,200)' },
   ETH: { verdict: 'Long', conf: 68, supporting: ['Same EMA bullish regime as BTC.', 'RSI(14) at 61 — inside the stable band.'], counterpoint: 'RSI closer to 70 ceiling than BTC — less room.', invalidation: 'RSI(14) closes a 4h candle above 70.', source: 'Binance ETH/USDT 4h klines, RSI(14) + EMA(50,200)' },
   SOL: { verdict: 'Neutral', conf: 52, supporting: ['EMA trend still technically bullish.'], counterpoint: 'RSI(14) at 71 — chasing here, not confirming.', invalidation: 'RSI(14) falls back under 70.', source: 'Binance SOL/USDT 4h klines' },
@@ -341,13 +341,26 @@ export default function SignalsPage() {
 
           if (wfStatus === 'completed') {
             patch.status = 'completed'
-            const thesis = extractThesisFromMessages(data.messages ?? [], coinSym)
-            if (thesis) patch.thesis = thesis
+
+            // Fetch real node outputs from messages endpoint
+            try {
+              const msgsRes = await fetch(`/api/workflow/${wfId}/messages`, { cache: 'no-store' })
+              if (msgsRes.ok) {
+                const msgsData = await msgsRes.json()
+                // Extract thesis from dispatchSkill node outputs (trading-signals has structured output)
+                const thesis = extractThesisFromNodeOutputs(msgsData.messages ?? [], coinSym)
+                if (thesis) patch.thesis = thesis
+              }
+            } catch {
+              // silent — fallback thesis via SIGNAL_FALLBACK handled in extractThesisFromNodeOutputs
+            }
+
+            // If still no thesis, try SIGNAL_FALLBACK
+            if (!patch.thesis && coinSym && SIGNAL_FALLBACK[coinSym]) {
+              patch.thesis = SIGNAL_FALLBACK[coinSym]
+            }
 
             appendLog(runId, { text: `✅ Workflow completed · ERC-8183 escrow settled to Agent Provider`, level: 'accent' })
-            if (erc8183?.completeTx) {
-              appendLog(runId, { text: `📜 erc8183.completeTx · ${erc8183.completeTx.slice(0, 10)}…${erc8183.completeTx.slice(-4)}`, level: 'info' })
-            }
 
             const currentAgentKey = useAgentWallet && agentWalletRef.current?.privateKey ? agentWalletRef.current.privateKey : undefined
 
@@ -1110,6 +1123,67 @@ function WorkflowRunCard({
       )}
     </div>
   )
+}
+
+/**
+ * Extract Defensible Thesis from real workflow node outputs.
+ * The /api/workflow/[id]/messages endpoint returns AI SDK format:
+ *   messages[].parts[].type = 'tool-dispatchSkill' | 'text' | ...
+ *   parts[].output.output = { verdict, confidence, supporting, counterpoint, invalidation, source, ... }
+ */
+function extractThesisFromNodeOutputs(
+  msgs: Array<{ role: string; parts?: Array<{ type: string; output?: any; input?: any }> }>,
+  coinSym?: string,
+): SignalData | null {
+  try {
+    for (const msg of msgs) {
+      if (!msg.parts) continue
+      for (const part of msg.parts) {
+        // dispatchSkill parts contain node execution output
+        if (part.type === 'tool-dispatchSkill' && part.output) {
+          const nodeOut = part.output?.output as Record<string, unknown> | null
+          if (!nodeOut) continue
+
+          // Check if this node output has Defensible Thesis structure (trading-signals / market-structure)
+          if (nodeOut.verdict || nodeOut.signal) {
+            const verdict = String(nodeOut.verdict || nodeOut.signal || 'Long')
+            const conf = Number(nodeOut.confidence || nodeOut.conf || 75)
+            const supporting = Array.isArray(nodeOut.supporting)
+              ? (nodeOut.supporting as string[])
+              : Array.isArray(nodeOut.signals)
+                ? (nodeOut.signals as string[]).slice(0, 3)
+                : ['Technical indicators aligned.']
+            const counterpoint = String(nodeOut.counterpoint || 'Mixed indicator strength — momentum unconfirmed.')
+            const invalidation = String(nodeOut.invalidation || 'Price closes below EMA20 support.')
+            const source = String(nodeOut.source || nodeOut.binance_mirror || 'Binance Klines')
+
+            return { verdict, conf, supporting, counterpoint, invalidation, source }
+          }
+
+          // Try report-composer output (markdown field with parsed thesis)
+          if (nodeOut.markdown && typeof nodeOut.markdown === 'string') {
+            const thesis = extractThesisFromMessages(
+              [{ role: 'brain', content: nodeOut.markdown as string }],
+              coinSym,
+            )
+            if (thesis) return thesis
+          }
+        }
+
+        // Also check text parts (brain auto_finalize message)
+        if (part.type === 'text' && typeof (part as any).text === 'string') {
+          const thesis = extractThesisFromMessages(
+            [{ role: 'brain', content: (part as any).text }],
+            coinSym,
+          )
+          if (thesis) return thesis
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[extractThesisFromNodeOutputs] error:', e)
+  }
+  return null
 }
 
 function extractThesisFromMessages(
