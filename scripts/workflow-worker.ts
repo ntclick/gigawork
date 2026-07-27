@@ -58,10 +58,7 @@ async function runWorker() {
       console.log(`[worker] Processing workflow ${wf.id}...`)
 
       try {
-        if (!wf.userId) {
-          throw new Error('Workflow userId is null, cannot execute')
-        }
-        await executeWorkflowRun({ workflowId: wf.id, userId: wf.userId })
+        await executeWorkflowRun({ workflowId: wf.id, userId: wf.userId ?? 'system-guest' })
         console.log(`🟢 Workflow ${wf.id} execution finished.`)
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)

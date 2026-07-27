@@ -7,7 +7,7 @@ import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { withTimeout } from '@/lib/workflow/timing'
 import { workflowRuntimeConfig } from '@/lib/workflow/runtimeConfig'
 
-export async function executeWorkflowRun({ workflowId, userId }: { workflowId: string; userId: string }) {
+export async function executeWorkflowRun({ workflowId, userId }: { workflowId: string; userId: string | null }) {
   console.log(`[executor:${workflowId}] Starting parallel DAG execution...`)
 
   // 1. Fetch all planned nodes
