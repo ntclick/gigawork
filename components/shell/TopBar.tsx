@@ -37,6 +37,7 @@ export function TopBar({ title, showChatToggle }: TopBarProps) {
         )}
       </div>
 
+      <div className="flex items-center gap-2">
         <Link
           href="/signals"
           className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)] transition hover:bg-amber-500/20 hover:border-amber-400"

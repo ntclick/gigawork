@@ -130,6 +130,8 @@ export function HomeClient() {
         const j = await res.json().catch(() => ({}))
         if (j.error === 'identity_required') {
           toast.error('Identity NFT required', 'Mint your ERC-8004 identity NFT to continue.')
+        } else if (j.error === 'insufficient_credits') {
+          toast.error('Insufficient credits', `You have ${j.credits ?? 0} credits. Mint your ERC-8004 NFT to get 300 free, or top up via USDC.`)
         } else {
           toast.error('Failed to create workflow', j.message ?? String(res.status))
         }

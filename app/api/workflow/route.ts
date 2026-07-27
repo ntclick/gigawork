@@ -95,14 +95,20 @@ async function handlePost(req: Request) {
     )
   }
 
-  // Verify cached identityTokenId actually belongs to the current
-  // user wallet on chain. The DB cache can lag when the user switches
-  // wallets (the previous wallet's NFT stays in the row) — letting a
-  // stale token through here would allow workflow creation against a
-  // wallet that doesn't actually own the identity, which the ERC-8183
-  // contract would reject later anyway. Clearing here keeps the
-  // identity gate honest. See /api/me for the same pattern.
-  if (user.identityTokenId) {
+  // Skip identity verification entirely if ARC_RPC_URL is absent (local dev
+  // or chain infra not configured). On production all env vars are set so
+  // both checks run normally.
+  const rpcConfigured = !!process.env.ARC_RPC_URL
+  const identityRegistryConfigured = !!process.env.IDENTITY_REGISTRY_ADDRESS
+
+  if (rpcConfigured && user.identityTokenId) {
+    // Verify cached identityTokenId actually belongs to the current
+    // user wallet on chain. The DB cache can lag when the user switches
+    // wallets (the previous wallet's NFT stays in the row) — letting a
+    // stale token through here would allow workflow creation against a
+    // wallet that doesn't actually own the identity, which the ERC-8183
+    // contract would reject later anyway. Clearing here keeps the
+    // identity gate honest. See /api/me for the same pattern.
     const stillOwns = await verifyTokenOwnership(user.identityTokenId, user.wallet)
     if (!stillOwns) {
       const [cleared] = await withDbRetry(
@@ -118,7 +124,7 @@ async function handlePost(req: Request) {
     }
   }
 
-  if (!user.identityTokenId) {
+  if (rpcConfigured && !user.identityTokenId) {
     // DB cache is empty — fall back to on-chain check. The user may have
     // minted the NFT in a previous session, or just switched to a wallet
     // that already owns one (eg minted from a different frontend). This
@@ -141,7 +147,10 @@ async function handlePost(req: Request) {
     }
   }
 
-  if (!user.identityTokenId) {
+  // Only enforce identity gate when both registry and RPC are configured.
+  // If either is absent (local dev / chains not set up), skip the gate
+  // so developers can test workflows without minting.
+  if (identityRegistryConfigured && rpcConfigured && !user.identityTokenId) {
     return NextResponse.json(
       {
         error: 'identity_required',
@@ -149,6 +158,21 @@ async function handlePost(req: Request) {
         message: 'Mint your ERC-8004 identity NFT before posting an ERC-8183 job.',
       },
       { status: 403 },
+    )
+  }
+
+  // Credit pre-check — enforce same payment gate for all callers (Home + Signals).
+  // A user with 0 credits cannot start a new workflow. The signup bonus (300 cr)
+  // is granted on first identity mint, so this only blocks users who genuinely
+  // haven't funded. Skip when identity registry is off (local dev bypass).
+  if (identityRegistryConfigured && user.credits <= 0) {
+    return NextResponse.json(
+      {
+        error: 'insufficient_credits',
+        message: 'Top up your credits to create a workflow. Mint your ERC-8004 NFT to receive 300 free credits.',
+        credits: user.credits,
+      },
+      { status: 402 },
     )
   }
 
