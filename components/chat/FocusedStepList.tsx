@@ -14,6 +14,7 @@ import {
   Layers,
   Activity,
   Zap,
+  FileText,
 } from 'lucide-react'
 
 function shortAddr(addr: string) {
@@ -82,6 +83,39 @@ export function FocusedStepList() {
       /* ignore */
     }
     return null
+  }, [messages])
+
+  // Extract final report markdown / text from messages
+  const finalReport = useMemo(() => {
+    if (!messages) return null
+    let reportText: string | null = null
+
+    for (const m of messages) {
+      for (const p of m.parts ?? []) {
+        if (p.type === 'tool-dispatchSkill' && p.output) {
+          const out = p.output?.output as Record<string, unknown> | null
+          if (out?.markdown && typeof out.markdown === 'string' && out.markdown.trim().length > 0) {
+            reportText = out.markdown
+          }
+          if (out?.output && typeof out.output === 'string' && out.output.trim().length > 0) {
+            reportText = out.output
+          }
+        }
+        if (p.type === 'tool-finalizeReport' && p.output) {
+          const out = p.output as { summary_markdown?: string }
+          if (out.summary_markdown) {
+            reportText = out.summary_markdown
+          }
+        }
+      }
+      if ((m.role === 'assistant' || m.role === 'brain') && typeof m.content === 'string') {
+        const text = m.content.trim()
+        if (text.length > 40 && !text.startsWith('▸ Planning') && !text.startsWith('Workflow created')) {
+          reportText = reportText || text
+        }
+      }
+    }
+    return reportText
   }, [messages])
 
   return (
@@ -571,6 +605,22 @@ export function FocusedStepList() {
               })}
             </div>
           )}
+
+          {/* Deliverable Report / Output Card */}
+          {finalReport && (
+            <div className="mt-6 rounded-2xl border border-cyan-500/30 bg-[#0b0e17] p-5 shadow-[0_0_25px_rgba(0,0,0,0.5)]">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-cyan-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">Generated Report Deliverable</span>
+                </div>
+                <span className="rounded bg-cyan-500/10 px-2 py-0.5 font-mono text-[10px] text-cyan-300 border border-cyan-500/20 font-bold">
+                  Verified On-Chain
+                </span>
+              </div>
+              <SimpleMarkdown content={finalReport} />
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -655,6 +705,46 @@ export function FocusedStepList() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function SimpleMarkdown({ content }: { content: string }) {
+  const lines = content.split('\n')
+  return (
+    <div className="space-y-2 text-xs leading-relaxed text-white/90 font-sans">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim()
+        if (!trimmed) return <div key={idx} className="h-1" />
+        if (trimmed.startsWith('# ')) {
+          return <h1 key={idx} className="text-base font-bold text-cyan-300 mt-3 mb-1 border-b border-white/10 pb-1">{trimmed.slice(2)}</h1>
+        }
+        if (trimmed.startsWith('## ')) {
+          return <h2 key={idx} className="text-sm font-bold text-cyan-400 mt-2 mb-1">{trimmed.slice(3)}</h2>
+        }
+        if (trimmed.startsWith('### ')) {
+          return <h3 key={idx} className="text-xs font-bold text-amber-300 mt-2 mb-0.5">{trimmed.slice(4)}</h3>
+        }
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2 text-white/80">
+              <span className="text-cyan-400 text-sm leading-none">•</span>
+              <span>{trimmed.slice(2)}</span>
+            </div>
+          )
+        }
+        if (trimmed.match(/^\d+\.\s/)) {
+          const num = trimmed.match(/^(\d+)\.\s/)?.[1]
+          const text = trimmed.replace(/^\d+\.\s/, '')
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2 text-white/80">
+              <span className="font-mono text-cyan-400 text-[11px] font-bold">{num}.</span>
+              <span>{text}</span>
+            </div>
+          )
+        }
+        return <p key={idx} className="text-white/75">{line}</p>
+      })}
     </div>
   )
 }
