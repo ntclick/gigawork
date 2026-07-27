@@ -24,6 +24,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: 'Home', href: '/', match: (p: string) => p === '/' },
   { label: 'Workflows', href: '/', match: (p: string) => p.startsWith('/workflow') },
+  { label: 'Signals 📈', href: '/signals', match: (p: string) => p.startsWith('/signals') },
   { label: 'Agents', href: '/agents' },
   { label: 'Raffle', href: '/raffle', match: (p: string) => p.startsWith('/raffle') },
   { label: 'Docs', href: '/docs' },

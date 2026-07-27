@@ -612,18 +612,20 @@ export default function SignalsPage() {
         {/* Responsive Header */}
         <header className="mb-8 sm:mb-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#22d3ee] via-[#a855f7] to-[#ec4899] font-black text-base text-black shadow-[0_0_25px_rgba(34,211,238,0.4)] shrink-0">
-              G
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <span className="font-extrabold text-lg sm:text-xl tracking-tight text-white">GigaWork Engine</span>
-                <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 font-mono text-xs text-cyan-300">
-                  Arc Agent v2.4
-                </span>
+            <Link href="/" className="flex items-center gap-3.5 group hover:opacity-90 transition">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#22d3ee] via-[#a855f7] to-[#ec4899] font-black text-base text-black shadow-[0_0_25px_rgba(34,211,238,0.4)] shrink-0">
+                G
               </div>
-              <p className="text-xs sm:text-sm text-white/40">Autonomous Signal Intelligence & On-Chain Proofs</p>
-            </div>
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <span className="font-extrabold text-lg sm:text-xl tracking-tight text-white group-hover:text-cyan-300 transition">GigaWork Engine</span>
+                  <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 font-mono text-xs text-cyan-300">
+                    Arc Agent v2.4
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-white/40">Autonomous Signal Intelligence & On-Chain Proofs</p>
+              </div>
+            </Link>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 w-full sm:w-auto justify-between sm:justify-end">
@@ -645,8 +647,8 @@ export default function SignalsPage() {
                 <ShieldCheck className="h-4 w-4" /> Connect & Verify ERC-8004
               </button>
             )}
-            <Link href="/" className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-white/50 hover:text-white transition bg-white/5 border border-white/10 px-4 py-2 rounded-full shrink-0">
-              <ArrowLeft className="h-4 w-4" /> Back
+            <Link href="/" className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-cyan-300 hover:text-white transition bg-cyan-500/15 border border-cyan-500/30 hover:bg-cyan-500/25 px-4 py-2 rounded-full shrink-0 shadow-[0_0_15px_rgba(34,211,238,0.25)]">
+              <ArrowLeft className="h-4 w-4" /> 🏠 Home
             </Link>
           </div>
         </header>
