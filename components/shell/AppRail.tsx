@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, FolderClosed, Library, Plus, Settings } from 'lucide-react'
+import { BookOpen, FolderClosed, Library, Plus, Settings, TrendingUp } from 'lucide-react'
 
 import { useUI } from './UIShell'
 
@@ -10,6 +10,7 @@ const RAIL_ITEMS = [
   { icon: Plus, label: 'New', href: '/', isNew: true },
   { icon: FolderClosed, label: 'History', href: null as null, isHistory: true },
   { icon: Library, label: 'Agents', href: '/agents' },
+  { icon: TrendingUp, label: 'Signals', href: '/signals' },
   { icon: BookOpen, label: 'Docs', href: '/docs' },
   { icon: Settings, label: 'Settings', href: '/settings' },
 ]
