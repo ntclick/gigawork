@@ -177,6 +177,10 @@ export default function SignalsPage() {
   const [topUpAmount, setTopUpAmount] = useState<string>('0.2')
   const [copiedAddr, setCopiedAddr] = useState<boolean>(false)
 
+  // Platform credits & identity from /api/me (shared system — same as Home)
+  const [userCredits, setUserCredits] = useState<number | null>(null)
+  const [hasIdentityNFT, setHasIdentityNFT] = useState<boolean | null>(null)
+
   // Active Modal Workflow Run
   const [activeModalRun, setActiveModalRun] = useState<WorkflowRun | null>(null)
 
@@ -202,6 +206,24 @@ export default function SignalsPage() {
       setAgentWallet({ address: acc.address, privateKey: newPk })
     }
   }, [])
+
+  // Fetch platform credits + identity from /api/me — same gate system as Home
+  const fetchMe = useCallback(async () => {
+    if (!authenticated) return
+    try {
+      const res = await fetch('/api/me', { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      setUserCredits(data.credits ?? 0)
+      setHasIdentityNFT(data.identity?.hasIdentity ?? false)
+    } catch {
+      // silent — IdentityGate handles the display
+    }
+  }, [authenticated])
+
+  useEffect(() => {
+    fetchMe()
+  }, [fetchMe])
 
   // Fetch Agent Wallet USDC Balance
   const fetchAgentBalance = useCallback(async () => {
@@ -287,7 +309,7 @@ export default function SignalsPage() {
       }
 
       try {
-        await validate.attest(wfId, keyToUse)
+        await validate.attest(wfId)
         appendLog(runId, { text: `✔ ERC-8004 Attestation completed! Reputation score awarded on-chain`, level: 'hi' })
         updateRun(runId, { attestDone: true })
       } catch (e: any) {
@@ -565,6 +587,16 @@ export default function SignalsPage() {
       login()
       return
     }
+    // Enforce same credit gate as Home workflow — user must have credits (from
+    // signup bonus or topup) before executing any ERC-8183 job.
+    if (userCredits !== null && userCredits <= 0) {
+      // Reload balance first — might have been topped up
+      await fetchMe()
+      if (userCredits !== null && userCredits <= 0) {
+        alert('You need credits to run a workflow. Top up via the wallet panel or /api/me/topup.')
+        return
+      }
+    }
     setRunning(true)
     await runOneCoin(selectedCoin, currentStrategy)
     setRunning(false)
@@ -690,6 +722,18 @@ export default function SignalsPage() {
                     <span className="text-white/40 text-[10px]">Arc Testnet USDC Balance:</span>
                     <span className="text-emerald-400 font-bold">{parseFloat(agentBalance).toFixed(4)} USDC</span>
                   </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <span className="text-white/40 text-[10px]">Platform Credits (ERC-8004):</span>
+                    {userCredits === null ? (
+                      <span className="text-white/30 text-[10px]">loading…</span>
+                    ) : userCredits > 0 ? (
+                      <span className="text-amber-300 font-bold">{userCredits} cr</span>
+                    ) : (
+                      <span className="text-red-400 font-bold flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" /> 0 cr — Top up needed
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -792,15 +836,44 @@ export default function SignalsPage() {
             </div>
           </div>
 
-          {/* Run Button */}
-          <button
-            onClick={runWorkflows}
-            disabled={running || !selectedCoin}
-            className="mb-10 sm:mb-12 w-full flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 py-4 sm:py-5 text-base sm:text-lg font-black text-black shadow-[0_0_35px_rgba(34,211,238,0.35)] hover:opacity-95 transition disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {running ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
-            {`Execute Arc Workflow for ${selectedCoin}/USDT`}
-          </button>
+          {/* Run Button + Credit Gate */}
+          {userCredits !== null && userCredits <= 0 ? (
+            <div className="mb-10 sm:mb-12 rounded-2xl border border-red-500/30 bg-red-500/5 p-5 text-center space-y-3">
+              <div className="flex items-center justify-center gap-2 text-red-400 font-bold text-sm">
+                <AlertTriangle className="h-4 w-4" />
+                Insufficient Credits — Top Up Required
+              </div>
+              <p className="text-xs text-white/50 leading-relaxed">
+                You need platform credits to run an ERC-8183 workflow. Mint your ERC-8004 identity NFT to receive{' '}
+                <span className="text-amber-300 font-bold">300 free credits</span>, or top up via USDC transfer.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                <Link
+                  href="/"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-purple-600 px-5 py-2.5 font-bold text-xs text-black shadow-lg hover:opacity-90 transition"
+                >
+                  <Wallet className="h-3.5 w-3.5" /> Top Up Credits at Home
+                </Link>
+                <button
+                  onClick={fetchMe}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 font-bold text-xs text-white/70 hover:bg-white/10 transition"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Refresh Balance
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={runWorkflows}
+              disabled={running || !selectedCoin}
+              className="mb-10 sm:mb-12 w-full flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 py-4 sm:py-5 text-base sm:text-lg font-black text-black shadow-[0_0_35px_rgba(34,211,238,0.35)] hover:opacity-95 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {running ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
+              {userCredits === null
+                ? 'Loading…'
+                : `Execute Arc Workflow for ${selectedCoin}/USDT · ${userCredits} cr`}
+            </button>
+          )}
         </IdentityGate>
 
         {/* Workflow Execution Feed */}
