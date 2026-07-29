@@ -164,7 +164,38 @@ export function FocusedStepList() {
       }
     })
 
-    // 3. Final Settlement Log
+    // 3. Live Running Messages (Real-time Typewriter & Worker Execution Logs)
+    if (messages && Array.isArray(messages)) {
+      messages.forEach((msg) => {
+        if ((msg.role === 'brain' || msg.role === 'system') && typeof msg.content === 'string' && msg.content.trim()) {
+          const ts = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('en-US', { hour12: false }) : nowStr()
+          let tag = 'AGENT'
+          let color = 'text-cyan-300'
+
+          if (msg.content.includes('ERC-8004') || msg.content.includes('Identity')) {
+            tag = 'ERC-8004'
+            color = 'text-cyan-400'
+          } else if (msg.content.includes('ERC-8183') || msg.content.includes('Escrow')) {
+            tag = 'ERC-8183'
+            color = 'text-amber-400'
+          } else if (msg.content.includes('x402') || msg.content.includes('credits') || msg.content.includes('Dispatched') || msg.content.includes('Initializing')) {
+            tag = 'x402'
+            color = 'text-emerald-400'
+          } else if (msg.content.includes('❌') || msg.content.includes('Error')) {
+            tag = 'ERROR'
+            color = 'text-rose-400 font-semibold'
+          }
+
+          const cleanText = msg.content.replace(/\*\*/g, '').replace(/`/g, '')
+          // Avoid exact duplicate text
+          if (!logs.some((l) => l.text === cleanText)) {
+            logs.push({ ts, tag, text: cleanText, color })
+          }
+        }
+      })
+    }
+
+    // 4. Final Settlement Log
     if (workflowStatus === 'completed') {
       if (erc8183?.completeTx) {
         logs.push({
@@ -191,7 +222,7 @@ export function FocusedStepList() {
     }
 
     return logs
-  }, [erc8183, steps, events, workflowStatus])
+  }, [erc8183, steps, events, workflowStatus, messages])
 
   return (
     <div className="mockup-container w-full h-full text-white overflow-y-auto">
