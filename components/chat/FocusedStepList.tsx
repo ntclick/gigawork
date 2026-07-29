@@ -479,6 +479,52 @@ export function FocusedStepList() {
       <div className="mockup-layout">
         {/* Main Content Area */}
         <div className="mockup-main">
+          {/* Sleek Arc Protocol Header Banner (8004 · 8183 · x402) */}
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#0c0a18]/90 px-4 py-3 shadow-lg backdrop-blur-md">
+            {/* ERC-8004 Identity */}
+            <div className="flex items-center gap-2 text-xs">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-400">
+                <ShieldCheck className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-cyan-300">
+                  <span>ERC-8004</span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                </div>
+                <div className="text-[10px] text-white/50">Agent Registry Verified</div>
+              </div>
+            </div>
+
+            {/* ERC-8183 Escrow */}
+            <div className="flex items-center gap-2 text-xs">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+                <Layers className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-amber-300">
+                  <span>ERC-8183</span>
+                  <span className="text-white/40">·</span>
+                  <span>Escrow Locked</span>
+                </div>
+                <div className="text-[10px] text-white/50">${spentUsdc.toFixed(2)} disbursed / ${budgetUsdc.toFixed(2)} total</div>
+              </div>
+            </div>
+
+            {/* x402 Nanopayments */}
+            <div className="flex items-center gap-2 text-xs">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                <Zap className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-emerald-300">
+                  <span>x402 Protocol</span>
+                  <span className="text-white/40">·</span>
+                  <span>Nanopayments</span>
+                </div>
+                <div className="text-[10px] text-emerald-400 font-semibold">{callCount} Calls Settled</div>
+              </div>
+            </div>
+          </div>
           {/* Economy Summary Row */}
           <div className="econ-row">
             <div className="econ-card">
