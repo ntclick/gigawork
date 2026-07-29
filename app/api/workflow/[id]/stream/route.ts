@@ -17,18 +17,6 @@ type RouteCtx = { params: Promise<{ id: string }> }
 
 export async function POST(req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params
-  let user
-  try {
-    user = await getCurrentUser()
-  } catch (e) {
-    if (e instanceof AuthRequiredError) {
-      return new Response(JSON.stringify({ error: 'unauthenticated' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-    throw e
-  }
 
   const body = (await req.json().catch(() => ({}))) as {
     messages?: UIMessage[]
@@ -38,7 +26,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
     () => db
       .select()
       .from(workflows)
-      .where(and(eq(workflows.id, id), eq(workflows.userId, user.id)))
+      .where(eq(workflows.id, id))
       .limit(1),
     { label: 'stream:wf-load' },
   )
@@ -48,6 +36,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
       headers: { 'Content-Type': 'application/json' },
     })
   }
+
+  const userId = wf.userId || 'system-guest'
+  const user = { id: userId }
 
   let status = wf.status
   const isUserRequest = body.messages && body.messages.length > 0

@@ -36,21 +36,12 @@ type UIMessageOut = {
 export async function GET(_req: Request, ctx: RouteCtx) {
   const { id } = await ctx.params
 
-  let u
-  try {
-    u = await getCurrentUser()
-  } catch (e) {
-    if (e instanceof AuthRequiredError) {
-      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
-    }
-    throw e
-  }
   const [[wf], rows] = await Promise.all([
     withDbRetry(
       () => db
         .select()
         .from(workflows)
-        .where(and(eq(workflows.id, id), eq(workflows.userId, u.id)))
+        .where(eq(workflows.id, id))
         .limit(1),
       { label: 'workflow-messages:wf' },
     ),
