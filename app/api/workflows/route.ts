@@ -7,18 +7,30 @@ import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { workflows } from '@/lib/db/schema'
 
+const userWorkflowsCache = new Map<string, { ts: number; workflows: any[] }>()
+const WORKFLOWS_CACHE_TTL = 5_000
+
 export async function GET() {
   try {
     const u = await getCurrentUser()
+    const now = Date.now()
+    const cached = userWorkflowsCache.get(u.id)
+
+    if (cached && now - cached.ts < WORKFLOWS_CACHE_TTL) {
+      return NextResponse.json({ workflows: cached.workflows })
+    }
+
     const rows = await withDbRetry(
       () => db
         .select()
         .from(workflows)
         .where(and(eq(workflows.userId, u.id)))
         .orderBy(desc(workflows.createdAt))
-        .limit(100),
+        .limit(50),
       { label: 'list-workflows' },
     )
+
+    userWorkflowsCache.set(u.id, { ts: now, workflows: rows })
     return NextResponse.json({ workflows: rows })
   } catch (e) {
     if (e instanceof AuthRequiredError) {
@@ -36,5 +48,21 @@ export async function GET() {
       },
       { status: 503 },
     )
+  }
+}
+
+export async function DELETE() {
+  try {
+    const u = await getCurrentUser()
+    await withDbRetry(
+      () => db.delete(workflows).where(eq(workflows.userId, u.id)),
+      { label: 'clear-all-workflows' },
+    )
+    return NextResponse.json({ ok: true, message: 'All history cleared' })
+  } catch (e) {
+    if (e instanceof AuthRequiredError) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+    }
+    return NextResponse.json({ error: 'clear_failed' }, { status: 500 })
   }
 }

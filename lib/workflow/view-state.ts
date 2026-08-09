@@ -23,56 +23,79 @@ const AGENT_NAMES: Record<string, string> = {
   'telegram-sender': 'Hermes Telegram Dispatcher',
 }
 
-function getAgentAddress(skillName: string): string {
-  let hash = 0
-  for (let i = 0; i < skillName.length; i++) {
-    hash = skillName.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const hex = Math.abs(hash).toString(16).padStart(40, '0').slice(0, 40)
-  return `0x${hex}`
-}
-
 function generateOutputSummary(skillName: string, output: unknown): string {
   if (!output) return 'Task executed successfully.'
-  const out = (typeof output === 'string' ? { output } : output) as {
-    symbol?: string
-    price_usd?: string | number
-    market_cap_usd?: number
-    sentiment_score?: string | number
-    change_24h_pct?: number
-    output?: string
-  }
+  const out = (typeof output === 'string' ? { output } : output) as Record<string, unknown>
+
   switch (skillName) {
-    case 'crypto-scanner':
-      return `Successfully scanned token ${out.symbol || 'token'}. Price: $${out.price_usd || 'N/A'}, Market Cap: $${out.market_cap_usd ? '$' + Math.round(out.market_cap_usd / 1000).toLocaleString() + 'K' : 'N/A'}.`
-    case 'whale-tracker':
-      return 'Analyzed transaction history for wallet. Identified large transaction flows and wallet transfers.'
-    case 'trading-signals':
-      return 'Technical analysis completed. Computed indicators (RSI/MACD) and analyzed momentum.'
-    case 'social-sentiment':
-      return `Analyzed social media platforms. Sentiment score: ${out.sentiment_score !== undefined ? out.sentiment_score : '85'}% (Strongly Positive).`
-    case 'defi-yields':
-      return 'Scanned DeFi pools for highest APY. Verified TVL and stablecoin liquidity.'
+    case 'crypto-scanner': {
+      const sym = (out.symbol as string) || 'TOKEN'
+      const price = out.price_usd != null ? `$${Number(out.price_usd) < 0.01 ? Number(out.price_usd).toFixed(8) : Number(out.price_usd).toFixed(4)}` : 'N/A'
+      const mc = out.market_cap_usd ? `$${(Number(out.market_cap_usd) / 1_000_000).toFixed(2)}M` : 'N/A'
+      const lp = out.liquidity_usd ? ` · Liquidity: $${(Number(out.liquidity_usd) / 1000).toFixed(0)}K` : ''
+      const ch = out.change_24h_pct != null ? ` · 24h: ${Number(out.change_24h_pct) >= 0 ? '+' : ''}${Number(out.change_24h_pct).toFixed(2)}%` : ''
+      const score = out.security_score != null ? ` · Security: ${out.security_score}/100` : ''
+      return `${sym} scanned. Price: ${price} · MCap: ${mc}${lp}${ch}${score}`
+    }
+    case 'whale-tracker': {
+      const txCount = out.transaction_count || out.txCount || out.count
+      const totalVal = out.total_value_usd ? `$${(Number(out.total_value_usd) / 1_000_000).toFixed(2)}M` : null
+      if (txCount && totalVal) return `Tracked ${txCount} transactions · Total flow: ${totalVal}`
+      if (txCount) return `Tracked ${txCount} high-value wallet transactions. Large flows identified.`
+      return 'Whale wallet analysis complete. Transaction flows mapped and aggregated.'
+    }
+    case 'trading-signals': {
+      const sym = (out.symbol as string) || ''
+      const rsi = out.rsi != null ? `RSI: ${Number(out.rsi).toFixed(1)}` : null
+      const macd = out.macd_histogram != null
+        ? `MACD: ${Number(out.macd_histogram) > 0 ? '▲' : '▼'}${Math.abs(Number(out.macd_histogram)).toFixed(4)}`
+        : null
+      const signal = (out.signal as string) || (out.recommendation as string)
+      const parts = [sym, rsi, macd, signal ? `Signal: ${signal}` : null].filter(Boolean)
+      return parts.length > 0 ? parts.join(' · ') : 'Technical indicators computed. RSI/MACD momentum analyzed.'
+    }
+    case 'social-sentiment': {
+      const score = out.sentiment_score != null ? `${Number(out.sentiment_score).toFixed(0)}%` : null
+      const label = (out.sentiment_label as string) || (out.overall as string)
+      const posM = out.positive_mentions ? `+${out.positive_mentions} bullish` : null
+      const parts = [score ? `Sentiment: ${score}` : null, label, posM].filter(Boolean)
+      return parts.length > 0 ? parts.join(' · ') : 'Social sentiment analyzed across platforms.'
+    }
+    case 'defi-yields': {
+      const topYield = out.top_apy ? `Top APY: ${Number(out.top_apy).toFixed(2)}%` : null
+      const poolCount = out.pool_count || (Array.isArray(out.pools) ? out.pools.length : null)
+      const parts = [topYield, poolCount ? `${poolCount} pools scanned` : null].filter(Boolean)
+      return parts.length > 0 ? parts.join(' · ') : 'DeFi yield pools scanned. APY and TVL data extracted.'
+    }
     case 'web-intel':
-      return 'Web research finished. Extracted relevant news and aggregated macro intelligence.'
+      return 'Web intelligence gathered. News and market narratives aggregated.'
     case 'document-digest':
-      return 'Synthesized PDF document/whitepaper. Generated smart brief outline.'
+      return 'Document synthesized. Key insights extracted into structured brief.'
     case 'dca-executor':
-      return 'Binance dollar-cost averaging simulations complete. Cost-basis schedules calculated.'
-    case 'polymarket-pulse':
-      return 'Extracted Polymarket odds. Analyzed volume and prediction sentiment.'
+      return 'DCA simulation complete. Cost-basis schedules and entry targets calculated.'
+    case 'polymarket-pulse': {
+      const count = Array.isArray(out.markets) ? out.markets.length : out.market_count
+      return count ? `${count} prediction markets analyzed. Probability shifts identified.` : 'Polymarket odds extracted and volume analyzed.'
+    }
     case 'nft-floor-watch':
-      return 'Floor stats retrieved from OpenSea. Synced collection floor price details.'
+      return 'NFT floor stats retrieved. Collection volume and floor price changes tracked.'
     case 'report-composer':
-      return 'Final report generated and published. Integrated inputs from all preceding agents.'
-    case 'email-sender':
-      return 'Email alert dispatched successfully via Resend API.'
-    case 'telegram-sender':
-      return 'Alert telemetry sent to Telegram chat successfully.'
+    case 'report-composer-fast':
+      return 'Final report generated. All agent outputs integrated and published.'
+    // Notification agents — show graceful status
+    case 'email-sender': {
+      if (out.warning) return `Email: ${out.warning}`
+      return out.ok ? 'Email alert dispatched successfully.' : 'Email delivery attempted.'
+    }
+    case 'telegram-sender': {
+      if (out.warning) return `Telegram: ${out.warning}`
+      return out.ok ? 'Telegram alert dispatched successfully.' : 'Telegram delivery attempted.'
+    }
     default:
-      return 'Outputs recorded in database.'
+      return 'Task outputs recorded in database.'
   }
 }
+
 
 function getEventPhase(type: string): WorkflowTimelineEvent['phase'] {
   if (type === 'workflow.created') return 'create'
@@ -157,11 +180,14 @@ export function buildWorkflowViewState(
   steps: DbNode[],
   escrowEvents: EscrowEvent[],
   agents: Skill[],
-  events: WorkflowEvent[] = []
+  events: WorkflowEvent[] = [],
+  client?: { identityTokenId: string | null; reputationScore: number | null },
 ): WorkflowViewState {
-  // Map overall status
+  // Map overall status → 6 UX stages
   let overallStatus: WorkflowViewState['overallStatus'] = 'running'
-  if (workflow.status === 'planning' || workflow.status === 'awaiting_fund' || workflow.status === 'funding') {
+  if (workflow.status === 'queued' || workflow.status === 'awaiting_fund' || workflow.status === 'funding') {
+    overallStatus = 'thinking'
+  } else if (workflow.status === 'planning') {
     overallStatus = 'planning'
   } else if (workflow.status === 'settling' || workflow.status === 'finalizing') {
     overallStatus = 'verifying'
@@ -199,7 +225,32 @@ export function buildWorkflowViewState(
     const agentSkill = agents.find((a) => a.id === node.skillId)
     const skillName = agentSkill?.name || node.kind || 'unknown'
     const agentName = (agentSkill?.manifest as Record<string, unknown> | null)?.display_name as string || AGENT_NAMES[skillName] || skillName
-    const agentAddress = getAgentAddress(skillName)
+    // Real ERC-8004 identity minted for this skill (all seeded skills have
+    // one). This replaces the old fabricated `agentAddress`, which was just
+    // a hash of the skill name dressed up as an on-chain address — the UI
+    // rendered it as a "verified identity", which it never was.
+    const agentTokenId = agentSkill?.agentTokenId ?? null
+    // Same precedence as lib/agents/registry.ts: an explicit `price_override`
+    // wins over `cost_credits`. Reading only `cost_credits` here made every
+    // repriced skill show a blank price in the UI.
+    const manifest = agentSkill?.manifest as Record<string, unknown> | null
+    // `cost_credits` is stored as a JSON string on some rows and a number on
+    // others, so it must be coerced rather than type-checked — a
+    // `typeof === 'number'` guard here silently blanked the price for every
+    // skill written by the repricing script.
+    const num = (v: unknown): number | null => {
+      if (v === undefined || v === null || v === '') return null
+      const n = typeof v === 'number' ? v : parseFloat(String(v))
+      return Number.isFinite(n) ? n : null
+    }
+    const override = num(manifest?.price_override)
+    const costCredits = num(manifest?.cost_credits)
+    const pricePerCall =
+      override !== null
+        ? override.toFixed(2)
+        : costCredits !== null
+          ? (costCredits / 100).toFixed(2)
+          : null
 
     let outputSummary: string | undefined
     let errorMessage: string | undefined
@@ -214,8 +265,10 @@ export function buildWorkflowViewState(
     return {
       id: node.id,
       label: node.label,
-      agentAddress,
       agentName,
+      agentSlug: agentSkill?.name ?? skillName,
+      agentTokenId,
+      pricePerCall,
       status,
       startedAt: node.startedAt?.toISOString(),
       completedAt: node.completedAt?.toISOString(),
@@ -225,7 +278,13 @@ export function buildWorkflowViewState(
     }
   })
 
-  const reputationDelta = overallStatus === 'complete' ? 95 : undefined
+  // `reputationDelta` used to be hardcoded to 95 on every completed run —
+  // a number with no source, rendered to users as if it were an on-chain
+  // score. The real ERC-8004 signal is the reputation feedback tx, which
+  // the caller can read from `erc8183.reputationTx`; per-agent scores come
+  // from the registry via /api/skills. Left undefined until something
+  // real backs it.
+  const reputationDelta: number | undefined = undefined
 
   const hasErc8183Trail = !!(
     workflow.erc8183JobId ||
@@ -284,6 +343,7 @@ export function buildWorkflowViewState(
     steps: workflowSteps,
     events: timelineEvents,
     reputationDelta,
+    client,
     completedAt,
     erc8183,
   }

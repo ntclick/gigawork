@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
-import { users, workflows, skills, deployments, raffles, creditLedger, nanopaymentEvents } from '@/lib/db/schema'
+import { users, workflows, skills, deployments, raffles, topupDeposits, nanopaymentEvents } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { OrbitportSDK } from '@spacecomputer-io/orbitport-sdk-ts'
 
@@ -10,7 +10,8 @@ interface SystemStatsResponse {
   success: boolean
   stats: {
     totalUsers: number
-    totalCredits: number
+    /** Sum of all users' spendable USDC vault balances. */
+    totalVaultUsdc: string
     totalWorkflows: number
     completedWorkflows: number
     totalUSDCVolume: string
@@ -45,7 +46,7 @@ export async function GET() {
     success: true,
     stats: {
       totalUsers: 1,
-      totalCredits: 100,
+      totalVaultUsdc: '0.00',
       totalWorkflows: 1,
       completedWorkflows: 1,
       totalUSDCVolume: '0.00',
@@ -67,7 +68,7 @@ export async function GET() {
       (async () => {
         const [
           usersCountRes,
-          totalCreditsRes,
+          totalVaultUsdcRes,
           workflowsCountRes,
           completedWorkflowsRes,
           commerceVolumeRes,
@@ -80,7 +81,7 @@ export async function GET() {
           recentActivity,
         ] = await Promise.all([
           db.select({ count: sql<number>`count(*)::int` }).from(users).catch(() => []),
-          db.select({ sum: sql<number>`sum(${users.credits})::int` }).from(users).catch(() => []),
+          db.select({ sum: sql<string>`coalesce(sum(${users.usdcBalance}::numeric), 0)` }).from(users).catch(() => []),
           db.select({ count: sql<number>`count(*)::int` }).from(workflows).catch(() => []),
           db.select({ count: sql<number>`count(*)::int` }).from(workflows).where(eq(workflows.status, 'completed')).catch(() => []),
           db.select({ sum: sql<string>`coalesce(sum(${workflows.erc8183BudgetUsdc}::numeric), 0)` }).from(workflows).catch(() => []),
@@ -104,22 +105,25 @@ export async function GET() {
           .orderBy(sql`${nanopaymentEvents.createdAt} desc`)
           .limit(20)
           .catch(() => []),
+          // Recent real money movement — deposits into user vaults.
+          // (Was reading credit_ledger, which the live system no longer
+          // writes to, so this panel showed only pre-migration history.)
           db.select({
-            id: creditLedger.id,
-            reason: creditLedger.reason,
-            delta: creditLedger.delta,
-            createdAt: creditLedger.createdAt,
+            id: topupDeposits.id,
+            reason: topupDeposits.reason,
+            amountUsdc: topupDeposits.amountUsdc,
+            createdAt: topupDeposits.createdAt,
             userWallet: users.wallet,
           })
-          .from(creditLedger)
-          .leftJoin(users, eq(creditLedger.userId, users.id))
-          .orderBy(sql`${creditLedger.createdAt} desc`)
+          .from(topupDeposits)
+          .leftJoin(users, eq(topupDeposits.userId, users.id))
+          .orderBy(sql`${topupDeposits.createdAt} desc`)
           .limit(10)
           .catch(() => []),
         ])
 
         const totalUsers = usersCountRes[0]?.count ?? 1
-        const totalCredits = totalCreditsRes[0]?.sum ?? 100
+        const totalVaultUsdc = parseFloat(totalVaultUsdcRes[0]?.sum ?? '0').toFixed(2)
         const totalWorkflows = workflowsCountRes[0]?.count ?? 1
         const completedWorkflows = completedWorkflowsRes[0]?.count ?? 1
         const totalUSDCVolume = parseFloat(commerceVolumeRes[0]?.sum ?? '0')
@@ -138,7 +142,7 @@ export async function GET() {
           success: true,
           stats: {
             totalUsers,
-            totalCredits,
+            totalVaultUsdc,
             totalWorkflows,
             completedWorkflows,
             totalUSDCVolume: totalUSDCVolume.toFixed(2),

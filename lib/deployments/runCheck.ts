@@ -7,6 +7,7 @@ import { withDbRetry } from '@/lib/db/retry'
 import { deployments, nodes, workflows, skills, messages, users, deploymentChecks } from '@/lib/db/schema'
 import { streamBrain } from '@/lib/ai/brain'
 import { type SignalThesis } from '@/lib/types/thesis'
+import { sendDeployNotification, formatCheckResultNotification, type NotifyChannel } from '@/lib/notifications/send'
 
 const PROVIDER = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
 
@@ -30,7 +31,7 @@ function resolveProvider() {
       return {
         apiKey: process.env.OPENAI_API_KEY ?? '',
         baseURL: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
-        model: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini',
+        model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
       }
   }
 }
@@ -317,6 +318,40 @@ export async function runCheck(deploymentId: string) {
       .returning(),
     { label: 'runCheck:insert-check' }
   )
+
+  // 11. Dispatch notification (fire-and-forget, never throws)
+  const channels = (dep.notifyChannels ?? 'none') as NotifyChannel
+  if (channels !== 'none') {
+    // `??` binds tighter than `?:`, so the original
+    //   NEXT_PUBLIC_APP_URL ?? VERCEL_URL ? `https://${VERCEL_URL}` : fallback
+    // tested "either is set" and then ALWAYS used VERCEL_URL — meaning
+    // NEXT_PUBLIC_APP_URL was never honoured, and if only it was set the
+    // report links in notification emails became `https://undefined/...`.
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://gigawork.ai')
+    const workflowUrl = `${appUrl}/workflow/${dep.workflowId}`
+
+    const notifPayload = formatCheckResultNotification({
+      prompt: wf.prompt,
+      thesis,
+      note,
+      nodeResults,
+      workflowUrl,
+      checkedAt: insertedCheck.checkedAt,
+    })
+
+    sendDeployNotification({
+      userId: dep.userId,
+      channels,
+      overrideEmail: dep.notifyEmail ?? null,
+      overrideChatId: dep.notifyTelegramId ?? null,
+      ...notifPayload,
+      reportUrl: workflowUrl,
+    }).catch((e) => {
+      console.error('[runCheck] notification dispatch error:', e instanceof Error ? e.message : e)
+    })
+  }
 
   return {
     workflow: {

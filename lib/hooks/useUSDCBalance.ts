@@ -1,12 +1,11 @@
 'use client'
 
 /**
- * useUSDCBalance — reads the user's on-chain USDC balance via viem.
+ * useUSDCBalance — reads the user's Dedicated Escrow Vault & on-chain USDC balance.
  *
- * Browser-safe: only uses NEXT_PUBLIC_* env. Reads `balanceOf(address)` from the
- * USDC contract every 20s + on `gw:credits-changed` event so the pill in
- * MainHeader stays fresh after a top-up or trade. Falls back to 0 cleanly when
- * RPC is unavailable so the UI never shows a broken state.
+ * Browser-safe: reads vault balance from /api/me + on-chain balanceOf(address)
+ * from the USDC contract on Arc Testnet. Seamless fallback so the UI never
+ * shows a broken 0 balance or RPC timeout state.
  */
 import { useEffect, useState } from 'react'
 import { createPublicClient, http, type Address } from 'viem'
@@ -32,10 +31,14 @@ const erc20Abi = [
 const client = createPublicClient({ chain: arcChain, transport: http(ARC_RPC) })
 
 export interface USDCBalanceState {
-  /** Human-readable amount (string with up to 4 decimals) */
+  /** Human-readable amount (string with up to 2 decimals) */
   formatted: string
   /** Raw integer balance in USDC base units (6 decimals) */
   raw: bigint
+  /** Dedicated vault top-up balance from DB (user's spendable credit) */
+  vaultBalance: number | null
+  /** On-chain EOA balance from Arc RPC */
+  onChainBalance: number
   /** True while first fetch is pending */
   loading: boolean
   /** Last error message, if any */
@@ -45,8 +48,7 @@ export interface USDCBalanceState {
 }
 
 export function useUSDCBalance(address?: string | null): USDCBalanceState {
-  // Seed from localStorage so the pill shows last-known balance instantly
-  // on mount — eliminates the "0 USDC" flash while balanceOf RPC roundtrips.
+  const [vaultBal, setVaultBal] = useState<number | null>(null)
   const [raw, setRaw] = useState<bigint>(() => {
     const cached = readUSDCCache(address)
     return cached ? BigInt(cached.raw) : BigInt(0)
@@ -56,21 +58,32 @@ export function useUSDCBalance(address?: string | null): USDCBalanceState {
   const [tick, setTick] = useState(0)
   const refetch = () => setTick((t) => t + 1)
 
+  // 1. Fetch Dedicated Vault USDC Balance from /api/me
   useEffect(() => {
     if (!address) {
-      setTimeout(() => {
-        setRaw(BigInt(0))
-        setLoading(false)
-      }, 0)
+      setVaultBal(null)
       return
     }
-    // Hydrate from cache when address changes (account flip in extension).
+    fetch('/api/me', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j && typeof j.usdcBalance === 'number') {
+          setVaultBal(j.usdcBalance)
+        }
+      })
+      .catch(() => {})
+  }, [address, tick])
+
+  // 2. Fetch On-Chain EOA USDC Balance via RPC
+  useEffect(() => {
+    if (!address) {
+      setRaw(BigInt(0))
+      setLoading(false)
+      return
+    }
     const cached = readUSDCCache(address)
-    setTimeout(() => {
-      if (cached) setRaw(BigInt(cached.raw))
-      setLoading(!cached)
-      setError(null)
-    }, 0)
+    if (cached) setRaw(BigInt(cached.raw))
+
     let cancelled = false
     client
       .readContract({
@@ -96,11 +109,11 @@ export function useUSDCBalance(address?: string | null): USDCBalanceState {
     }
   }, [address, tick])
 
-  // Auto-refresh every 20s + on credit-change event
+  // Auto-refresh every 15s + on credit-change event
   useEffect(() => {
     if (!address) return
     const onBust = () => refetch()
-    const i = setInterval(refetch, 20_000)
+    const i = setInterval(refetch, 15_000)
     window.addEventListener('gw:credits-changed', onBust)
     window.addEventListener('focus', onBust)
     return () => {
@@ -110,16 +123,29 @@ export function useUSDCBalance(address?: string | null): USDCBalanceState {
     }
   }, [address])
 
-  return { raw, formatted: formatUSDC(raw), loading, error, refetch }
+  // `vaultBalance` (real per-user custodial vault, lib/payments/vault.ts —
+  // the spendable balance) and `onChainBalance` (the user's own external
+  // EOA wallet — informational: funds available to top up FROM, not
+  // itself spendable) are two genuinely different numbers and must not
+  // be added together — they used to be summed into one misleading
+  // `formatted` figure (and defaulted to a fake "+$10" while vault was
+  // loading). `formatted` now reflects onChainBalance only, matching
+  // what most consumers of it actually display (e.g. "how much USDC is
+  // in your wallet to fund a top-up with"). Callers that want the real
+  // vault balance should read `vaultBalance` directly (null while
+  // loading — render your own loading state, don't fall back to this).
+  const onChainBalance = Number(raw) / 10 ** USDC_DECIMALS
+  const vaultBalance = vaultBal  // null while loading — no fake default
+  const formatted = onChainBalance.toFixed(2)
+
+  return {
+    raw,
+    formatted,
+    vaultBalance,
+    onChainBalance,
+    loading: loading && vaultBal === null,
+    error,
+    refetch,
+  }
 }
 
-function formatUSDC(raw: bigint): string {
-  if (raw === BigInt(0)) return '0'
-  const divisor = BigInt(10) ** BigInt(USDC_DECIMALS)
-  const whole = raw / divisor
-  const frac = raw % divisor
-  if (frac === BigInt(0)) return whole.toLocaleString()
-  // up to 4 visible decimals, trimmed
-  const fracStr = frac.toString().padStart(USDC_DECIMALS, '0').slice(0, 4).replace(/0+$/, '')
-  return `${whole.toLocaleString()}${fracStr ? '.' + fracStr : ''}`
-}

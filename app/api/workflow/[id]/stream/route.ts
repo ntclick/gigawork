@@ -136,7 +136,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
           .set({ status: 'planning' })
           .where(eq(workflows.id, id))
         // Small pause before retry
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+        await new Promise((r) => setTimeout(r, 300))
         // Re-claim as running for next attempt
         await db
           .update(workflows)

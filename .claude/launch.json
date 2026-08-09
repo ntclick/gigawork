@@ -5,7 +5,7 @@
       "name": "gigawork-v2",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
-      "port": 3000
+      "port": 5555
     }
   ]
 }

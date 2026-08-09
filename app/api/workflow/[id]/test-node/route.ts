@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { messages, nodes, users, workflows } from '@/lib/db/schema'
 import { getCurrentUser } from '@/lib/auth/session'
+import { decryptProfileSecrets } from '@/lib/notifications/secrets'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
 
 /**
@@ -68,7 +69,7 @@ export async function POST(
   // Inject user profile for notification skills (same as in brain tools)
   const inputCopy = { ...input }
   if (skillName === 'email-sender' || skillName === 'telegram-sender') {
-    const [profile] = await db
+    const [profileRow] = await db
       .select({
         notifyEmail: users.notifyEmail,
         emailApiKey: users.emailApiKey,
@@ -79,6 +80,8 @@ export async function POST(
       .from(users)
       .where(eq(users.id, me.id))
       .limit(1)
+    // Secrets are encrypted at rest — see lib/notifications/secrets.ts.
+    const profile = decryptProfileSecrets(profileRow)
     if (skillName === 'email-sender') {
       if (!inputCopy.to && profile?.notifyEmail) inputCopy.to = profile.notifyEmail
       if (!inputCopy.api_key && profile?.emailApiKey) inputCopy.api_key = profile.emailApiKey

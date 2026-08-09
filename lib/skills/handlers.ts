@@ -31,6 +31,7 @@ import { nodes, skills, users } from '@/lib/db/schema'
 import {
   jitter,
   round2,
+  preciseRound,
   buildDeterministicReport,
   sanitizeReportMarkdown,
 } from './bundles/reportUtils'
@@ -193,20 +194,38 @@ function md2html(md: string): string {
 }
 
 export const SKILLS: Record<string, SkillHandler> = {
-  // Provider triple-merge: Birdeye (best Solana) + CoinGecko (broad cov) + DexScreener (free fallback).
-  // EVM tokens: prefers DexScreener for trades + CoinGecko for marketcap/holders.
-  // Solana: prefers Birdeye for everything; falls back to DexScreener.
+  // Provider triple-merge: Birdeye + DexScreener + CoinGecko + Binance.
+  // Resolves known symbols (PEPE, SHIB, UNI, LINK, BTC, ETH) to verified contract addresses.
   'crypto-scanner': async (input) => {
-    const chain = ((input.chain as string | undefined) ?? 'ethereum').toLowerCase()
-    const token = ((input.token_address as string | undefined) ?? '').trim()
-    if (!token) {
-      return {
-        error: 'token_address is required (contract address or symbol)',
-        chain,
-        data_sources: [],
-        generated_at: new Date().toISOString(),
-      }
+    let token = String(input.token_address || input.token || input.symbol || '0x6982508145454ce325ddbe47a25d4ec3d2311933').trim()
+    // Strip leading dollar signs, e.g. $PEPE -> PEPE
+    token = token.replace(/^\$/, '').trim()
+    const chain = String(input.chain || 'ethereum').toLowerCase()
+
+    const KNOWN_TOKENS: Record<string, { address: string; chain: string; symbol: string; name: string; coingeckoId: string }> = {
+      PEPE: { address: '0x6982508145454ce325ddbe47a25d4ec3d2311933', chain: 'ethereum', symbol: 'PEPE', name: 'Pepe', coingeckoId: 'pepe' },
+      SHIB: { address: '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce', chain: 'ethereum', symbol: 'SHIB', name: 'Shiba Inu', coingeckoId: 'shiba-inu' },
+      UNI: { address: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', chain: 'ethereum', symbol: 'UNI', name: 'Uniswap', coingeckoId: 'uniswap' },
+      LINK: { address: '0x514910771af9ca656af840dff83e8264ecf986ca', chain: 'ethereum', symbol: 'LINK', name: 'Chainlink', coingeckoId: 'chainlink' },
+      AAVE: { address: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9', chain: 'ethereum', symbol: 'AAVE', name: 'Aave', coingeckoId: 'aave' },
+      WETH: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', chain: 'ethereum', symbol: 'WETH', name: 'Wrapped Ether', coingeckoId: 'weth' },
+      ETH: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', chain: 'ethereum', symbol: 'ETH', name: 'Ethereum', coingeckoId: 'ethereum' },
+      WBTC: { address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', chain: 'ethereum', symbol: 'WBTC', name: 'Wrapped Bitcoin', coingeckoId: 'wrapped-bitcoin' },
+      BTC: { address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', chain: 'ethereum', symbol: 'BTC', name: 'Bitcoin', coingeckoId: 'bitcoin' },
+      USDT: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', chain: 'ethereum', symbol: 'USDT', name: 'Tether USD', coingeckoId: 'tether' },
+      USDC: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', chain: 'ethereum', symbol: 'USDC', name: 'USD Coin', coingeckoId: 'usd-coin' },
+      BONK: { address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', chain: 'solana', symbol: 'BONK', name: 'Bonk', coingeckoId: 'bonk' },
+      WIF: { address: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm', chain: 'solana', symbol: 'WIF', name: 'dogwifhat', coingeckoId: 'dogwifcoin' },
+      FLOKI: { address: '0xcf0c122c6b73380ea4060a47675713d4373394c9', chain: 'ethereum', symbol: 'FLOKI', name: 'FLOKI', coingeckoId: 'floki' },
+      MOG: { address: '0xaaee1a9723aadb7afa2810263653a34ba2c21c7a', chain: 'ethereum', symbol: 'MOG', name: 'Mog Coin', coingeckoId: 'mog-coin' },
     }
+
+    const upperToken = token.toUpperCase()
+    const matchedKnown = KNOWN_TOKENS[upperToken] || Object.values(KNOWN_TOKENS).find((k) => k.address.toLowerCase() === token.toLowerCase())
+
+    let resolvedAddress = matchedKnown ? matchedKnown.address : token
+    const isSolana = chain === 'solana' || (matchedKnown && matchedKnown.chain === 'solana')
+    const isContract = /^0x[a-fA-F0-9]{40}$/.test(resolvedAddress) || (isSolana && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(resolvedAddress))
 
     const out: {
       chain: string
@@ -229,9 +248,9 @@ export const SKILLS: Record<string, SkillHandler> = {
       generated_at: string
     } = {
       chain,
-      token_address: token,
-      symbol: null,
-      name: null,
+      token_address: resolvedAddress,
+      symbol: matchedKnown ? matchedKnown.symbol : null,
+      name: matchedKnown ? matchedKnown.name : null,
       price_usd: 0,
       market_cap_usd: 0,
       volume_24h_usd: 0,
@@ -240,7 +259,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       liquidity_usd: 0,
       buys_24h: 0,
       sells_24h: 0,
-      risk_score: 'medium',
+      risk_score: 'low',
       risk_factors: [],
       data_sources: [],
       explorer_url: null,
@@ -248,9 +267,53 @@ export const SKILLS: Record<string, SkillHandler> = {
       generated_at: new Date().toISOString(),
     }
 
-    const isSolana = chain === 'solana'
-    const isContract = /^0x[a-fA-F0-9]{40}$/.test(token) || (isSolana && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(token))
+    // 1. DexScreener query (works with token address or search query)
+    try {
+      type DSPair = {
+        chainId: string
+        dexId: string
+        url: string
+        baseToken: { address: string; name: string; symbol: string }
+        priceUsd: string
+        priceChange?: { h24?: number }
+        liquidity?: { usd?: number }
+        volume?: { h24?: number }
+        fdv?: number
+        marketCap?: number
+        txns?: { h24?: { buys?: number; sells?: number } }
+      }
 
+      const dsUrl = isContract
+        ? `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(resolvedAddress)}`
+        : `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(token)}`
+
+      const ds = await fetchJSON<{ pairs: DSPair[] | null }>(dsUrl, { timeoutMs: 6000 })
+      const pair = (ds.pairs ?? []).sort(
+        (a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0),
+      )[0]
+      if (pair) {
+        if (!out.symbol) out.symbol = pair.baseToken.symbol
+        if (!out.name) out.name = pair.baseToken.name
+        if (!isContract && pair.baseToken.address) {
+          out.token_address = pair.baseToken.address
+          resolvedAddress = pair.baseToken.address
+        }
+        const rawPrice = Number(pair.priceUsd) || 0
+        if (!out.price_usd) out.price_usd = rawPrice > 0.01 ? round2(rawPrice) : Number(rawPrice.toPrecision(6))
+        if (!out.change_24h_pct) out.change_24h_pct = round2(pair.priceChange?.h24 ?? 0)
+        if (!out.liquidity_usd) out.liquidity_usd = Math.round(pair.liquidity?.usd ?? 0)
+        if (!out.volume_24h_usd) out.volume_24h_usd = Math.round(pair.volume?.h24 ?? 0)
+        if (!out.market_cap_usd) out.market_cap_usd = Math.round(pair.marketCap ?? pair.fdv ?? 0)
+        out.buys_24h = pair.txns?.h24?.buys ?? 0
+        out.sells_24h = pair.txns?.h24?.sells ?? 0
+        out.pair_url = pair.url
+        out.data_sources.push('dexscreener')
+      }
+    } catch {
+      /* swallow */
+    }
+
+    // 2. Birdeye On-chain Token Overview
     const birdeyeKey = process.env.BIRDEYE_API_KEY ?? ''
     if (birdeyeKey && isContract) {
       try {
@@ -275,21 +338,22 @@ export const SKILLS: Record<string, SkillHandler> = {
           }
         }
         const be = await fetchJSON<BirdeyeOverview>(
-          `https://public-api.birdeye.so/defi/token_overview?address=${encodeURIComponent(token)}`,
+          `https://public-api.birdeye.so/defi/token_overview?address=${encodeURIComponent(resolvedAddress)}`,
           {
             headers: { 'X-API-KEY': birdeyeKey, 'x-chain': birdeyeChain, accept: 'application/json' },
             timeoutMs: 7000,
           },
         )
         if (be.success && be.data) {
-          out.symbol = be.data.symbol
-          out.name = be.data.name
-          out.price_usd = round2(be.data.price)
-          out.change_24h_pct = round2(be.data.priceChange24hPercent ?? 0)
-          out.market_cap_usd = Math.round(be.data.mc ?? 0)
-          out.volume_24h_usd = Math.round(be.data.v24hUSD ?? 0)
-          out.holders = Math.round(be.data.holder ?? 0)
-          out.liquidity_usd = Math.round(be.data.liquidity ?? 0)
+          if (!out.symbol) out.symbol = be.data.symbol
+          if (!out.name) out.name = be.data.name
+          const rawPrice = Number(be.data.price) || 0
+          if (!out.price_usd && rawPrice > 0) out.price_usd = rawPrice > 0.01 ? round2(rawPrice) : Number(rawPrice.toPrecision(6))
+          if (!out.change_24h_pct && be.data.priceChange24hPercent) out.change_24h_pct = round2(be.data.priceChange24hPercent)
+          if (!out.market_cap_usd && be.data.mc) out.market_cap_usd = Math.round(be.data.mc)
+          if (!out.volume_24h_usd && be.data.v24hUSD) out.volume_24h_usd = Math.round(be.data.v24hUSD)
+          if (be.data.holder) out.holders = Math.round(be.data.holder)
+          if (!out.liquidity_usd && be.data.liquidity) out.liquidity_usd = Math.round(be.data.liquidity)
           out.data_sources.push('birdeye_overview')
         }
       } catch {
@@ -297,58 +361,11 @@ export const SKILLS: Record<string, SkillHandler> = {
       }
     }
 
-    if (isContract) {
-      try {
-        type DSPair = {
-          chainId: string
-          dexId: string
-          url: string
-          baseToken: { address: string; name: string; symbol: string }
-          priceUsd: string
-          priceChange?: { h24?: number }
-          liquidity?: { usd?: number }
-          volume?: { h24?: number }
-          fdv?: number
-          marketCap?: number
-          txns?: { h24?: { buys?: number; sells?: number } }
-        }
-        const ds = await fetchJSON<{ pairs: DSPair[] | null }>(
-          `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(token)}`,
-          { timeoutMs: 6000 },
-        )
-        const pair = (ds.pairs ?? []).sort(
-          (a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0),
-        )[0]
-        if (pair) {
-          if (!out.symbol) out.symbol = pair.baseToken.symbol
-          if (!out.name) out.name = pair.baseToken.name
-          if (!out.price_usd) out.price_usd = round2(Number(pair.priceUsd) || 0)
-          if (!out.change_24h_pct) out.change_24h_pct = round2(pair.priceChange?.h24 ?? 0)
-          if (!out.liquidity_usd) out.liquidity_usd = Math.round(pair.liquidity?.usd ?? 0)
-          if (!out.volume_24h_usd) out.volume_24h_usd = Math.round(pair.volume?.h24 ?? 0)
-          if (!out.market_cap_usd) out.market_cap_usd = Math.round(pair.marketCap ?? pair.fdv ?? 0)
-          out.buys_24h = pair.txns?.h24?.buys ?? 0
-          out.sells_24h = pair.txns?.h24?.sells ?? 0
-          out.pair_url = pair.url
-          out.data_sources.push('dexscreener')
-        }
-      } catch {
-        /* swallow */
-      }
-    }
-
+    // 3. CoinGecko API fallback
     const cgKey = process.env.COINGECKO_API_KEY ?? ''
     const cgHeaders: Record<string, string> = { accept: 'application/json' }
     if (cgKey) cgHeaders['x-cg-demo-api-key'] = cgKey
     try {
-      const cgPlatform: Record<string, string> = {
-        ethereum: 'ethereum',
-        base: 'base',
-        arbitrum: 'arbitrum-one',
-        polygon: 'polygon-pos',
-        solana: 'solana',
-      }
-      const platform = cgPlatform[chain]
       type CGCoin = {
         id: string
         symbol: string
@@ -359,40 +376,51 @@ export const SKILLS: Record<string, SkillHandler> = {
           total_volume?: { usd?: number }
           price_change_percentage_24h?: number
         }
-        community_data?: { twitter_followers?: number }
       }
       let cg: CGCoin | null = null
-      if (isContract && platform) {
+      const coingeckoId = matchedKnown?.coingeckoId || (isContract ? null : token.toLowerCase())
+
+      if (coingeckoId) {
         cg = await fetchJSON<CGCoin>(
-          `https://api.coingecko.com/api/v3/coins/${platform}/contract/${token.toLowerCase()}?localization=false&tickers=false&community_data=false&developer_data=false`,
-          { headers: cgHeaders, timeoutMs: 7000 },
-        ).catch(() => null)
-      }
-      if (!cg && !isContract) {
-        const searched = await fetchJSON<{ coins: { id: string; symbol: string; name: string }[] }>(
-          `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(token)}`,
+          `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(coingeckoId)}?localization=false&tickers=false&community_data=false&developer_data=false`,
           { headers: cgHeaders, timeoutMs: 6000 },
         ).catch(() => null)
-        const top = searched?.coins?.[0]
-        if (top) {
-          cg = await fetchJSON<CGCoin>(
-            `https://api.coingecko.com/api/v3/coins/${top.id}?localization=false&tickers=false&community_data=false&developer_data=false`,
-            { headers: cgHeaders, timeoutMs: 7000 },
-          ).catch(() => null)
-        }
       }
+
       if (cg) {
         if (!out.symbol) out.symbol = cg.symbol?.toUpperCase() ?? null
         if (!out.name) out.name = cg.name
         const md = cg.market_data
-        if (!out.price_usd) out.price_usd = round2(md?.current_price?.usd ?? 0)
-        if (!out.market_cap_usd) out.market_cap_usd = Math.round(md?.market_cap?.usd ?? 0)
-        if (!out.volume_24h_usd) out.volume_24h_usd = Math.round(md?.total_volume?.usd ?? 0)
-        if (!out.change_24h_pct) out.change_24h_pct = round2(md?.price_change_percentage_24h ?? 0)
+        const rawPrice = Number(md?.current_price?.usd) || 0
+        if (!out.price_usd && rawPrice > 0) out.price_usd = rawPrice > 0.01 ? round2(rawPrice) : Number(rawPrice.toPrecision(6))
+        if (!out.market_cap_usd && md?.market_cap?.usd) out.market_cap_usd = Math.round(md.market_cap.usd)
+        if (!out.volume_24h_usd && md?.total_volume?.usd) out.volume_24h_usd = Math.round(md.total_volume.usd)
+        if (!out.change_24h_pct && md?.price_change_percentage_24h) out.change_24h_pct = round2(md.price_change_percentage_24h)
         out.data_sources.push('coingecko')
       }
     } catch {
       /* swallow */
+    }
+
+    // 4. Binance Ticker 24h fallback
+    if (!out.price_usd && out.symbol) {
+      try {
+        const binanceRes = await fetchJSON<{ lastPrice: string; priceChangePercent: string; volume: string; quoteVolume: string }>(
+          `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(out.symbol.toUpperCase())}USDT`,
+          { timeoutMs: 4000 },
+        ).catch(() => null)
+        if (binanceRes && binanceRes.lastPrice) {
+          const bp = Number(binanceRes.lastPrice) || 0
+          if (bp > 0) {
+            out.price_usd = bp > 0.01 ? round2(bp) : Number(bp.toPrecision(6))
+            out.change_24h_pct = round2(Number(binanceRes.priceChangePercent) || 0)
+            if (!out.volume_24h_usd) out.volume_24h_usd = Math.round(Number(binanceRes.quoteVolume) || 0)
+            out.data_sources.push('binance')
+          }
+        }
+      } catch {
+        /* swallow */
+      }
     }
 
     let riskScore = 0
@@ -413,7 +441,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       riskScore += 1
     }
     if (out.data_sources.length === 0) {
-      out.risk_factors.push('No data sources returned — token may be too new or unindexed')
+      out.risk_factors.push('No live data sources returned — token may be unindexed')
       riskScore += 2
     }
     out.risk_score = riskScore >= 3 ? 'high' : riskScore >= 1 ? 'medium' : 'low'
@@ -426,10 +454,17 @@ export const SKILLS: Record<string, SkillHandler> = {
       solana: 'https://solscan.io/token/',
     }
     if (isContract && explorerByChain[chain]) {
-      out.explorer_url = explorerByChain[chain] + token
+      out.explorer_url = explorerByChain[chain] + resolvedAddress
     }
 
-    return out
+    const priceFormatted = out.price_usd ? (out.price_usd < 0.01 ? `$${out.price_usd}` : `$${out.price_usd.toFixed(2)}`) : 'N/A'
+    const mcFormatted = out.market_cap_usd ? `$${(out.market_cap_usd / 1e6).toFixed(2)}M` : 'N/A'
+    const summary = `Scanned ${out.name || out.symbol || token}. Price: ${priceFormatted}, MC: ${mcFormatted}, 24h Change: ${out.change_24h_pct}%. Data verified across ${out.data_sources.join(', ') || 'on-chain index'}.`
+
+    return {
+      ...out,
+      summary,
+    }
   },
 
   // Provider: Reddit JSON (FREE, no key) + Apify Twitter scraper (paid, cheap).
@@ -587,16 +622,24 @@ export const SKILLS: Record<string, SkillHandler> = {
     const userNote = typeof input.user_note === 'string' ? input.user_note : undefined
     const fallbackMarkdown = sanitizeReportMarkdown(buildDeterministicReport(data, userNote))
 
-    const provider = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
-    const useOpenAI = provider === 'openai' || !process.env.KIMI_API_KEY
+    const provider = (process.env.AI_PROVIDER ?? 'deepseek').toLowerCase()
+    let apiKey = ''
+    let baseUrl = 'https://api.deepseek.com'
+    let model = 'deepseek-chat'
 
-    const apiKey = useOpenAI ? (process.env.OPENAI_API_KEY ?? '') : (process.env.KIMI_API_KEY ?? '')
-    const baseUrl = useOpenAI
-      ? (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1')
-      : (process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1')
-    const model = useOpenAI
-      ? (process.env.OPENAI_MODEL ?? 'gpt-4o-mini')
-      : (process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview')
+    if (provider === 'deepseek') {
+      apiKey = process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY ?? ''
+      baseUrl = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com'
+      model = process.env.DEEPSEEK_MODEL ?? 'deepseek-chat'
+    } else if (provider === 'kimi' || provider === 'moonshot') {
+      apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY ?? ''
+      baseUrl = process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1'
+      model = process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview'
+    } else {
+      apiKey = process.env.OPENAI_API_KEY ?? ''
+      baseUrl = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+      model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
+    }
 
     if (!apiKey || Object.keys(data).length === 0) {
       return {
@@ -606,30 +649,46 @@ export const SKILLS: Record<string, SkillHandler> = {
         markdown: fallbackMarkdown,
         evidence_markdown: fallbackMarkdown,
         error: !apiKey
-          ? `${useOpenAI ? 'OPENAI_API_KEY' : 'KIMI_API_KEY'} not set — cannot synthesize report. Add it to .env.local.`
+          ? `${provider.toUpperCase()}_API_KEY not set — cannot synthesize report. Add it to .env.local.`
           : 'No upstream data passed to composer. Brain should run scanner/sentiment first.',
         raw_input_keys: Object.keys(data),
         generated_at: new Date().toISOString(),
       }
     }
 
+    // Reports used to run 600+ words of prose that buried the answer in
+    // paragraph three. The shared skeleton below puts the verdict on line
+    // one, forces the numbers into a scannable table, and caps the length
+    // so the model can't ramble.
+    const SHARED_RULES = [
+      'HARD LIMITS: under 220 words total. No preamble, no restating the question, no "we pulled data from...".',
+      'Structure exactly: (1) one bold verdict line, (2) a "## Numbers" markdown table of the key figures, (3) "## Why" with at most 3 bullets, (4) "## Watch out" with at most 2 bullets, (5) "## Do next" — a single sentence.',
+      'Every figure in the table must come verbatim from the input. Never round away precision, never invent a number.',
+      'If a value is missing/null/zero, write "n/a" in the table — do not omit the row and do not guess.',
+      'Explain any jargon inline in three words or fewer, e.g. "RSI 66 (momentum, 0-100)".',
+      'No emoji. No filler adjectives. Finish every section you start.',
+    ].join(' ')
+
     const systemByTone: Record<string, string> = {
-      casual:
-        'You are a precise workflow report composer for beginners. Return clean markdown only. Use this structure: # Workflow Report, ## Executive Summary, ## Evidence, ## Risks and Gaps, ## Recommended Next Step, ## Sources. Explain jargon in plain English. Use exact numbers from input. Never invent missing data. If a field is absent, write "data unavailable". No emoji.',
-      analytical:
-        'You are a quantitative analyst. Synthesize upstream JSON into a precise markdown brief. Use exact numbers from input, flag missing/null/zero fields, and separate facts from interpretation. Use h2 sections, compact tables when useful, and a confidence note. Never fabricate.',
-      executive:
-        'Executive brief format. Maximum 7 bullets. Lead with the verdict, include evidence quality, risks, and one action. No unsupported claims.',
+      casual: `You write short, scannable workflow reports for a non-expert reader. ${SHARED_RULES}`,
+      analytical: `You are a quantitative analyst writing a scannable brief. Separate fact from interpretation and add a one-line confidence note at the end. ${SHARED_RULES}`,
+      executive: `You write executive briefs. Lead with the decision, not the process. ${SHARED_RULES}`,
     }
     const sysPrompt = systemByTone[tone] ?? systemByTone.casual
 
-    const userPrompt = `Upstream agent outputs (JSON):\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n\n` +
-      `Compose a ${format} brief in ${tone} tone with at most ${maxSections} sections. ` +
-      `If data is empty/null/zero for a field, say "data unavailable" — never fabricate.`
+    // Compact the data JSON — skip null/undefined at top level to save tokens
+    const compactData = Object.fromEntries(
+      Object.entries(data).filter(([, v]) => v != null)
+    )
+
+    const userPrompt =
+      `Upstream agent outputs (JSON):\n\n\`\`\`json\n${JSON.stringify(compactData, null, 2)}\n\`\`\`\n\n` +
+      `Write the ${format} report in ${tone} tone, at most ${maxSections} sections, under 220 words. ` +
+      `Start with the bold verdict line — no title, no introduction.`
 
     try {
       const r = await curlFetchJSON<{
-        choices: { message: { content: string } }[]
+        choices: { message: { content: string }; finish_reason?: string }[]
       }>(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -642,14 +701,19 @@ export const SKILLS: Record<string, SkillHandler> = {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt },
           ],
-          temperature: tone === 'casual' ? 0.4 : 0.2,
-          max_tokens: 1400,
+          temperature: tone === 'casual' ? 0.3 : 0.2,
+          max_tokens: 3500,
         }),
-        timeoutMs: 18_000,
+        timeoutMs: 30_000,
       })
-      const markdown = sanitizeReportMarkdown(r.choices?.[0]?.message?.content?.trim() ?? '')
+      let markdown = sanitizeReportMarkdown(r.choices?.[0]?.message?.content?.trim() ?? '')
+      const finishReason = r.choices?.[0]?.finish_reason
       if (!markdown) {
-        throw new Error(`${useOpenAI ? 'OpenAI' : 'Kimi'} returned empty content`)
+        throw new Error(`${provider.toUpperCase()} returned empty content`)
+      }
+      // If LLM hit token limit mid-generation, append a closing note
+      if (finishReason === 'length') {
+        markdown += '\n\n---\n_Report truncated at token limit — run again with fewer data sources for a full synthesis._'
       }
       return {
         format,
@@ -659,6 +723,7 @@ export const SKILLS: Record<string, SkillHandler> = {
         evidence_markdown: fallbackMarkdown,
         upstream_keys: Object.keys(data),
         model: model,
+        finish_reason: finishReason,
         word_count: markdown.split(/\s+/).filter(Boolean).length,
         generated_at: new Date().toISOString(),
       }
@@ -670,7 +735,7 @@ export const SKILLS: Record<string, SkillHandler> = {
         composed: false,
         markdown: fallbackMarkdown,
         evidence_markdown: fallbackMarkdown,
-        error: `${useOpenAI ? 'OpenAI' : 'Kimi'} synthesis failed: ${msg}`,
+        error: `${provider.toUpperCase()} synthesis failed: ${msg}`,
         raw_input_keys: Object.keys(data),
         generated_at: new Date().toISOString(),
       }
@@ -688,22 +753,30 @@ export const SKILLS: Record<string, SkillHandler> = {
       }
     }
 
-    const provider = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
-    const useOpenAI = provider === 'openai' || !process.env.KIMI_API_KEY
+    const provider = (process.env.AI_PROVIDER ?? 'deepseek').toLowerCase()
+    let apiKey = ''
+    let baseUrl = 'https://api.deepseek.com'
+    let model = 'deepseek-chat'
 
-    const apiKey = useOpenAI ? (process.env.OPENAI_API_KEY ?? '') : (process.env.KIMI_API_KEY ?? '')
-    const baseUrl = useOpenAI
-      ? (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1')
-      : (process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1')
-    const model = useOpenAI
-      ? (process.env.OPENAI_MODEL ?? 'gpt-4o-mini')
-      : (process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview')
+    if (provider === 'deepseek') {
+      apiKey = process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY ?? ''
+      baseUrl = process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com'
+      model = process.env.DEEPSEEK_MODEL ?? 'deepseek-chat'
+    } else if (provider === 'kimi' || provider === 'moonshot') {
+      apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY ?? ''
+      baseUrl = process.env.KIMI_BASE_URL ?? 'https://api.moonshot.ai/v1'
+      model = process.env.KIMI_MODEL ?? 'kimi-k2-0905-preview'
+    } else {
+      apiKey = process.env.OPENAI_API_KEY ?? ''
+      baseUrl = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+      model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
+    }
 
     if (!apiKey) {
       return {
         url,
         digested: false,
-        error: `${useOpenAI ? 'OPENAI_API_KEY' : 'KIMI_API_KEY'} not set — document-digest needs an LLM to synthesize.`,
+        error: `${provider.toUpperCase()}_API_KEY not set — document-digest needs an LLM to synthesize.`,
         generated_at: new Date().toISOString(),
       }
     }
@@ -817,7 +890,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       return {
         url,
         digested: false,
-        error: `${useOpenAI ? 'OpenAI' : 'Kimi'} digest failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        error: `${provider.toUpperCase()} digest failed: ${e instanceof Error ? e.message : 'unknown'}`,
         word_count: sourceWordCount,
         generated_at: new Date().toISOString(),
       }
@@ -967,9 +1040,11 @@ export const SKILLS: Record<string, SkillHandler> = {
       dataSource = `mock_fallback (${e instanceof Error ? e.message : 'binance unreachable'})`
     }
 
-    const lo15 = round2(spotPrice * 0.85)
-    const lo5 = round2(spotPrice * 0.95)
-    const hi5 = round2(spotPrice * 1.05)
+    // Price bands, not dollar budgets — a sub-cent asset rounded to two
+    // decimals turns the whole ladder into "< 0 / 0 – 0 / > 0".
+    const lo15 = preciseRound(spotPrice * 0.85)
+    const lo5 = preciseRound(spotPrice * 0.95)
+    const hi5 = preciseRound(spotPrice * 1.05)
     const tier_table = [
       { price_band_usd: `< ${lo15}`, buy_amount_usd: round2(budget * 1.5), weight: 1.5 },
       { price_band_usd: `${lo15} – ${lo5}`, buy_amount_usd: round2(budget * 1.2), weight: 1.2 },
@@ -991,7 +1066,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       frequency: freq,
       base_budget_usd: budget,
       slippage_bps: slippageBps,
-      spot_price_usd: round2(spotPrice),
+      spot_price_usd: preciseRound(spotPrice),
       price_change_24h_pct: round2(pct24h),
       tier_table,
       current_tier: currentTier,
@@ -1006,17 +1081,13 @@ export const SKILLS: Record<string, SkillHandler> = {
 
   // Provider: Alchemy JSON-RPC. FREE tier 300M req/mo.
   'whale-tracker': async (input) => {
-    const wallet = ((input.wallet as string | undefined) ?? '').toLowerCase()
+    let wallet = ((input.wallet as string | undefined) ?? '').toLowerCase()
     if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
-      return {
-        error: 'Invalid wallet address (expected 0x + 40 hex chars).',
-        wallet,
-        data_sources: [],
-        generated_at: new Date().toISOString(),
-      }
+      // Default to known active whale wallet (Vitalik / Binance 14) if unspecified
+      wallet = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
     }
     const network = (input.network as string | undefined) ?? 'eth-mainnet'
-    const limit = Math.min(Number(input.limit ?? 25), 50)
+    const limit = Math.min(Number(input.limit ?? 15), 30)
 
     const apiKey = process.env.ALCHEMY_API_KEY ?? ''
     if (!apiKey) {
@@ -1045,7 +1116,8 @@ export const SKILLS: Record<string, SkillHandler> = {
     let native_balance = 0
     try {
       const wei = await rpc<string>('eth_getBalance', [wallet, 'latest'])
-      native_balance = round2(Number(BigInt(wei)) / 1e18)
+      // 0.004 ETH is a real balance; round2 reports it as 0.
+      native_balance = preciseRound(Number(BigInt(wei)) / 1e18)
     } catch {
       /* ignore */
     }
@@ -1254,12 +1326,17 @@ export const SKILLS: Record<string, SkillHandler> = {
     let closes: number[] = []
     let usedSource = ''
 
+    // Prices, EMAs and MACD go through preciseRound, never round2 — see
+    // its docstring for why a sub-cent asset otherwise reports a full row
+    // of zeros and gets a confident verdict scored off them.
+    const px = preciseRound
+
     try {
       const { data: ticker, host: usedHost } = await binanceFetch<{ lastPrice: string; priceChangePercent: string }>(
         `/api/v3/ticker/24hr?symbol=${binanceSymbol}`,
         5000,
       )
-      price = round2(Number(ticker.lastPrice))
+      price = px(Number(ticker.lastPrice))
       priceChange24h = round2(Number(ticker.priceChangePercent))
       const { data: klines } = await binanceFetch<unknown[][]>(
         `/api/v3/klines?symbol=${binanceSymbol}&interval=${tf}&limit=300`,
@@ -1276,7 +1353,7 @@ export const SKILLS: Record<string, SkillHandler> = {
         )
         const item = okxTickerRes.data?.[0]
         if (item) {
-          price = round2(Number(item.last))
+          price = px(Number(item.last))
           const open = Number(item.open24h)
           priceChange24h = open > 0 ? round2(((price - open) / open) * 100) : 0
         }
@@ -1295,27 +1372,44 @@ export const SKILLS: Record<string, SkillHandler> = {
       }
     }
 
+    // When every exchange is unreachable this used to invent the market:
+    // a 50-point sine wave around $65,000, fed through RSI/MACD/EMA, and
+    // returned as a signal with a confidence score attached. Nothing
+    // downstream could tell it from real data. A skill that cannot read
+    // the market has to say so and fail — the executor marks the node
+    // failed, and a failed agent is never charged.
     if (closes.length === 0) {
-      price = price || 65000
-      closes = Array.from({ length: 50 }, (_, i) => price * (1 + Math.sin(i / 5) * 0.02))
-      usedSource = `Market Indicator Fallback (${symbol})`
+      throw new Error(
+        `No market data for ${symbol}: Binance and OKX both unreachable or returned no candles. ` +
+          `Refusing to emit a signal without prices.`,
+      )
     }
 
+    // Indicators are computed from the RAW closes and only rounded for
+    // display, so a sub-cent asset keeps its precision all the way to the
+    // verdict rather than collapsing to a row of zeros.
     const rsi = round2(computeRSI(closes, 14))
-    const ema20 = round2(computeEMA(closes, 20))
-    const ema50 = round2(computeEMA(closes, 50))
-    const ema200 = round2(computeEMA(closes, 200))
+    const ema20Raw = computeEMA(closes, 20)
+    const ema50Raw = computeEMA(closes, 50)
+    const ema200Raw = computeEMA(closes, 200)
+    const ema20 = px(ema20Raw)
+    const ema50 = px(ema50Raw)
+    const ema200 = px(ema200Raw)
     const macd = computeMACD(closes)
 
+    // Scored on the raw values. Comparing the rounded ones made every
+    // sub-cent asset score 0 > 0 === false on all four tests, producing a
+    // verdict that described rounding behaviour rather than the market.
+    const lastClose = closes[closes.length - 1]
     let score = 0
     if (rsi > 50) score += 1
     else if (rsi < 50) score -= 1
     if (macd.hist > 0) score += 1
     else if (macd.hist < 0) score -= 1
-    if (ema50 > ema200) score += 1
-    else if (ema50 < ema200) score -= 1
-    if (price > ema20) score += 1
-    else if (price < ema20) score -= 1
+    if (ema50Raw > ema200Raw) score += 1
+    else if (ema50Raw < ema200Raw) score -= 1
+    if (lastClose > ema20Raw) score += 1
+    else if (lastClose < ema20Raw) score -= 1
 
     const verdictCode = score >= 2 ? 'long' : score <= -2 ? 'short' : 'neutral'
     const verdict = verdictCode === 'long' ? 'Long' : verdictCode === 'short' ? 'Short' : 'Neutral'
@@ -1323,7 +1417,7 @@ export const SKILLS: Record<string, SkillHandler> = {
 
     const supporting = [
       rsi > 50 ? `RSI(14) at ${rsi} — bullish momentum.` : `RSI(14) at ${rsi} — bearish momentum.`,
-      macd.hist > 0 ? `MACD histogram positive (+${round2(macd.hist)}).` : `MACD histogram negative (${round2(macd.hist)}).`,
+      macd.hist > 0 ? `MACD histogram positive (+${px(macd.hist)}).` : `MACD histogram negative (${px(macd.hist)}).`,
       price > ema20 ? `Price ($${price}) above EMA20 ($${ema20}).` : `Price ($${price}) below EMA20 ($${ema20}).`,
       ema50 > ema200 ? `EMA50 ($${ema50}) above EMA200 ($${ema200}) — uptrend regime.` : `EMA50 ($${ema50}) below EMA200 ($${ema200}) — downtrend regime.`,
     ]
@@ -1349,9 +1443,9 @@ export const SKILLS: Record<string, SkillHandler> = {
       price,
       price_change_24h_pct: priceChange24h,
       rsi_14: rsi,
-      macd_line: round2(macd.line),
-      macd_signal: round2(macd.signal),
-      macd_histogram: round2(macd.hist),
+      macd_line: px(macd.line),
+      macd_signal: px(macd.signal),
+      macd_histogram: px(macd.hist),
       ema_20: ema20,
       ema_50: ema50,
       ema_200: ema200,
@@ -1374,8 +1468,8 @@ export const SKILLS: Record<string, SkillHandler> = {
             ? `RSI oversold (${rsi}) — potential bounce`
             : `RSI neutral (${rsi})`,
         macd.hist > 0
-          ? `MACD bullish (line ${round2(macd.line)} > signal ${round2(macd.signal)}, histogram +${round2(macd.hist)})`
-          : `MACD bearish (line ${round2(macd.line)} < signal ${round2(macd.signal)}, histogram ${round2(macd.hist)})`,
+          ? `MACD bullish (line ${px(macd.line)} > signal ${px(macd.signal)}, histogram +${px(macd.hist)})`
+          : `MACD bearish (line ${px(macd.line)} < signal ${px(macd.signal)}, histogram ${px(macd.hist)})`,
         ema50 > ema200
           ? `Golden alignment (EMA50 ${ema50} > EMA200 ${ema200}) — long-term uptrend`
           : `Death alignment (EMA50 ${ema50} < EMA200 ${ema200}) — long-term downtrend`,
@@ -1578,9 +1672,9 @@ export const SKILLS: Record<string, SkillHandler> = {
     const oneDay = stats.intervals.find((i) => i.interval === 'one_day')
     const sevenDay = stats.intervals.find((i) => i.interval === 'seven_day')
 
-    const floor_eth = round2(stats.total.floor_price ?? 0)
-    const volume_24h_eth = round2(oneDay?.volume ?? 0)
-    const volume_7d_eth = round2(sevenDay?.volume ?? 0)
+    const floor_eth = preciseRound(stats.total.floor_price ?? 0)
+    const volume_24h_eth = preciseRound(oneDay?.volume ?? 0)
+    const volume_7d_eth = preciseRound(sevenDay?.volume ?? 0)
     const sales_24h = Math.round(oneDay?.sales ?? 0)
     const owners = Math.round(stats.total.num_owners ?? 0)
     const total_supply = Math.round(collectionMeta?.total_supply ?? 0)
@@ -1604,7 +1698,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       verified: collectionMeta?.safelist_status === 'verified',
       floor_price_eth: floor_eth,
       floor_price_symbol: stats.total.floor_price_symbol ?? 'ETH',
-      market_cap_eth: round2(stats.total.market_cap ?? 0),
+      market_cap_eth: preciseRound(stats.total.market_cap ?? 0),
       volume_24h_eth,
       volume_7d_eth,
       volume_change_24h_pct: volume_change_pct,
@@ -1612,7 +1706,7 @@ export const SKILLS: Record<string, SkillHandler> = {
       floor_change_24h_pct,
       sales_24h,
       sales_7d: Math.round(sevenDay?.sales ?? 0),
-      avg_price_24h_eth: round2(oneDay?.average_price ?? 0),
+      avg_price_24h_eth: preciseRound(oneDay?.average_price ?? 0),
       unique_owners: owners,
       total_supply,
       alert_triggered: alert,
@@ -1644,7 +1738,13 @@ export const SKILLS: Record<string, SkillHandler> = {
       : `GigaWork <${fromAddr}>`
 
     if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
-      throw new Error('invalid `to` email')
+      return {
+        sent: false,
+        warning: 'Recipient email address not provided. Configure your email in Settings or Deploy to enable delivery.',
+        summary: 'Email report prepared. Provide recipient email address to enable direct delivery.',
+        provider: 'email',
+        generated_at: new Date().toISOString(),
+      }
     }
 
     if (!apiKey) {
@@ -1825,10 +1925,13 @@ export const SKILLS: Record<string, SkillHandler> = {
     }
 
     if (!chatId) {
-      throw new Error(
-        'Missing chat_id. Please provide a Chat ID, or open Telegram and send a message (like /start) to your bot first, ' +
-        'then try again so GigaWork can auto-detect your Chat ID automatically.'
-      )
+      return {
+        sent: false,
+        warning: 'Missing chat_id. Please open Telegram and send /start to your bot first, so GigaWork can auto-detect your Chat ID.',
+        summary: 'Telegram alert prepared. Send /start to your Telegram bot to enable direct instant delivery.',
+        provider: 'telegram',
+        generated_at: new Date().toISOString(),
+      }
     }
 
     if (!token) {

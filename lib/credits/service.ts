@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
-import { creditLedger, users, workflows, type User } from '@/lib/db/schema'
+import { creditLedger, topupDeposits, users, workflows, type User } from '@/lib/db/schema'
 
 export const SIGNUP_GRANT = 300
 
@@ -74,17 +74,25 @@ export async function getOrCreateUser(wallet: string): Promise<User> {
 }
 
 /**
- * Idempotent one-time signup bonus. Called when (a) the user successfully
- * mints their ERC-8004 identity NFT, or (b) /api/me auto-syncs and
- * discovers an on-chain NFT minted from a different frontend.
+ * Called when (a) the user successfully mints their ERC-8004 identity
+ * NFT, or (b) /api/me auto-syncs and discovers an on-chain NFT minted
+ * from a different frontend.
  *
- * "Already granted" detection: a `signup_grant` ledger row for this
- * user. We check by user.id AND by privy_id (joined via users) so that
- * wallet merges don't trigger a second grant — if the user previously
- * had a row that received signup_grant, the merge moved that ledger
- * row to the surviving user, and we'll see it here.
+ * NO-OP as of the "real USD only" migration. This used to grant 300
+ * synthetic "credits" — a currency nothing could actually spend (the
+ * only code that decremented it was an unreachable brain-tool path), so
+ * the number just sat frozen on every account forever.
  *
- * Returns the updated user row, or the original if no grant was needed.
+ * The starter balance is now a REAL on-chain USDC transfer into the
+ * user's own custodial vault, performed at vault-provisioning time and
+ * mirrored into the spend ledger — see provisionUserVault() in
+ * lib/payments/vault.ts (gated by PREFUND_VAULT_GAS). Granting fake USD
+ * here instead would be pointless: /api/me's balance reconciliation
+ * trusts the chain and would wipe any ledger amount not backed by real
+ * on-chain funds.
+ *
+ * Kept as a no-op (rather than deleted) so the three mint call sites
+ * keep their "user reached verified state" hook point.
  */
 export async function grantSignupBonus(userId: string): Promise<User> {
   const [u] = await withDbRetry(
@@ -92,36 +100,7 @@ export async function grantSignupBonus(userId: string): Promise<User> {
     { label: 'grantSignupBonus:read' },
   )
   if (!u) throw new Error(`user ${userId} not found`)
-
-  const [existing] = await withDbRetry(
-    () => db
-      .select({ id: creditLedger.id })
-      .from(creditLedger)
-      .where(and(eq(creditLedger.userId, userId), eq(creditLedger.reason, 'signup_grant')))
-      .limit(1),
-    { label: 'grantSignupBonus:check' },
-  )
-  if (existing) return u
-
-  const [updated] = await withDbRetry(
-    () =>
-      db
-        .update(users)
-        .set({ credits: sql`${users.credits} + ${SIGNUP_GRANT}` })
-        .where(eq(users.id, userId))
-        .returning(),
-    { label: 'grantSignupBonus:update' },
-  )
-  await withDbRetry(
-    () =>
-      db.insert(creditLedger).values({
-        userId,
-        delta: SIGNUP_GRANT,
-        reason: 'signup_grant',
-      }),
-    { label: 'grantSignupBonus:ledger' },
-  )
-  return updated ?? u
+  return u
 }
 
 /**
@@ -338,19 +317,74 @@ async function mergeUserInto(opts: {
           .set({ userId: opts.dstUserId })
           .where(eq(creditLedger.userId, opts.srcUserId))
 
-        // Sum credits onto destination, minus any duplicate signup grant
-        // we just removed.
+        // Re-point real deposit history so it survives the row delete
+        // (topup_deposits FK is ON DELETE CASCADE) — it is also the
+        // top-up replay guard, so losing it would let old tx hashes be
+        // claimed again.
+        await tx
+          .update(topupDeposits)
+          .set({ userId: opts.dstUserId })
+          .where(eq(topupDeposits.userId, opts.srcUserId))
+
+        // ── Real money ────────────────────────────────────────────
+        // The source row may own a custodial vault holding REAL on-chain
+        // USDC, and its encrypted private key lives in this row. Deleting
+        // it outright destroys the only copy of that key and strands the
+        // funds permanently — so handle the vault before touching the row.
         const [src] = await tx
-          .select({ credits: users.credits })
+          .select({
+            usdcBalance: users.usdcBalance,
+            vaultWalletId: users.vaultWalletId,
+            vaultAddress: users.vaultAddress,
+            vaultProvisionedAt: users.vaultProvisionedAt,
+          })
           .from(users)
           .where(eq(users.id, opts.srcUserId))
           .limit(1)
-        const carryover = (src?.credits ?? 0) - srcSignupDelta
-        if (carryover > 0) {
+        const [dst] = await tx
+          .select({ vaultAddress: users.vaultAddress })
+          .from(users)
+          .where(eq(users.id, opts.dstUserId))
+          .limit(1)
+
+        if (src?.vaultAddress && dst?.vaultAddress) {
+          // Both sides own a vault. We cannot move on-chain funds from
+          // inside a DB transaction, and carrying the ledger balance over
+          // would immediately be reverted by /api/me's chain
+          // reconciliation (dst's vault does not physically hold it).
+          // Keep the source row alive as a tombstone instead: its wallet
+          // is renamed to free the UNIQUE slot the caller needs, but the
+          // vault key — and therefore the funds — stay recoverable.
+          console.warn(
+            `[mergeUserInto] user ${opts.srcUserId} has its own vault ${src.vaultAddress} and ` +
+              `destination ${opts.dstUserId} already has ${dst.vaultAddress}. Preserving the source row ` +
+              `as a tombstone so its vault key is not destroyed. Funds must be swept manually.`,
+          )
           await tx
             .update(users)
-            .set({ credits: sql`${users.credits} + ${carryover}` })
+            .set({ wallet: `merged:${opts.srcUserId}`, privyId: null })
+            .where(eq(users.id, opts.srcUserId))
+          return
+        }
+
+        if (src?.vaultAddress && !dst?.vaultAddress) {
+          // Destination has no vault yet — adopt the source's outright so
+          // both the ledger balance and the on-chain funds behind it move
+          // together and stay consistent.
+          await tx
+            .update(users)
+            .set({
+              vaultWalletId: src.vaultWalletId,
+              vaultAddress: src.vaultAddress,
+              vaultProvisionedAt: src.vaultProvisionedAt,
+              usdcBalance: sql`${users.usdcBalance}::numeric + ${src.usdcBalance ?? '0'}::numeric`,
+            })
             .where(eq(users.id, opts.dstUserId))
+          // Release the UNIQUE vault_address before deleting the row.
+          await tx
+            .update(users)
+            .set({ vaultWalletId: null, vaultAddress: null, usdcBalance: '0.00' })
+            .where(eq(users.id, opts.srcUserId))
         }
 
         // Free the wallet uniqueness slot, then drop the row.
@@ -366,147 +400,11 @@ async function mergeUserInto(opts: {
 //    only from mint paths (/api/identity/confirm, /api/me on-chain sync,
 //    /api/identity/mint admin path).
 
-/**
- * Atomic charge: deducts `amount` from `userId` if balance >= amount, then
- * appends a ledger row. Throws InsufficientCreditsError when balance is
- * too low (no partial charge, no ledger entry).
- *
- * `amount` must be positive. For grants/refunds use grantCredits.
- */
-export async function chargeCredits(opts: {
-  userId: string
-  amount: number
-  reason: string
-  workflowId?: string | null
-}): Promise<{ balance: number }> {
-  const { userId, amount, reason, workflowId } = opts
-  if (!Number.isInteger(amount) || amount <= 0) {
-    throw new Error('amount must be a positive integer')
-  }
-
-  const updated = await withDbRetry(
-    () => db
-      .update(users)
-      .set({ credits: sql`${users.credits} - ${amount}` })
-      .where(sql`${users.id} = ${userId} and ${users.credits} >= ${amount}`)
-      .returning({ credits: users.credits }),
-    { label: 'chargeCredits:update' },
-  )
-
-  if (updated.length === 0) {
-    const [row] = await withDbRetry(
-      () => db.select({ credits: users.credits }).from(users).where(eq(users.id, userId)).limit(1),
-      { label: 'chargeCredits:check-balance' },
-    )
-    throw new InsufficientCreditsError(row?.credits ?? 0, amount)
-  }
-
-  await withDbRetry(
-    () => db.insert(creditLedger).values({
-      userId,
-      delta: -amount,
-      reason,
-      workflowId: workflowId ?? null,
-    }),
-    { label: 'chargeCredits:ledger' },
-  )
-
-  return { balance: updated[0].credits }
-}
-
-/**
- * Add credits (signup bonus, top-up, refund). Always succeeds.
- */
-export async function grantCredits(opts: {
-  userId: string
-  amount: number
-  reason: string
-  workflowId?: string | null
-  txHash?: string | null
-}): Promise<{ balance: number }> {
-  const { userId, amount, reason, workflowId, txHash } = opts
-  if (!Number.isInteger(amount) || amount <= 0) {
-    throw new Error('amount must be a positive integer')
-  }
-
-  // When txHash is provided, insert ledger row FIRST so the UNIQUE
-  // constraint catches replays before we touch the user balance. If the
-  // insert succeeds (or no txHash given), we then bump the balance.
-  if (txHash) {
-    try {
-      await db.insert(creditLedger).values({
-        userId,
-        delta: amount,
-        reason,
-        workflowId: workflowId ?? null,
-        txHash,
-      })
-    } catch (e: unknown) {
-      // Drizzle wraps the underlying postgres-js error in `Failed query: …`.
-      // The Postgres SQLSTATE 23505 (unique_violation) is on `cause.code`,
-      // and the constraint name lives in `cause.constraint_name`. We also
-      // fall back to scanning the message string just in case the driver
-      // surface changes.
-      const msg = e instanceof Error ? e.message : String(e)
-      const cause = (e as { cause?: { code?: string; constraint_name?: string; message?: string } }).cause
-      const causeMsg = cause?.message ?? ''
-      const isUniqueViolation =
-        cause?.code === '23505' ||
-        cause?.constraint_name === 'credit_ledger_tx_hash_unique' ||
-        /credit_ledger_tx_hash_unique/i.test(msg) ||
-        /credit_ledger_tx_hash_unique/i.test(causeMsg) ||
-        /duplicate key value/i.test(msg) ||
-        /duplicate key value/i.test(causeMsg) ||
-        /unique constraint/i.test(msg) ||
-        /unique constraint/i.test(causeMsg)
-      if (isUniqueViolation) {
-        throw new DuplicateTopupError(txHash)
-      }
-      throw e
-    }
-
-    // Balance bump is safe to retry (it's an UPDATE, idempotent on the row)
-    const [row] = await withDbRetry(
-      () => db
-        .update(users)
-        .set({ credits: sql`${users.credits} + ${amount}` })
-        .where(eq(users.id, userId))
-        .returning({ credits: users.credits }),
-      { label: 'grantCredits:bump-balance' },
-    )
-
-    return { balance: row?.credits ?? 0 }
-  }
-
-  // No txHash — legacy path (signup grant, manual admin grant). Same as
-  // before: bump balance + insert ledger row.
-  const [row] = await withDbRetry(
-    () => db
-      .update(users)
-      .set({ credits: sql`${users.credits} + ${amount}` })
-      .where(eq(users.id, userId))
-      .returning({ credits: users.credits }),
-    { label: 'grantCredits:legacy-bump' },
-  )
-
-  await withDbRetry(
-    () => db.insert(creditLedger).values({
-      userId,
-      delta: amount,
-      reason,
-      workflowId: workflowId ?? null,
-      txHash: null,
-    }),
-    { label: 'grantCredits:legacy-ledger' },
-  )
-
-  return { balance: row?.credits ?? 0 }
-}
-
-export async function getBalance(userId: string): Promise<number> {
-  const [row] = await withDbRetry(
-    () => db.select({ credits: users.credits }).from(users).where(eq(users.id, userId)).limit(1),
-    { label: 'getBalance' },
-  )
-  return row?.credits ?? 0
-}
+// chargeCredits / grantCredits / getBalance were removed in the "real USD
+// only" migration. Spending and depositing now go through the real,
+// vault-backed USD ledger instead:
+//   - lib/payments/depositVault.ts  → chargeUsdcBalance / depositUsdcBalance
+//   - lib/payments/vault.ts         → provisionUserVault / getUserVaultAccount
+// Those move (or are backed by) actual on-chain USDC in the user's own
+// custodial vault, unlike the synthetic integer "credits" this module
+// used to mint.

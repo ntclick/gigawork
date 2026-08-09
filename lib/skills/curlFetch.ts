@@ -14,11 +14,67 @@
  * Curl is shipped with Windows 10+, macOS, and every Linux distro since 2018,
  * so this is portable. Vercel runtime has curl available too.
  */
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { spawn } from 'node:child_process'
 import { fetch as undiciFetch } from 'undici'
 
-const execFileP = promisify(execFile)
+/**
+ * Run curl with the request body piped through STDIN rather than passed
+ * as an argv entry.
+ *
+ * Passing it as an argument (`--data-raw <json>`) corrupts every
+ * non-ASCII byte on Windows, because process arguments are encoded with
+ * the system ANSI codepage. Any prompt containing an em-dash or a smart
+ * quote came out mangled and the provider rejected the whole request
+ * with `invalid unicode code point`. stdin is a plain byte stream, so
+ * UTF-8 survives intact on every platform.
+ */
+function runCurl(
+  args: string[],
+  body: string | undefined,
+  timeoutMs: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('curl', args, { windowsHide: true })
+    const chunks: Buffer[] = []
+    let stderr = ''
+    let settled = false
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill()
+      reject(new Error(`curl timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    child.stdout.on('data', (d: Buffer) => chunks.push(d))
+    child.stderr.on('data', (d: Buffer) => {
+      stderr += d.toString('utf8')
+    })
+    child.on('error', (e) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(new Error(`curl failed to start: ${e.message}`))
+    })
+    child.on('close', (code) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      const stdout = Buffer.concat(chunks).toString('utf8')
+      if (code !== 0 && !stdout) {
+        reject(new Error(`curl exited ${code}: ${stderr || 'no output'}`))
+        return
+      }
+      resolve(stdout)
+    })
+
+    // EPIPE if curl exits before we finish writing — harmless, the close
+    // handler already carries the outcome.
+    child.stdin.on('error', () => {})
+    if (body !== undefined) child.stdin.write(Buffer.from(body, 'utf8'))
+    child.stdin.end()
+  })
+}
 
 const DOH_URL = 'https://1.1.1.1/dns-query'
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -79,22 +135,19 @@ export async function curlFetchJSON<T = unknown>(url: string, opts: CurlFetchOpt
       args.push('-H', `${k}: ${v}`)
     }
   }
-  if (opts.body) {
-    args.push('--data-raw', opts.body)
+  // `@-` reads the body from stdin — see runCurl for why it must not be
+  // passed as an argument.
+  if (opts.body !== undefined) {
+    args.push('--data-binary', '@-')
   }
 
   args.push(url)
 
   let stdout: string
   try {
-    const result = await execFileP('curl', args, {
-      maxBuffer: 50 * 1024 * 1024, // 50 MB — DefiLlama returns ~13 MB
-      timeout: (opts.timeoutMs ?? 10_000) + 2000, // process-level timeout slightly > curl's own
-    })
-    stdout = result.stdout
+    stdout = await runCurl(args, opts.body, (opts.timeoutMs ?? 10_000) + 2000)
   } catch (e) {
-    const err = e as Error & { stderr?: string; code?: number }
-    throw new Error(`curl failed: ${err.stderr ?? err.message}`)
+    throw new Error(`curl failed: ${e instanceof Error ? e.message : String(e)}`)
   }
 
   // Split out the status line we appended via --write-out
@@ -107,14 +160,26 @@ export async function curlFetchJSON<T = unknown>(url: string, opts: CurlFetchOpt
   }
 
   if (status >= 400 || status === 0) {
+    // Pull the provider's own error text out of the body. The `throw`
+    // used to live INSIDE this try block, so the bare `catch {}` below
+    // swallowed it and every failure surfaced as a bare "HTTP 400 …",
+    // hiding the one piece of information needed to fix it.
+    let detail = ''
     try {
       const parsed = JSON.parse(body) as Record<string, unknown>
-      const errMsg = parsed.description || parsed.message || parsed.error || ''
-      if (errMsg) {
-        throw new Error(`HTTP ${status} from ${u.hostname}${u.pathname}: ${errMsg} via curl`)
-      }
-    } catch {}
-    throw new Error(`HTTP ${status} from ${u.hostname}${u.pathname} via curl`)
+      const err = parsed.error
+      detail = String(
+        (err && typeof err === 'object' ? (err as Record<string, unknown>).message : err) ??
+          parsed.description ??
+          parsed.message ??
+          '',
+      )
+    } catch {
+      detail = body.slice(0, 200)
+    }
+    throw new Error(
+      `HTTP ${status} from ${u.hostname}${u.pathname}${detail ? `: ${detail}` : ''} via curl`,
+    )
   }
 
   try {

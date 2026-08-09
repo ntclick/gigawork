@@ -1,3 +1,8 @@
+/**
+ * @deprecated Plan A ("user-as-client") route, dormant — no frontend
+ * caller. See the deprecation note in
+ * app/api/workflow/escrow/prepare/route.ts.
+ */
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { createPublicClient, http } from 'viem'

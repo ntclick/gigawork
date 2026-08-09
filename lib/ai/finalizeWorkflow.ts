@@ -5,6 +5,7 @@ import { incrementReputationBatch } from '@/lib/chain/reputation'
 import { attestWorkflowCompletion } from '@/lib/chain/validation'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
+import { decryptProfileSecrets } from '@/lib/notifications/secrets'
 import { curlFetchJSON } from '@/lib/skills/curlFetch'
 import { emitWorkflowEvent } from '@/lib/workflow/events'
 
@@ -102,7 +103,29 @@ export async function publishFinalReport({
     payload: { toolName },
   })
 
-  // Enqueue background chain settlement jobs
+  // Enqueue and execute on-chain settlement directly
+  settleWorkflowJob(workflowId, finalMarkdown).catch((err) => {
+    console.warn('[publishFinalReport] Direct settleWorkflowJob warning:', err)
+  })
+
+  // ERC-8004 reputation, run directly for the same reason settlement is.
+  //
+  // Both are enqueued below as `chain_jobs`, but that queue is drained by
+  // a separate `pnpm worker:chain` process. Settlement never depended on
+  // it — it has the direct call above — whereas reputation had only the
+  // queue entry. With no worker running, every completed run left its
+  // feedback job unprocessed and the UI said "reputation has not been
+  // written on-chain yet" forever, for the providers AND for the client.
+  //
+  // `cacheReputation` scores both sides of the hire in one batch: each
+  // provider skill's agentTokenId plus the client's own identity token.
+  // It is idempotent (it bails if a `reputationUpdate` message already
+  // exists for the workflow), so the worker and the reconcile endpoint
+  // remain safe backstops rather than double-writers.
+  cacheReputation(workflowId, userId).catch((err) => {
+    console.warn('[publishFinalReport] Direct cacheReputation warning:', err)
+  })
+
   const { enqueueWorkflowSettlementJobs } = await import('@/lib/chain/jobs')
   await enqueueWorkflowSettlementJobs(workflowId, finalMarkdown, userId)
 
@@ -117,7 +140,7 @@ export async function publishFinalReport({
 async function sendTelegramNotification(workflowId: string, userId: string | null, finalMarkdown: string) {
   if (!userId) return
   try {
-    const [u] = await db
+    const [row] = await db
       .select({
         telegramChatId: users.telegramChatId,
         telegramBotToken: users.telegramBotToken,
@@ -125,6 +148,8 @@ async function sendTelegramNotification(workflowId: string, userId: string | nul
       .from(users)
       .where(eq(users.id, userId))
       .limit(1)
+    // Bot token is encrypted at rest — see lib/notifications/secrets.ts.
+    const u = decryptProfileSecrets(row)
 
     if (!u || !u.telegramBotToken) {
       console.log('[Telegram Notification] Skipped: No saved bot token found for user.')
@@ -395,18 +420,34 @@ export async function processFailedReputation(
   }
 }
 
-export async function cacheReputation(workflowId: string, userId: string | null) {
-  const existing = await db
-    .select({ id: messages.id })
+/**
+ * Has this workflow's reputation already been scored for real?
+ *
+ * The presence of a `reputationUpdate` message is the idempotency key, but
+ * not every such row represents an attempt worth respecting: the offline
+ * planner used to drop a `outcome: 'simulated'` placeholder at planning
+ * time, and older rows recorded `status: 'skipped'` when the registry was
+ * unconfigured. Treating those as "done" is what left runs permanently
+ * unscored. Only a row carrying a tx, or a genuine completed/failed
+ * outcome, counts — so a retry can still get through.
+ */
+export async function reputationAlreadySettled(workflowId: string): Promise<boolean> {
+  const rows = await db
+    .select({ payload: messages.toolPayload })
     .from(messages)
     .where(
-      and(
-        eq(messages.workflowId, workflowId),
-        eq(messages.toolName, 'reputationUpdate'),
-      ),
+      and(eq(messages.workflowId, workflowId), eq(messages.toolName, 'reputationUpdate')),
     )
-    .limit(1)
-  if (existing.length > 0) return
+
+  return rows.some((r) => {
+    const p = (r.payload ?? {}) as Record<string, unknown>
+    if (p.tx) return true
+    return p.outcome === 'completed' || p.outcome === 'failed'
+  })
+}
+
+export async function cacheReputation(workflowId: string, userId: string | null) {
+  if (await reputationAlreadySettled(workflowId)) return
 
   try {
     // Count completed skills (with or without on-chain agentTokenId)

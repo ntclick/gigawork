@@ -25,7 +25,7 @@ export const workflowRuntimeConfig = {
   plannerTimeoutMs: intEnv('WORKFLOW_PLANNER_TIMEOUT_MS', 5_000),
   nodeTimeoutMs: intEnv('WORKFLOW_NODE_TIMEOUT_MS', 35_000),
   bundleTimeoutMs: intEnv('WORKFLOW_BUNDLE_TIMEOUT_MS', 35_000),
-  composerTimeoutMs: intEnv('WORKFLOW_COMPOSER_TIMEOUT_MS', 35_000),
+  composerTimeoutMs: intEnv('WORKFLOW_COMPOSER_TIMEOUT_MS', 45_000),
   maxNodes: intEnv('WORKFLOW_MAX_NODES', 8),
   maxDagDepth: intEnv('WORKFLOW_MAX_DAG_DEPTH', 3),
   maxParallelNodes: intEnv('WORKFLOW_MAX_PARALLEL_NODES', 5),

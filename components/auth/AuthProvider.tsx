@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useEffect, useState } from 'react'
 import { PrivyProvider } from '@privy-io/react-auth'
 import { baseSepolia, sepolia } from 'viem/chains'
 
@@ -12,24 +13,15 @@ import { arcTestnet } from '@/lib/chain/arcTestnet'
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID
 const CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID
 
-// Defensive polyfill to prevent OKX Wallet / EVM extensions (evmAsk.js) from throwing
-// "Uncaught TypeError: Cannot redefine property: ethereum" when multiple Web3 providers load.
-if (typeof window !== 'undefined') {
-  try {
-    const origDefineProperty = Object.defineProperty
-    Object.defineProperty = function (obj: any, prop: PropertyKey, descriptor: PropertyDescriptor) {
-      if (obj === window && prop === 'ethereum' && (window as any).ethereum) {
-        return obj
-      }
-      return origDefineProperty.call(this, obj, prop, descriptor)
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  // If in browser and on 127.0.0.1, immediately redirect and don't mount Privy to prevent 403
+  if (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1') {
+    window.location.replace(window.location.href.replace('//127.0.0.1', '//localhost'))
+    return <>{children}</>
+  }
+
   if (!APP_ID) return <>{children}</>
+
   return (
     <PrivyProvider
       appId={APP_ID}

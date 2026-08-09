@@ -1,21 +1,25 @@
 /**
- * /api/me/topup — on-chain USDC → credit conversion.
+ * /api/me/topup — on-chain USDC → real per-user vault deposit.
  *
  * Flow:
- *   1. Client calls USDC.transfer(TREASURY, amount) from their wallet → tx_hash
+ *   1. Client calls USDC.transfer(vaultAddress, amount) from their own
+ *      wallet → tx_hash, where vaultAddress is THIS user's own
+ *      dedicated vault (lib/payments/vault.ts) — not a shared treasury.
  *   2. Client POSTs { tx_hash } here
  *   3. Server fetches receipt + verifies:
  *        - status === 'success'
  *        - exactly one Transfer log on USDC contract
  *        - log.from === current user's wallet
- *        - log.to === USDC_TREASURY_ADDRESS
- *   4. Server decodes the Transfer value, converts to credits
- *      (TOPUP_RATE_CREDITS_PER_USDC = 100 → 1 USDC = 100 credit)
- *   5. grantCredits() inserts a ledger row with the tx_hash; UNIQUE constraint
- *      catches replays and surfaces as 409 DuplicateTopupError.
+ *        - log.to === this user's own vaultAddress
+ *   4. Server credits the off-chain metering ledger (users.usdcBalance)
+ *      to match — the ledger is a fast cache of what's now really
+ *      sitting in the user's vault (see lib/payments/vault.ts).
+ *   5. depositUsdcBalance() inserts a topupDeposits ledger row keyed by
+ *      tx_hash; UNIQUE constraint catches replays and surfaces as 409
+ *      DuplicateTopupError.
  *
- * GET returns current rate + treasury address so the client can render the
- * top-up form without env-var leaks beyond NEXT_PUBLIC_*.
+ * GET returns the current rate + this user's real vault address so the
+ * client can render the top-up form.
  */
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -23,11 +27,8 @@ import { decodeEventLog, getAddress, parseAbi, type Hex } from 'viem'
 
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { publicClient, explorerTxUrl } from '@/lib/chain/client'
-import { DuplicateTopupError, grantCredits } from '@/lib/credits/service'
-
-const TREASURY = (process.env.USDC_TREASURY_ADDRESS ??
-  process.env.NEXT_PUBLIC_USDC_TREASURY ??
-  '') as `0x${string}`
+import { depositUsdcBalance } from '@/lib/payments/depositVault'
+import { provisionUserVault } from '@/lib/payments/vault'
 
 const USDC = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as `0x${string}`
@@ -52,13 +53,6 @@ function eq(a: string, b: string): boolean {
 }
 
 export async function POST(req: Request) {
-  if (!TREASURY) {
-    return NextResponse.json(
-      { error: 'USDC_TREASURY_ADDRESS not configured on server' },
-      { status: 500 },
-    )
-  }
-
   const parsed = Body.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 })
@@ -142,6 +136,8 @@ export async function POST(req: Request) {
     )
   }
 
+  const { address: vaultAddress } = await provisionUserVault(u.id)
+
   const [t] = transfers
   if (!eq(t.from, u.wallet)) {
     return NextResponse.json(
@@ -153,11 +149,11 @@ export async function POST(req: Request) {
       { status: 400 },
     )
   }
-  if (!eq(t.to, TREASURY)) {
+  if (!eq(t.to, vaultAddress)) {
     return NextResponse.json(
       {
-        error: 'Transfer.to is not the treasury',
-        expected: getAddress(TREASURY),
+        error: 'Transfer.to is not your vault address',
+        expected: getAddress(vaultAddress),
         got: getAddress(t.to),
       },
       { status: 400 },
@@ -167,54 +163,47 @@ export async function POST(req: Request) {
   // Convert raw USDC (6 decimals) → credits.
   //   credits = floor(value * RATE / 10^6)
   // Reject < 1 credit (i.e., dust) so we don't leave funds stranded.
-  const divisor = BigInt(10) ** BigInt(USDC_DECIMALS)
-  const credits = Number((t.value * BigInt(TOPUP_RATE)) / divisor)
+  const divisor = 10 ** USDC_DECIMALS
+  const usdcAmount = Number(t.value) / divisor
 
-  if (!Number.isFinite(credits) || credits <= 0) {
+  if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) {
     return NextResponse.json(
-      { error: 'tx value too small (would credit 0)', value: t.value.toString() },
+      { error: 'tx value too small', value: t.value.toString() },
       { status: 400 },
     )
   }
 
   try {
-    const { balance } = await grantCredits({
+    const { balance } = await depositUsdcBalance({
       userId: u.id,
-      amount: credits,
+      amountUsdc: usdcAmount,
       reason: 'topup_onchain',
       txHash,
     })
     return NextResponse.json({
       ok: true,
-      granted: credits,
-      balance,
+      grantedUsdc: usdcAmount,
+      balanceUsdc: balance,
       txHash,
       explorer: explorerTxUrl(txHash),
-      usdcAmount: Number(t.value) / 10 ** USDC_DECIMALS,
-      rate: TOPUP_RATE,
+      usdcAmount,
     })
-  } catch (e) {
-    if (e instanceof DuplicateTopupError) {
-      return NextResponse.json(
-        {
-          error: 'This tx has already been claimed',
-          txHash,
-          tx: explorerTxUrl(txHash),
-        },
-        { status: 409 },
-      )
-    }
-    throw e
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Deposit failed' }, { status: 400 })
   }
 }
 
 export async function GET() {
   try {
     const u = await getCurrentUser()
+    const { address: vaultAddress } = await provisionUserVault(u.id)
     return NextResponse.json({
-      rate: TOPUP_RATE,
-      balance: u.credits,
-      treasury: TREASURY,
+      balanceUsdc: parseFloat(u.usdcBalance || '0'),
+      vaultAddress,
+      // Deprecated alias — kept only so any not-yet-updated client code
+      // doesn't hard-crash mid-rollout; points at the real per-user
+      // vault now instead of a shared treasury.
+      treasury: vaultAddress,
       usdcAddress: USDC,
       usdcDecimals: USDC_DECIMALS,
     })
@@ -224,7 +213,7 @@ export async function GET() {
         {
           rate: TOPUP_RATE,
           balance: 0,
-          treasury: TREASURY,
+          vaultAddress: null,
           usdcAddress: USDC,
           usdcDecimals: USDC_DECIMALS,
           error: 'unauthenticated',
@@ -240,7 +229,7 @@ export async function GET() {
       {
         rate: TOPUP_RATE,
         balance: 0,
-        treasury: TREASURY,
+        vaultAddress: null,
         usdcAddress: USDC,
         usdcDecimals: USDC_DECIMALS,
         error: 'db_unavailable',

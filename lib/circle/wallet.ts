@@ -1,13 +1,16 @@
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { getAddress, parseAbi, parseEther, parseUnits, encodeFunctionData, type Hex } from 'viem'
 import { adminAccount, publicClient, sendTransactionForAccount, sendAdminTransaction } from '@/lib/chain/client'
+import { decryptSecret } from '@/lib/crypto/walletEncryption'
 
 const USDC_ADDRESS = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as `0x${string}`
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')
 
 const PREFUND_NATIVE_AMOUNT = process.env.PREFUND_NATIVE_AMOUNT ?? '0.01'
-const PREFUND_USDC_AMOUNT = process.env.PREFUND_USDC_AMOUNT ?? '0.3'
+/** Exported so vault provisioning can mirror the real on-chain prefund
+ *  amount into the off-chain spend ledger — see lib/payments/vault.ts. */
+export const PREFUND_USDC_AMOUNT = process.env.PREFUND_USDC_AMOUNT ?? '0.3'
 
 const erc20Abi = parseAbi([
   'function transfer(address to, uint256 amount) returns (bool)',
@@ -33,8 +36,16 @@ export async function createAgentWallet(): Promise<AgentWallet> {
 
 /**
  * Obtains a viem Account instance from a walletId (private key).
+ *
+ * `walletId` may be an encrypted envelope (agents.wallet_id /
+ * users.vault_wallet_id, post security-fix) or a legacy/raw plaintext hex
+ * key (pre-migration rows, or an env-provided key like ADMIN_PRIVATE_KEY
+ * passed in as a fallback) — decryptSecret() passes plaintext through
+ * unchanged, so both cases work here without the caller needing to know
+ * which one it has.
  */
 export function getAgentAccount(walletId: string) {
+  walletId = decryptSecret(walletId)
   if (!walletId.startsWith('0x')) {
     walletId = `0x${walletId}`
   }

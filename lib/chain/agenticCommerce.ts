@@ -24,8 +24,10 @@
  * return `null` so the existing dispatch envelope path still runs.
  */
 import { decodeEventLog, decodeFunctionData, getAddress, keccak256, parseAbi, parseUnits, toHex, type Hex, encodeFunctionData } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 
-import { adminAccount, pollingClient, publicClient, sendAdminTransaction } from './client'
+import { adminAccount, pollingClient, publicClient, sendAdminTransaction, sendTransactionForAccount } from './client'
+import { prefundAgentWallet } from '@/lib/circle/wallet'
 
 const AGENTIC_COMMERCE = (process.env.AGENTIC_COMMERCE_ADDRESS ??
   '0x0747EEf0706327138c69792bF28Cd525089e4583') as `0x${string}`
@@ -205,54 +207,112 @@ async function adminSend(to: `0x${string}`, data: Hex): Promise<{ hash: Hex; rec
   return { hash, receipt }
 }
 
+/**
+ * Same as adminSend, but signs from an arbitrary account — used to send
+ * the "client" leg of ERC-8183 (createJob/approve/fund) from the user's
+ * own vault instead of the admin wallet. See openAndFundJob's
+ * `clientAccount` param.
+ */
+async function clientSendFrom(
+  account: ReturnType<typeof privateKeyToAccount>,
+  to: `0x${string}`,
+  data: Hex,
+): Promise<{ hash: Hex; receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>> }> {
+  const hash = await sendTransactionForAccount(account, { to, data })
+  if (!hash) throw new Error('failed to broadcast client transaction')
+
+  const receipt = await pollingClient.waitForTransactionReceipt({
+    hash,
+    confirmations: 1,
+    timeout: 90_000,
+    pollingInterval: 1_500,
+  })
+  if (receipt.status !== 'success') {
+    throw new Error(`tx ${hash} reverted`)
+  }
+  return { hash, receipt }
+}
+
 
 
 /**
  * Create the job, set the budget, approve USDC, and fund the escrow.
  * Returns the jobId + every tx hash so the caller can persist the trail.
  *
- * `budgetUsdc` is in human units (e.g., "0.1" = 0.1 USDC). Kept tiny on
- * testnet so the admin wallet's faucet balance survives many workflows.
+ * `budgetUsdc` is in human units (e.g., "0.1" = 0.1 USDC).
+ *
+ * `clientAccount` (optional): when provided, the "client" leg
+ * (createJob / approve / fund) is signed by THIS account — the real
+ * per-user vault (lib/payments/vault.ts) — instead of the admin wallet,
+ * so escrowed USDC really comes out of the user's own funds. Provider
+ * and evaluator stay platform-controlled (admin) either way; only the
+ * client role moves. Falls back to the old admin-self-loop when omitted
+ * (e.g. Job Board / test scripts that haven't migrated yet).
  */
 export async function openAndFundJob(args: {
   description: string
   budgetUsdc: string
   expirySeconds?: number
+  clientAccount?: ReturnType<typeof privateKeyToAccount>
 }): Promise<OpenAndFundResult | null> {
   if (!ERC8183_ENABLED || !adminAccount) return null
 
-  const me = adminAccount.address
+  const client = args.clientAccount ?? adminAccount
+  const clientAddr = client.address
+  const providerEvaluator = adminAccount.address // platform stays provider + evaluator
+  const send = args.clientAccount
+    ? (to: `0x${string}`, data: Hex) => clientSendFrom(client, to, data)
+    : adminSend
   const expiredAt = BigInt(Math.floor(Date.now() / 1000) + (args.expirySeconds ?? 24 * 3600))
   const budget = parseUnits(args.budgetUsdc, USDC_DECIMALS)
 
-  // Step 1 — createJob. Admin acts as client, provider, and evaluator
-  // (single-party demo flow). Hook = address(0) for the default path.
-  const createData = encodeCreateJob(me, me, expiredAt, args.description)
-  const create = await adminSend(AGENTIC_COMMERCE, createData)
+  // Pre-flight: a freshly provisioned vault has zero gas/USDC. Top it up
+  // from the admin faucet before attempting to sign — best-effort, the
+  // subsequent sends will surface a clear error if this doesn't help.
+  if (args.clientAccount) {
+    try {
+      const [nativeBal, usdcBal] = await Promise.all([
+        publicClient.getBalance({ address: clientAddr }),
+        publicClient.readContract({ address: USDC_ADDRESS, abi: erc20Abi, functionName: 'allowance', args: [clientAddr, AGENTIC_COMMERCE] }).catch(() => 0n),
+      ])
+      if (nativeBal === 0n) {
+        await prefundAgentWallet(clientAddr)
+      }
+      void usdcBal // allowance checked again below; this pre-read is just to warm the RPC path
+    } catch (e) {
+      console.warn('[openAndFundJob] vault pre-flight funding check failed (continuing):', e instanceof Error ? e.message : e)
+    }
+  }
+
+  // Step 1 — createJob, signed by the client (user's vault, or admin
+  // when no vault account was given). Hook = address(0) for the default path.
+  const createData = encodeCreateJob(providerEvaluator, providerEvaluator, expiredAt, args.description)
+  const create = await send(AGENTIC_COMMERCE, createData)
   const jobId = extractJobIdFromReceipt(create.receipt.logs)
   if (!jobId) throw new Error('JobCreated event missing from receipt')
 
   // Step 2 & 3 — Check allowance & Approve (Max), setBudget, and fund.
-  // Keep admin txs serialized to avoid nonce collisions with dispatch/finalize.
   let approveHash: Hex = '0x0'
   const allowance = await publicClient.readContract({
     address: USDC_ADDRESS,
     abi: erc20Abi,
     functionName: 'allowance',
-    args: [me, AGENTIC_COMMERCE],
+    args: [clientAddr, AGENTIC_COMMERCE],
   })
 
   if (allowance < budget) {
     const approveData = encodeApprove(AGENTIC_COMMERCE, MAX_UINT256)
-    const approve = await adminSend(USDC_ADDRESS, approveData)
+    const approve = await send(USDC_ADDRESS, approveData)
     approveHash = approve.hash
   }
 
+  // setBudget is the provider's role — always admin-signed, regardless
+  // of who the client is.
   const setBudgetData = encodeSetBudget(jobId, budget)
   const setBudget = await adminSend(AGENTIC_COMMERCE, setBudgetData)
 
   const fundData = encodeFund(jobId)
-  const fund = await adminSend(AGENTIC_COMMERCE, fundData)
+  const fund = await send(AGENTIC_COMMERCE, fundData)
 
   return {
     jobId: jobId.toString(),
@@ -475,11 +535,15 @@ function extractJobIdFromReceipt(logs: readonly { address: `0x${string}`; data: 
 export const ERC8183_CONTRACT = AGENTIC_COMMERCE
 export const USDC_CONTRACT = USDC_ADDRESS
 
-// ─── Plan A: user-as-client, admin-as-provider+evaluator ──────────────
-// Below this line is the new flow where the user's Privy embedded wallet
-// signs createJob/approve/fund and the platform admin signs setBudget/submit/
-// complete. Plan A flag is independent from ERC8183_ENABLED; both must be on
-// for the new flow to actually run.
+// ─── Plan A: user-as-client, admin-as-provider+evaluator (DEPRECATED) ──
+// Below this line is the OLD flow where the user's Privy embedded wallet
+// signs createJob/approve/fund directly (3 wallet prompts). Superseded
+// by openAndFundJob({ clientAccount }) above, which signs from the
+// user's real custodial vault (lib/payments/vault.ts) server-side — no
+// wallet prompts needed. Kept in place (gated by ERC8183_USER_CLIENT,
+// off in prod) rather than deleted; see the vault-architecture plan doc
+// for the disposition call. Plan A flag is independent from
+// ERC8183_ENABLED; both must be on for this old flow to actually run.
 export const ERC8183_USER_CLIENT = process.env.ERC8183_USER_CLIENT === '1'
 
 export interface PreparedClientTx {

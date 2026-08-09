@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { and, eq, sql } from 'drizzle-orm'
 
+import { reputationAlreadySettled } from '@/lib/ai/finalizeWorkflow'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { incrementReputationBatch } from '@/lib/chain/reputation'
 import { db } from '@/lib/db/client'
@@ -32,18 +33,9 @@ export async function POST(_req: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: 'not_terminal', status: wf.status }, { status: 409 })
   }
 
-  const existing = await db
-    .select({ id: messages.id })
-    .from(messages)
-    .where(
-      and(
-        eq(messages.workflowId, id),
-        eq(messages.toolName, 'reputationUpdate'),
-      ),
-    )
-    .limit(1)
-
-  if (existing.length > 0) {
+  // Shared with cacheReputation: a placeholder or a skipped attempt must
+  // not make this endpoint report success and refuse to retry.
+  if (await reputationAlreadySettled(id)) {
     return NextResponse.json({ ok: true, already: true })
   }
 

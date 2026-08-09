@@ -1,6 +1,7 @@
 import { db } from '@/lib/db/client'
 import { agents } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
+import { encryptSecretIfNeeded } from '@/lib/crypto/walletEncryption'
 
 export type AgentInsert = typeof agents.$inferInsert
 export type AgentSelect = typeof agents.$inferSelect
@@ -75,6 +76,14 @@ export async function upsertAgent(agentData: AgentInsert): Promise<AgentSelect> 
     throw new Error('walletAddress is required to upsert an agent')
   }
 
+  // Encrypt the private key at the persistence boundary (see
+  // lib/crypto/walletEncryption.ts) — callers (e.g. createAgentWallet())
+  // still produce plaintext, so this is the single place that must never
+  // be skipped. Guarded by encryptSecretIfNeeded so re-upserting an
+  // already-encrypted value (unrelated field update on an existing
+  // agent) never double-encrypts.
+  const walletId = agentData.walletId ? encryptSecretIfNeeded(agentData.walletId) : agentData.walletId
+
   const existing = await getAgentByAddress(agentData.walletAddress)
   if (existing) {
     const [updated] = await db
@@ -84,7 +93,7 @@ export async function upsertAgent(agentData: AgentInsert): Promise<AgentSelect> 
         name: agentData.name ?? existing.name,
         description: agentData.description ?? existing.description,
         capabilities: agentData.capabilities ?? existing.capabilities,
-        walletId: agentData.walletId ?? existing.walletId,
+        walletId: walletId ?? existing.walletId,
         metadataUri: agentData.metadataUri ?? existing.metadataUri,
         reputationScore: agentData.reputationScore ?? existing.reputationScore,
         isActive: agentData.isActive !== undefined ? agentData.isActive : existing.isActive,
@@ -93,7 +102,7 @@ export async function upsertAgent(agentData: AgentInsert): Promise<AgentSelect> 
       .returning()
     return updated
   } else {
-    const [inserted] = await db.insert(agents).values(agentData).returning()
+    const [inserted] = await db.insert(agents).values({ ...agentData, walletId }).returning()
     return inserted
   }
 }

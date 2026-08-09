@@ -1,3 +1,9 @@
+/**
+ * @deprecated Plan A ("user-as-client") route — see the deprecation note
+ * in app/api/workflow/escrow/prepare/route.ts. Superseded by server-side
+ * vault signing (lib/payments/vault.ts + lib/chain/agenticCommerce.ts's
+ * openAndFundJob({ clientAccount })).
+ */
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
@@ -85,6 +91,9 @@ export async function POST(req: Request) {
     }
 
     const expectedSender = parsed.data.agentWalletAddress ?? user.wallet
+    if (!expectedSender) {
+      throw new Error('User wallet address missing')
+    }
     if (tx.from.toLowerCase() !== expectedSender.toLowerCase()) {
       throw new Error(`Sender mismatch: expected sender ${expectedSender}, got ${tx.from}`)
     }

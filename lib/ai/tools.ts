@@ -3,9 +3,10 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { publishFinalReport } from '@/lib/ai/finalizeWorkflow'
-import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
+import { chargeUsdcBalance, InsufficientUsdcError } from '@/lib/payments/depositVault'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, workflows } from '@/lib/db/schema'
+import { decryptProfileSecrets } from '@/lib/notifications/secrets'
 import { callSkillEndpoint, getSkillByName } from '@/lib/skills/registry'
 import { emitWorkflowEvent } from '@/lib/workflow/events'
 
@@ -503,7 +504,7 @@ export function buildBrainTools(ctx: BrainContext) {
       // bot_token is sensitive — keep a separate `recordedInput` with
       // the token redacted before persisting to messages.tool_payload.
       if (userId && (skill_name === 'email-sender' || skill_name === 'telegram-sender')) {
-        const [profile] = await db
+        const [profileRow] = await db
           .select({
             notifyEmail: users.notifyEmail,
             emailApiKey: users.emailApiKey,
@@ -514,6 +515,8 @@ export function buildBrainTools(ctx: BrainContext) {
           .from(users)
           .where(eq(users.id, userId))
           .limit(1)
+        // Secrets are encrypted at rest — see lib/notifications/secrets.ts.
+        const profile = decryptProfileSecrets(profileRow)
         if (skill_name === 'email-sender') {
           if (!input.to && profile?.notifyEmail) input.to = profile.notifyEmail
           if (!input.api_key && profile?.emailApiKey) input.api_key = profile.emailApiKey
@@ -535,19 +538,24 @@ export function buildBrainTools(ctx: BrainContext) {
         }
       }
 
+      // Charge the user's real USDC vault balance — same unit and same
+      // ledger the DAG executor uses (lib/workflow/executor.ts). There is
+      // no separate "credits" currency any more; manifest.cost_credits is
+      // just a legacy field name for a price in hundredths of a dollar.
       const manifest = (skill.manifest ?? {}) as Record<string, unknown>
-      const cost = Math.max(0, Math.round((manifest.cost_credits as number) ?? 5))
+      const costCredits = Math.max(0, Math.round((manifest.cost_credits as number) ?? 5))
+      const costUsdc = costCredits > 0 ? costCredits / 100 : 0
 
-      if (userId && cost > 0) {
+      if (userId && costUsdc > 0) {
         try {
-          await chargeCredits({
+          await chargeUsdcBalance({
             userId,
-            amount: cost,
+            amountUsdc: costUsdc,
             reason: `dispatch:${skill_name}`,
             workflowId,
           })
         } catch (err) {
-          if (err instanceof InsufficientCreditsError) {
+          if (err instanceof InsufficientUsdcError) {
             const completedAt = new Date()
             await db
               .update(nodes)
@@ -555,7 +563,7 @@ export function buildBrainTools(ctx: BrainContext) {
                 status: 'failed',
                 completedAt,
                 timing: { durationMs: completedAt.getTime() - startedAt.getTime() },
-                output: { error: 'insufficient_credits', need: cost, have: err.have },
+                output: { error: 'insufficient_usdc', need: costUsdc, have: err.have },
               })
               .where(eq(nodes.id, node_id))
             await emitWorkflowEvent({
@@ -565,16 +573,16 @@ export function buildBrainTools(ctx: BrainContext) {
               agentId: skill.agentTokenId ?? null,
               type: 'node.failed',
               status: 'failed',
-              message: `Insufficient credits to run ${skill_name}`,
-              payload: { error: 'insufficient_credits', need: cost, have: err.have },
+              message: `Insufficient USDC vault balance to run ${skill_name}`,
+              payload: { error: 'insufficient_usdc', need: costUsdc, have: err.have },
             })
             return {
               ok: false,
-              error: 'insufficient_credits',
+              error: 'insufficient_usdc',
               skill_name,
-              need_credits: cost,
-              have_credits: err.have,
-              hint: 'Top up via the wallet button (1 USDC = 100 credits).',
+              need_usdc: costUsdc,
+              have_usdc: err.have,
+              hint: 'Deposit USDC into your vault from the Billing page.',
             }
           }
           throw err

@@ -17,19 +17,26 @@ const settleAbi = parseAbi([
 
 type RouteCtx = { params: Promise<{ id: string }> }
 
+// `createdAt` is the real persisted row timestamp. The terminal console
+// orders its log strictly by these — without them it had to stamp lines
+// with the time it happened to fetch, which pushed a replayed run's
+// prompt and plan to the BOTTOM of the log, after events that really
+// happened hours earlier.
 type ToolPart = {
   type: string
   toolCallId: string
   state: 'output-available'
   input: unknown
   output: unknown
+  createdAt: string
 }
 
-type TextPart = { type: 'text'; text: string }
+type TextPart = { type: 'text'; text: string; createdAt: string }
 
 type UIMessageOut = {
   id: string
   role: 'user' | 'assistant'
+  createdAt: string
   parts: (ToolPart | TextPart)[]
 }
 
@@ -57,76 +64,78 @@ export async function GET(_req: Request, ctx: RouteCtx) {
 
   if (!wf) return NextResponse.json({ error: 'not found' }, { status: 404 })
 
-  // Self-heal: If EIP-8183 job is active but completeTx is missing in DB
+  // Non-blocking Self-heal: If EIP-8183 job is active but completeTx is missing in DB
   if (wf.erc8183JobId && !wf.erc8183CompleteTx && wf.erc8183FundTx) {
     try {
       const jobId = BigInt(wf.erc8183JobId)
-      const onChainStatus = await readJobStatus(jobId)
+      const onChainStatus = await Promise.race([
+        readJobStatus(jobId),
+        new Promise<number>((r) => setTimeout(() => r(-1), 1000)),
+      ])
       if (onChainStatus === 3) {
-        const fundTx = wf.erc8183FundTx as Hex
-        const latestBlock = await publicClient.getBlockNumber()
-
-        let fromBlock = 0n
-        try {
-          const fundReceipt = await publicClient.getTransactionReceipt({ hash: fundTx })
-          fromBlock = fundReceipt.blockNumber
-        } catch {
-          fromBlock = latestBlock > 200n ? latestBlock - 200n : 0n
-        }
-
-        let submitTx: Hex | null = null
-        let completeTx: Hex | null = null
-        let deliverableHash: Hex | null = null
-
-        // Scan from fromBlock to latestBlock (cap at fromBlock + 300 blocks for quick responses)
-        const toBlock = latestBlock < fromBlock + 300n ? latestBlock : fromBlock + 300n
-        for (let b = fromBlock; b <= toBlock; b++) {
-          try {
-            const block = await publicClient.getBlock({ blockNumber: b, includeTransactions: true })
-            for (const tx of block.transactions) {
-              if (tx.to?.toLowerCase() !== ERC8183_CONTRACT.toLowerCase()) continue
-              try {
-                const decoded = decodeFunctionData({ abi: settleAbi, data: tx.input })
-                if (decoded.args[0] === jobId) {
-                  if (decoded.functionName === 'submit') {
-                    submitTx = tx.hash
-                    deliverableHash = decoded.args[1]
-                  }
-                  if (decoded.functionName === 'complete') {
-                    completeTx = tx.hash
-                  }
-                }
-              } catch {
-                // ignore
-              }
-            }
-          } catch {
-            // ignore block error
-          }
-          if (submitTx && completeTx) break
-        }
-
-        if (submitTx && completeTx) {
-          await db
-            .update(workflows)
-            .set({
-              erc8183SubmitTx: submitTx,
-              erc8183CompleteTx: completeTx,
-              erc8183DeliverableHash: deliverableHash,
-              status: 'completed',
-            })
-            .where(eq(workflows.id, id))
-
-          // Update local mutable object for immediate response
-          wf.erc8183SubmitTx = submitTx
-          wf.erc8183CompleteTx = completeTx
-          wf.erc8183DeliverableHash = deliverableHash
+        // Fast-path status update so the response returns in < 15ms
+        if (wf.status !== 'completed') {
           wf.status = 'completed'
-          console.log(`[Self-Heal] Successfully synced EIP-8183 settlement in route for job #${jobId}`)
+          db.update(workflows)
+            .set({ status: 'completed' })
+            .where(eq(workflows.id, id))
+            .catch(() => {})
         }
+        // Run deep block scan asynchronously in background without blocking response
+        setTimeout(async () => {
+          try {
+            const fundTx = wf.erc8183FundTx as Hex
+            const latestBlock = await publicClient.getBlockNumber()
+            let fromBlock = 0n
+            try {
+              const fundReceipt = await publicClient.getTransactionReceipt({ hash: fundTx })
+              fromBlock = fundReceipt.blockNumber
+            } catch {
+              fromBlock = latestBlock > 50n ? latestBlock - 50n : 0n
+            }
+            let submitTx: Hex | null = null
+            let completeTx: Hex | null = null
+            let deliverableHash: Hex | null = null
+            const toBlock = latestBlock < fromBlock + 50n ? latestBlock : fromBlock + 50n
+            for (let b = fromBlock; b <= toBlock; b++) {
+              try {
+                const block = await publicClient.getBlock({ blockNumber: b, includeTransactions: true })
+                for (const tx of block.transactions) {
+                  if (tx.to?.toLowerCase() !== ERC8183_CONTRACT.toLowerCase()) continue
+                  try {
+                    const decoded = decodeFunctionData({ abi: settleAbi, data: tx.input })
+                    if (decoded.args[0] === jobId) {
+                      if (decoded.functionName === 'submit') {
+                        submitTx = tx.hash
+                        deliverableHash = decoded.args[1]
+                      }
+                      if (decoded.functionName === 'complete') {
+                        completeTx = tx.hash
+                      }
+                    }
+                  } catch {}
+                }
+              } catch {}
+              if (submitTx && completeTx) break
+            }
+            if (submitTx && completeTx) {
+              await db
+                .update(workflows)
+                .set({
+                  erc8183SubmitTx: submitTx,
+                  erc8183CompleteTx: completeTx,
+                  erc8183DeliverableHash: deliverableHash,
+                  status: 'completed',
+                })
+                .where(eq(workflows.id, id))
+            }
+          } catch (e) {
+            console.warn('[Self-Heal Background] failed', e)
+          }
+        }, 0)
       }
     } catch (err) {
-      console.warn('[Self-Heal] on-demand sync failed', err)
+      console.warn('[Self-Heal] fast check skipped', err)
     }
   }
 
@@ -145,10 +154,12 @@ export async function GET(_req: Request, ctx: RouteCtx) {
 
   // First user bubble = workflow.prompt (the seed insert in /api/workflow lives
   // here, but we always synthesize from wf.prompt to be safe).
+  const seedAt = (rows.find((m) => m.role === 'user')?.createdAt ?? wf.createdAt).toISOString()
   out.push({
     id: 'u-seed',
     role: 'user',
-    parts: [{ type: 'text', text: wf.prompt }],
+    createdAt: seedAt,
+    parts: [{ type: 'text', text: wf.prompt, createdAt: seedAt }],
   })
 
   // Assistant message bundles every tool/text artifact in chronological order.
@@ -191,6 +202,7 @@ export async function GET(_req: Request, ctx: RouteCtx) {
         state: 'output-available',
         input,
         output,
+        createdAt: m.createdAt.toISOString(),
       })
       continue
     }
@@ -202,19 +214,25 @@ export async function GET(_req: Request, ctx: RouteCtx) {
           state: 'output-available',
           input: {},
           output: { error: m.content },
+          createdAt: m.createdAt.toISOString(),
         })
         continue
       }
       if (m.toolName === 'auto_finalize' && m.content.trimStart().startsWith('▸ Planning workflow')) {
         continue
       }
-      assistantParts.push({ type: 'text', text: m.content })
+      assistantParts.push({ type: 'text', text: m.content, createdAt: m.createdAt.toISOString() })
       continue
     }
   }
 
   if (assistantParts.length > 0) {
-    out.push({ id: 'a-history', role: 'assistant', parts: assistantParts })
+    out.push({
+      id: 'a-history',
+      role: 'assistant',
+      createdAt: assistantParts[0].createdAt,
+      parts: assistantParts,
+    })
   }
 
   return NextResponse.json({

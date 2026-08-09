@@ -49,6 +49,23 @@ export async function POST(req: Request, ctx: RouteCtx) {
     .set({ status: 'queued' })
     .where(eq(workflows.id, workflowId))
 
+  // Non-blocking execution fallback in case standalone worker process isn't running
+  setTimeout(async () => {
+    try {
+      const { executeWorkflowRun } = await import('@/lib/workflow/executor')
+      const [claimed] = await db
+        .update(workflows)
+        .set({ status: 'running' })
+        .where(and(eq(workflows.id, workflowId), eq(workflows.status, 'queued')))
+        .returning()
+      if (claimed) {
+        await executeWorkflowRun({ workflowId: claimed.id, userId: claimed.userId })
+      }
+    } catch (err) {
+      console.error('[execute] Background execution error:', err)
+    }
+  }, 100)
+
   return new Response(JSON.stringify({ ok: true, message: 'Workflow queued for execution' }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },

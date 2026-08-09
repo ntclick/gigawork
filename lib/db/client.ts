@@ -9,7 +9,7 @@ if (!url) {
 }
 
 const connectionUrl = url.replace('aws-1-ap-south-1.pooler.supabase.com', '3.109.171.244')
-const client = postgres(connectionUrl, { prepare: false, max: 5, idle_timeout: 20, connect_timeout: 10 })
+const client = postgres(connectionUrl, { prepare: false, max: 25, idle_timeout: 10, connect_timeout: 10 })
 
 export const db = drizzle(client, { schema })
 export type DB = typeof db

@@ -12,6 +12,13 @@
  * are stored once and never echoed back in clear text. Skill handlers
  * read them from this profile and redact before recording dispatches into
  * the workflow message log (see lib/ai/tools.ts).
+ *
+ * email_api_key and telegram_bot_token are ENCRYPTED AT REST — see
+ * lib/notifications/secrets.ts. This route is one of only two write
+ * boundaries (the other is /api/workflow/[id]/deploy's legacy path), so
+ * every value must go through encryptProfileSecret() before it touches
+ * the DB, and anything read back for display must be decrypted before
+ * masking.
  */
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
@@ -21,6 +28,7 @@ import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { users } from '@/lib/db/schema'
+import { decryptProfileSecrets, encryptProfileSecret, maskSecret } from '@/lib/notifications/secrets'
 
 const Body = z.object({
   notifyEmail: z
@@ -56,13 +64,6 @@ const Body = z.object({
     .optional(),
 })
 
-/** Mask a secret — show last 4 chars only. */
-function mask(t: string | null): string | null {
-  if (!t) return null
-  if (t.length < 8) return '••••'
-  return '•'.repeat(Math.min(20, t.length - 4)) + t.slice(-4)
-}
-
 interface ProfileResponse {
   notifyEmail: string | null
   emailFrom: string | null
@@ -73,6 +74,11 @@ interface ProfileResponse {
   telegramBotTokenMasked: string | null
 }
 
+/**
+ * Builds the client-facing profile shape. `u` must carry PLAINTEXT
+ * secrets — run DB rows through decryptProfileSecrets() first, or the
+ * "masked" preview would show the tail of the ciphertext envelope.
+ */
 function profileFrom(u: {
   notifyEmail: string | null
   emailApiKey: string | null
@@ -84,17 +90,17 @@ function profileFrom(u: {
     notifyEmail: u.notifyEmail ?? null,
     emailFrom: u.emailFrom ?? null,
     hasEmailApiKey: !!u.emailApiKey,
-    emailApiKeyMasked: mask(u.emailApiKey ?? null),
+    emailApiKeyMasked: maskSecret(u.emailApiKey),
     telegramChatId: u.telegramChatId ?? null,
     hasTelegramBotToken: !!u.telegramBotToken,
-    telegramBotTokenMasked: mask(u.telegramBotToken ?? null),
+    telegramBotTokenMasked: maskSecret(u.telegramBotToken),
   }
 }
 
 export async function GET() {
   try {
     const u = await getCurrentUser()
-    return NextResponse.json({ profile: profileFrom(u) })
+    return NextResponse.json({ profile: profileFrom(decryptProfileSecrets(u)) })
   } catch (e) {
     if (e instanceof AuthRequiredError) {
       return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
@@ -141,21 +147,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, unchanged: true })
     }
 
+    // `patch` holds PLAINTEXT (used for the masked response below).
+    // Encrypt the two secrets at this write boundary before they touch
+    // the DB — see lib/notifications/secrets.ts.
+    const dbPatch = { ...patch }
+    if ('emailApiKey' in dbPatch) {
+      dbPatch.emailApiKey = encryptProfileSecret(dbPatch.emailApiKey)
+    }
+    if ('telegramBotToken' in dbPatch) {
+      dbPatch.telegramBotToken = encryptProfileSecret(dbPatch.telegramBotToken)
+    }
+
     await withDbRetry(
-      () => db.update(users).set(patch).where(eq(users.id, u.id)),
+      () => db.update(users).set(dbPatch).where(eq(users.id, u.id)),
       { label: 'profile:update' },
     )
 
-    // Build response from `patch` for fields that were sent, falling back
-    // to old values for fields that weren't touched.
+    // Build response from `patch` (plaintext) for fields that were sent,
+    // falling back to the stored values for fields that weren't touched —
+    // those come from the DB encrypted, so decrypt before masking.
+    const stored = decryptProfileSecrets(u)
     const merged = {
       notifyEmail: 'notifyEmail' in patch ? patch.notifyEmail ?? null : u.notifyEmail ?? null,
-      emailApiKey: 'emailApiKey' in patch ? patch.emailApiKey ?? null : u.emailApiKey ?? null,
+      emailApiKey: 'emailApiKey' in patch ? patch.emailApiKey ?? null : stored.emailApiKey ?? null,
       emailFrom: 'emailFrom' in patch ? patch.emailFrom ?? null : u.emailFrom ?? null,
       telegramChatId:
         'telegramChatId' in patch ? patch.telegramChatId ?? null : u.telegramChatId ?? null,
       telegramBotToken:
-        'telegramBotToken' in patch ? patch.telegramBotToken ?? null : u.telegramBotToken ?? null,
+        'telegramBotToken' in patch ? patch.telegramBotToken ?? null : stored.telegramBotToken ?? null,
     }
 
     return NextResponse.json({ ok: true, profile: profileFrom(merged) })

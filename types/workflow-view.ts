@@ -15,8 +15,16 @@ export type EscrowStatus =
 export interface WorkflowStep {
   id: string
   label: string           // human-readable, already in English
-  agentAddress: string
   agentName: string
+  // Registry slug (`skills.name`) — the key to join against /api/skills for
+  // reputation and lifetime call count. `agentName` is the display name and
+  // does not match anything.
+  agentSlug?: string
+  // Real ERC-8004 identity token minted for this skill, or null. There is
+  // deliberately no `agentAddress` — the previous one was fabricated from
+  // a hash of the skill name and must never be shown as on-chain identity.
+  agentTokenId?: string | null
+  pricePerCall?: string | null  // x402 price in USDC, from the skill manifest
   status: StepStatus
   startedAt?: string      // ISO timestamp
   completedAt?: string
@@ -56,7 +64,7 @@ export interface WorkflowTimelineEvent {
 export interface WorkflowViewState {
   workflowId: string
   title: string
-  overallStatus: 'planning' | 'running' | 'verifying' | 'complete' | 'failed'
+  overallStatus: 'thinking' | 'planning' | 'hiring' | 'running' | 'verifying' | 'complete' | 'failed'
   escrow: {
     status: EscrowStatus
     amountUsdc: string
@@ -65,6 +73,17 @@ export interface WorkflowViewState {
   steps: WorkflowStep[]
   events: WorkflowTimelineEvent[]
   reputationDelta?: number   // shown after completion
+
+  /**
+   * The hiring side of the job. Under ERC-8004 the client is an agent too:
+   * it holds its own identity NFT and earns its own reputation for paying
+   * and specifying work well. The UI previously showed only the providers,
+   * so nothing on screen said which agent was doing the hiring.
+   */
+  client?: {
+    identityTokenId: string | null
+    reputationScore: number | null
+  }
   completedAt?: string
   erc8183?: {
     jobId?: string | null

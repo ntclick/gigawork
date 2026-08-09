@@ -116,26 +116,10 @@ export function buildEnvelope(opts: {
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
-    id: 'token-scanner-telegram',
-    emoji: '🔍',
-    title: 'Token Scanner & Telegram Alert Team',
-    desc: 'Birdeye Scanner Agent analyzes on-chain metrics and transfers the alert to Hermes Telegram Agent for instant risk notification.',
-    category: 'research',
-    skillName: 'crypto-scanner',
-    defaults: {
-      token_address: '0x6982508145454ce325ddbe47a25d4ec3d2311933',
-      chain: 'ethereum',
-    },
-    followupSkills: ['report-composer', 'telegram-sender'],
-    uses: ['crypto-scanner', 'report-composer', 'telegram-sender'],
-    prompt:
-      'Scan on-chain metrics of token 0x6982508145454ce325ddbe47a25d4ec3d2311933 on ethereum using Birdeye Scanner Agent, compile a report and dispatch an automated alert to my phone via Telegram Agent.',
-  },
-  {
     id: 'defi-yield-finder',
     emoji: '🌾',
-    title: 'DeFi Yield APY Hunter Team',
-    desc: 'Yield Finder Agent scans DeFi protocols for high APY pools and hands over the yield analysis to Composer Agent for profit optimization reporting.',
+    title: 'DeFi Yield APY Hunter & Portfolio Optimizer',
+    desc: 'Yield Finder Agent scans DeFi protocols across Ethereum, Arbitrum & Solana for highest stablecoin APY pools (TVL > $1M), analyzed by Risk Evaluator & compiled into an optimized yield report.',
     category: 'analysis',
     skillName: 'defi-yields',
     defaults: {
@@ -147,12 +131,33 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     uses: ['defi-yields', 'report-composer'],
     prompt:
       'Hunt DeFi pools for top 5 highest APY yields with TVL > 1M USD, stablecoins only, using Yield Finder Agent and compose a yield optimization report.',
+    slottedPrompt:
+      'Hunt DeFi pools for top 5 highest APY yields with TVL > 1M USD, stablecoins only, using Yield Finder Agent and compose a yield optimization report.',
   },
   {
-    id: 'trading-signals-email',
+    id: 'token-scanner-valuation',
+    emoji: '🔍',
+    title: 'Token On-Chain Security & Valuation Radar',
+    desc: 'Crypto Token Scanner scans verified on-chain metrics, DEX liquidity depth, and holder distribution from CoinGecko, DexScreener & Birdeye, analyzed by Trading Signals & compiled into an institutional report.',
+    category: 'research',
+    skillName: 'crypto-scanner',
+    defaults: {
+      token_address: '0x6982508145454ce325ddbe47a25d4ec3d2311933',
+      symbol: 'PEPE',
+      chain: 'ethereum',
+    },
+    followupSkills: ['trading-signals', 'report-composer'],
+    uses: ['crypto-scanner', 'trading-signals', 'report-composer'],
+    prompt:
+      'Scan on-chain security metrics & DEX liquidity for $PEPE (0x6982508145454ce325ddbe47a25d4ec3d2311933) on Ethereum via CoinGecko & DexScreener, calculate technical momentum indicators, and compile an institutional valuation & security report.',
+    slottedPrompt:
+      'Scan on-chain metrics and valuation for $PEPE on Ethereum via CoinGecko & DexScreener, calculate technical momentum indicators, and compile an institutional valuation & security report.',
+  },
+  {
+    id: 'trading-signals-sentinel',
     emoji: '📈',
-    title: 'Technical Signals Reporter Team',
-    desc: 'Binance Analyst Agent calculates RSI/MACD indicators for BTC/ETH and coordinates with Mailman Agent to email the signals report.',
+    title: 'Multi-Timeframe Technical Signals Sentinel',
+    desc: 'Trading Signals Analyst calculates RSI, MACD, and Momentum indicators for BTC/ETH across 4h & 1d Binance orderbooks, verified by On-Chain Liquidity & compiled into an actionable signals brief.',
     category: 'execution',
     skillName: 'trading-signals',
     defaults: {
@@ -160,16 +165,18 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       timeframe: '4h',
       exchange: 'binance',
     },
-    followupSkills: ['report-composer', 'email-sender'],
-    uses: ['trading-signals', 'report-composer', 'email-sender'],
+    followupSkills: ['crypto-scanner', 'report-composer'],
+    uses: ['trading-signals', 'crypto-scanner', 'report-composer'],
     prompt:
-      'Analyze RSI/MACD technical indicators for BTC/USDT 4h chart on Binance using Analyst Agent, compile a signals report and send it to my email.',
+      'Analyze RSI/MACD technical momentum indicators for BTC/USDT and ETH/USDT on Binance, verify market liquidity depth, and compile an actionable market signals brief.',
+    slottedPrompt:
+      'Analyze RSI/MACD technical momentum indicators for $BTC 4h chart on Binance, verify market liquidity depth, and compile an actionable market signals brief.',
   },
   {
     id: 'whale-tracker-report',
     emoji: '🐳',
-    title: 'Whale Tracker & Flow Analyst Team',
-    desc: 'Whale Tracker Agent tracks large on-chain transactions of a whale address to analyze accumulation or distribution behaviors.',
+    title: 'Smart Money Whale Wallet & Accumulation Flow',
+    desc: 'Whale Tracker Agent tracks high-value ($100k+) transactions from Ethereum smart money wallets to detect accumulation vs distribution trends.',
     category: 'on-chain',
     skillName: 'whale-tracker',
     defaults: {
@@ -181,5 +188,42 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     uses: ['whale-tracker', 'report-composer'],
     prompt:
       'Track 25 recent transactions of wallet 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on eth-mainnet using Whale Tracker Agent, analyze buy/sell flows and compile a report.',
+    slottedPrompt:
+      'Track 25 recent transactions of wallet 0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503 on eth-mainnet using Whale Tracker Agent and analyze accumulation flows.',
+  },
+  {
+    id: 'polymarket-pulse',
+    emoji: '⚡',
+    title: 'Polymarket Prediction Odds & Macro Sentiment',
+    desc: 'Polymarket Pulse Agent extracts live market odds and liquidity depth across macro policy & crypto prediction markets for sentiment analysis.',
+    category: 'analysis',
+    skillName: 'polymarket-pulse',
+    defaults: {
+      topic: 'crypto',
+      limit: 10,
+    },
+    followupSkills: ['report-composer'],
+    uses: ['polymarket-pulse', 'report-composer'],
+    prompt:
+      'Scan Polymarket prediction odds for crypto markets, analyze sentiment probabilities and compose a macro pulse report.',
+    slottedPrompt:
+      'Scan Polymarket prediction odds for crypto markets, analyze sentiment probabilities and compose a macro pulse report.',
+  },
+  {
+    id: 'nft-floor-watch',
+    emoji: '💎',
+    title: 'OpenSea NFT Floor Price & Liquidity Sentinel',
+    desc: 'Floor Watch Agent retrieves OpenSea floor prices, 24h trading volume, and listing velocity for top NFT collections.',
+    category: 'research',
+    skillName: 'nft-floor-watch',
+    defaults: {
+      collection_slug: 'pudgypenguins',
+    },
+    followupSkills: ['report-composer'],
+    uses: ['nft-floor-watch', 'report-composer'],
+    prompt:
+      'Retrieve OpenSea floor price and 24h volume stats for pudgypenguins collection using Floor Watch Agent and compile a report.',
+    slottedPrompt:
+      'Retrieve OpenSea floor price and 24h volume stats for pudgypenguins collection using Floor Watch Agent and compile a report.',
   },
 ]

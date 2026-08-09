@@ -7,6 +7,7 @@ import { updateAgentReputation } from '@/lib/supabase/agents'
 import { adminAccount } from '@/lib/chain/client'
 import { keccak256, toHex } from 'viem'
 import { getCurrentUser } from '@/lib/auth/session'
+import { decryptSecret } from '@/lib/crypto/walletEncryption'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,7 +54,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     if (!job.client || !job.client.walletId || !job.client.walletAddress) {
       return NextResponse.json({ error: 'Client agent wallet is not configured' }, { status: 500 })
     }
-    const evaluatorPrivateKey = (process.env.ADMIN_PRIVATE_KEY || job.client.walletId) as `0x${string}`
+    // job.client.walletId is the encrypted-at-rest agent key (see
+    // lib/crypto/walletEncryption.ts) — decrypt before use since this
+    // fallback bypasses the auto-decrypting getAgentAccount()/
+    // sendAgentTransaction() chokepoint that completeEscrowJob() uses
+    // internally for the ADMIN_PRIVATE_KEY-unset case.
+    const evaluatorPrivateKey = (process.env.ADMIN_PRIVATE_KEY || decryptSecret(job.client.walletId)) as `0x${string}`
     const evaluatorAddress = adminAccount?.address || job.client.walletAddress
 
     // 1.5. Execute ERC-8004 validation and attestation

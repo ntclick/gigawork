@@ -28,6 +28,13 @@ export async function GET() {
           userId: deployments.userId,
           cronExpression: deployments.cronExpression,
           status: deployments.status,
+          // Notification config — needed so the deploy UI can show and
+          // round-trip the configured target. Without these the client
+          // can't tell where a schedule notifies, and re-sending the
+          // deploy POST would drop the override.
+          notifyChannels: deployments.notifyChannels,
+          notifyEmail: deployments.notifyEmail,
+          notifyTelegramId: deployments.notifyTelegramId,
           createdAt: deployments.createdAt,
           workflowPrompt: workflows.prompt,
           workflowStatus: workflows.status,

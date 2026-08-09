@@ -11,11 +11,15 @@
  *
  * Flow:
  *   1. Switch wallet to Arc testnet (silent if already there)
- *   2. wallet.transfer USDC to TREASURY (real on-chain tx)
- *   3. Wait briefly for tx to propagate (poll once), then POST /api/me/topup
+ *   2. Fetch this user's own dedicated vault address from
+ *      GET /api/me/topup (NOT a static shared treasury — every user
+ *      deposits into their own real custodial vault, see
+ *      lib/payments/vault.ts).
+ *   3. wallet.transfer USDC to that vault address (real on-chain tx)
+ *   4. Wait briefly for tx to propagate (poll once), then POST /api/me/topup
  *      with the tx_hash — server does the heavy lifting (waitForReceipt +
  *      Transfer-event verify + grant).
- *   4. Fire `gw:credits-changed` so MainHeader USDC pill + WalletPill credit
+ *   5. Fire `gw:credits-changed` so MainHeader USDC pill + WalletPill credit
  *      pill refetch.
  */
 import { useWallets } from '@privy-io/react-auth'
@@ -25,8 +29,6 @@ import { arcTestnet, ARC_CHAIN_ID } from '@/lib/chain/arcTestnet'
 
 const USDC = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
   '0x3600000000000000000000000000000000000000') as `0x${string}`
-
-const TREASURY = (process.env.NEXT_PUBLIC_USDC_TREASURY ?? '') as `0x${string}`
 
 const USDC_DECIMALS = Number(process.env.NEXT_PUBLIC_USDC_DECIMALS ?? '6')
 
@@ -51,14 +53,18 @@ const erc20TransferAbi = [
 
 export type TopupStep = 'idle' | 'signing' | 'confirming' | 'granting' | 'done' | 'error'
 
+// Matches the real POST /api/me/topup response shape exactly (see
+// app/api/me/topup/route.ts) — this used to declare granted/balance/rate
+// fields the server never sent, which rendered as "undefined" on the
+// success screen. No "credits" here — top-up is real USDC into the
+// user's own vault, nothing else.
 export interface TopupResult {
   ok: true
-  granted: number
-  balance: number
+  grantedUsdc: number
+  balanceUsdc: number
   txHash: string
   explorer: string
   usdcAmount: number
-  rate: number
 }
 
 export interface UseTopupReturn {
@@ -89,11 +95,6 @@ export function useTopup(): UseTopupReturn {
       setError(null)
       setResult(null)
 
-      if (!TREASURY) {
-        setStep('error')
-        setError('Treasury address is not configured (NEXT_PUBLIC_USDC_TREASURY)')
-        return
-      }
       if (!Number.isFinite(usdcAmount) || usdcAmount <= 0) {
         setStep('error')
         setError('USDC amount must be greater than 0')
@@ -109,6 +110,16 @@ export function useTopup(): UseTopupReturn {
 
       try {
         setStep('signing')
+
+        // Fetch this user's own vault address — provisioned lazily on
+        // first /api/me hit, so it's already there by the time the
+        // top-up UI is reachable.
+        const rateInfo = await fetch('/api/me/topup').then((r) => r.json())
+        const vaultAddress = rateInfo?.vaultAddress as `0x${string}` | undefined
+        if (!vaultAddress) {
+          throw new Error('Your vault address is not ready yet — reload and try again.')
+        }
+
         // Switch to Arc Testnet — embedded wallets noop if already correct;
         // external wallets prompt the user.
         try {
@@ -124,7 +135,7 @@ export function useTopup(): UseTopupReturn {
         const data = encodeFunctionData({
           abi: erc20TransferAbi,
           functionName: 'transfer',
-          args: [TREASURY, value],
+          args: [vaultAddress, value],
         })
 
         const txRequest = {

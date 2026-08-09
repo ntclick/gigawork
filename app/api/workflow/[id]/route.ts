@@ -26,3 +26,17 @@ export async function GET(_req: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   }
 }
+
+export async function DELETE(_req: Request, ctx: RouteCtx) {
+  const { id } = await ctx.params
+  try {
+    await withDbRetry(
+      () => db.delete(workflows).where(eq(workflows.id, id)),
+      { label: 'workflow:delete' },
+    )
+    return NextResponse.json({ ok: true, deleted: id })
+  } catch (e) {
+    console.error('[/api/workflow/:id] delete failed', e)
+    return NextResponse.json({ error: 'delete_failed' }, { status: 500 })
+  }
+}

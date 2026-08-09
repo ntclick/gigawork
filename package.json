@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev -p 5555 --turbopack",
     "dev:webpack": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
@@ -36,7 +36,12 @@
     "test:phase2-bundles": "tsx scripts/test-phase2-bundles.ts",
     "worker:chain": "tsx scripts/chain-worker.ts",
     "worker:workflow": "tsx scripts/workflow-worker.ts",
-    "smoke:workflow-fast": "tsx scripts/smoke-fast-workflow.ts"
+    "smoke:workflow-fast": "tsx scripts/smoke-fast-workflow.ts",
+    "security:reencrypt-wallets": "tsx scripts/reencrypt-agent-wallets.ts",
+    "security:reencrypt-notify": "tsx scripts/reencrypt-notification-secrets.ts",
+    "db:add-vault-cols": "tsx scripts/add-vault-cols.ts",
+    "db:add-topup-deposits": "tsx scripts/add-topup-deposits-table.ts",
+    "vault:backfill-balances": "tsx scripts/backfill-vault-balances.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.41",

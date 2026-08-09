@@ -5,7 +5,7 @@
  *   - total_dispatches: count of nodes with skillId = skill.id and status = 'completed'
  *   - failed_dispatches: status = 'failed'
  *   - success_rate: completed / (completed + failed)
- *   - total_credits_earned: sum of |delta| for credit_ledger rows where reason = 'dispatch:<name>'
+ *   - total_usdc_earned: sum of settled x402 nanopayments for this skill
  *   - recent_dispatches: 5 latest dispatch messages with tx + workflow_id
  */
 import { NextResponse } from 'next/server'
@@ -13,7 +13,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
-import { creditLedger, messages, nodes, skills } from '@/lib/db/schema'
+import { messages, nanopaymentEvents, nodes, skills } from '@/lib/db/schema'
 
 type RouteCtx = { params: Promise<{ id: string }> }
 
@@ -47,15 +47,18 @@ export async function GET(_req: Request, ctx: RouteCtx) {
   const total = counts?.total ?? 0
   const successRate = completed + failed > 0 ? completed / (completed + failed) : null
 
-  // Total credits earned (sum of dispatch ledger entries for this skill)
-  const [credits] = await withDbRetry(
+  // Total USD earned — sum of settled x402 nanopayments for this skill.
+  // (Was summing the retired credit_ledger, which the live system no
+  // longer writes to, so earnings appeared frozen at their pre-migration
+  // value.)
+  const [earnings] = await withDbRetry(
     () => db
       .select({
-        earned: sql<number>`coalesce(sum(abs(${creditLedger.delta})), 0)::int`,
+        earned: sql<string>`coalesce(sum(${nanopaymentEvents.amountUsdc}::numeric), 0)`,
       })
-      .from(creditLedger)
-      .where(eq(creditLedger.reason, `dispatch:${name}`)),
-    { label: 'agent-stats:credits' },
+      .from(nanopaymentEvents)
+      .where(and(eq(nanopaymentEvents.skillName, name), eq(nanopaymentEvents.status, 'settled'))),
+    { label: 'agent-stats:earnings' },
   )
 
   // Recent 5 dispatches with tx hash
@@ -97,7 +100,7 @@ export async function GET(_req: Request, ctx: RouteCtx) {
       completed,
       failed,
       success_rate: successRate,
-      total_credits_earned: credits?.earned ?? 0,
+      total_usdc_earned: parseFloat(earnings?.earned ?? '0'),
     },
     recent_dispatches: recentDispatches,
   })

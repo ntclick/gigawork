@@ -20,6 +20,7 @@ import { eq } from 'drizzle-orm'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
+import { decryptProfileSecrets } from '@/lib/notifications/secrets'
 
 
 const Body = z.object({
@@ -45,7 +46,9 @@ export async function POST(req: Request) {
 
   let u
   try {
-    u = await getCurrentUser()
+    // Secrets are encrypted at rest — decrypt before sending the real
+    // test message (see lib/notifications/secrets.ts).
+    u = decryptProfileSecrets(await getCurrentUser())
   } catch (e) {
     if (e instanceof AuthRequiredError) {
       return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })

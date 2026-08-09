@@ -47,3 +47,9 @@ next-env.d.ts
 /.vscode/
 /scratch/
 /scratch-*
+
+# Local archives — a 1.5 GB gigawork-v2.rar sat untracked in the repo root
+# and would have been swept into `git add -A`.
+*.rar
+*.zip
+*.7z

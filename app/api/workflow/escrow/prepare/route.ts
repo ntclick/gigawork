@@ -1,3 +1,14 @@
+/**
+ * @deprecated "Plan A" (user's Privy wallet signs createJob/approve/fund
+ * directly) is superseded by server-side vault signing — every user now
+ * has a real custodial vault (lib/payments/vault.ts) the backend can
+ * sign from directly, so dragging the user through 3 wallet prompts is
+ * no longer necessary. Kept in place (gated by ERC8183_USER_CLIENT,
+ * off in prod) rather than deleted outright — see the vault-architecture
+ * plan doc for the disposition call. Do not build new features on this
+ * path; use lib/chain/agenticCommerce.ts's openAndFundJob({ clientAccount })
+ * instead (wired into app/api/workflow/route.ts).
+ */
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'

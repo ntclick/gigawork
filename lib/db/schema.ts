@@ -12,6 +12,11 @@ export const users = pgTable('users', {
   // and re-authenticates — see getOrCreateUserByPrivy() in service.ts.
   wallet: text('wallet').notNull().unique(),
   credits: integer('credits').default(0).notNull(),
+  // Fast off-chain metering cache backed by the real per-user vault (see
+  // vaultAddress below) — no longer a synthetic "free $10" default. New
+  // users start at 0 and must top up into their own vault for real
+  // (see /api/me/topup + lib/payments/vault.ts).
+  usdcBalance: numeric('usdc_balance').default('0.00').notNull(),
   identityTokenId: text('identity_token_id'),
   identityTxHash: text('identity_tx_hash'),
   identityMintedAt: timestamp('identity_minted_at', { withTimezone: true }),
@@ -19,6 +24,16 @@ export const users = pgTable('users', {
   // admin already shipped this user their starter native gas + USDC after
   // mint. Used to keep the side-effect idempotent across retries.
   prefundedAt: timestamp('prefunded_at', { withTimezone: true }),
+  // ─── Real per-user custodial vault (see lib/payments/vault.ts) ─────
+  // Every user gets a real EVM wallet the backend holds full signing
+  // authority over — actual USDC lives here (not a fake derived hash),
+  // and this is the "client" signer for ERC-8183 escrow + the payer for
+  // on-chain x402 nanopayments. vaultWalletId is encrypted at rest (see
+  // lib/crypto/walletEncryption.ts) — never read/write it without going
+  // through lib/payments/vault.ts.
+  vaultWalletId: text('vault_wallet_id'),
+  vaultAddress: text('vault_address').unique(),
+  vaultProvisionedAt: timestamp('vault_provisioned_at', { withTimezone: true }),
   // ─── Notification preferences (all user-supplied) ──────────────
   // User runs their own Resend (or compatible) email account + their own
   // Telegram bot. Platform doesn't host a shared bot or pay for email —
@@ -147,6 +162,13 @@ export const deployments = pgTable('deployments', {
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   cronExpression: text('cron_expression').default('*/30 * * * *').notNull(),
   status: text('status').default('active').notNull(),
+  // ─── Notification channels ────────────────────────────────────────────
+  // 'none' | 'email' | 'telegram' | 'both'
+  // When null, falls back to 'none' (no notification sent).
+  notifyChannels: text('notify_channels').default('none'),
+  // Per-deployment overrides. When null, the user's profile settings are used.
+  notifyEmail: text('notify_email'),
+  notifyTelegramId: text('notify_telegram_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('deployments_workflow_id_idx').on(table.workflowId),
@@ -155,6 +177,7 @@ export const deployments = pgTable('deployments', {
 
 export type Deployment = typeof deployments.$inferSelect
 export type NewDeployment = typeof deployments.$inferInsert
+
 
 export const deploymentChecks = pgTable('deployment_checks', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -334,4 +357,19 @@ export const nanopayments = pgTable('nanopayments', {
 
 export type Nanopayment = typeof nanopayments.$inferSelect
 export type NewNanopayment = typeof nanopayments.$inferInsert
+
+export const topupDeposits = pgTable('topup_deposits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  txHash: text('tx_hash').notNull().unique(),
+  amountUsdc: numeric('amount_usdc').notNull(),
+  reason: text('reason').default('topup_onchain').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('topup_deposits_tx_hash_idx').on(table.txHash),
+])
+
+export type TopupDeposit = typeof topupDeposits.$inferSelect
+export type NewTopupDeposit = typeof topupDeposits.$inferInsert
+
 

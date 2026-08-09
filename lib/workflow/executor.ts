@@ -2,7 +2,9 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { messages, nodes, skills, users, nanopaymentEvents } from '@/lib/db/schema'
 import { callSkillEndpoint } from '@/lib/skills/registry'
-import { chargeCredits, InsufficientCreditsError } from '@/lib/credits/service'
+import { chargeUsdcBalance, depositUsdcBalance, InsufficientUsdcError } from '@/lib/payments/depositVault'
+import { settleSkillPaymentOnChain, NanopaymentSettlementError } from '@/lib/payments/nanopaymentSettlement'
+import { decryptProfileSecrets } from '@/lib/notifications/secrets'
 import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
 import { withTimeout } from '@/lib/workflow/timing'
 import { workflowRuntimeConfig } from '@/lib/workflow/runtimeConfig'
@@ -172,13 +174,14 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
     await failWorkflow(workflowId, userId ?? 'system-guest')
     console.log(`[executor:${workflowId}] Workflow failed due to node failures.`)
   } else {
-    // All succeeded but report-composer/report-composer-fast did not run or produce output. Build deterministic fallback report.
+    // All succeeded but report-composer/report-composer-fast did not run or produce output. Build rich fallback report.
     const rawJson: Record<string, unknown> = {}
     for (const n of finalNodes) {
       const skillName = skillMap.get(n.skillId ?? '') || 'unknown'
       rawJson[skillName] = n.output
     }
-    const fallbackMarkdown = buildDeterministicFinalReport(rawJson)
+    const { buildDeterministicReport } = await import('@/lib/skills/bundles/reportUtils')
+    const fallbackMarkdown = buildDeterministicReport(rawJson)
     await publishFinalReport({
       workflowId,
       userId: userId ?? 'system-guest',
@@ -186,7 +189,7 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
       rawJson,
       toolName: 'auto_finalize',
     })
-    console.log(`[executor:${workflowId}] Workflow finished. Fallback report published.`)
+    console.log(`[executor:${workflowId}] Workflow finished. Rich report published.`)
   }
 }
 
@@ -230,6 +233,33 @@ async function executeSingleNodeParallel(opts: {
       .where(eq(nodes.id, nodeId))
     return
   }
+
+  // ── Deploy-only guard ────────────────────────────────────────────────────────
+  // telegram-sender and email-sender are notification agents that should only
+  // run when explicitly triggered via the Deploy flow (cron/webhook).
+  // If they appear in the DAG during normal execution, skip them gracefully
+  // so they don't pollute the report or count as failures.
+  const NOTIFICATION_SKILLS = new Set(['email-sender', 'telegram-sender'])
+  if (NOTIFICATION_SKILLS.has(skill.name)) {
+    const completedAt = new Date()
+    await db
+      .update(nodes)
+      .set({
+        status: 'completed',
+        completedAt,
+        timing: { durationMs: completedAt.getTime() - startedAt.getTime() },
+        output: {
+          ok: false,
+          warning: `${skill.name} is only active in Deploy mode. Configure it via Settings → Alerts.`,
+          skipped: true,
+        },
+      })
+      .where(eq(nodes.id, nodeId))
+    console.log(`[executor:${workflowId}] Skipped notification agent "${skill.name}" (deploy-only).`)
+    return
+  }
+  // ── End deploy-only guard ────────────────────────────────────────────────────
+
 
   console.log(`[executor:${workflowId}] Running node ${nodeId} (${skill.name})...`)
 
@@ -283,21 +313,34 @@ async function executeSingleNodeParallel(opts: {
     content: dialogueText,
   })
 
-  // 3. Charge credits
+  // 3. Affordability gate.
+  //
+  // Payment itself is deferred until AFTER the agent produces a result —
+  // see settleNodePayment() below. Previously the vault was debited and
+  // an on-chain x402 transfer was sent BEFORE the skill ran, so a skill
+  // that timed out or errored still cost the user real money and there
+  // was no refund path (only a failed *settlement* was refunded, not a
+  // failed *skill*). Now we only check the balance up front, so a broke
+  // user still can't start expensive work, but nobody pays for a result
+  // they never got.
   const manifest = (skill.manifest ?? {}) as Record<string, unknown>
-  const cost = Math.max(0, Math.round((manifest.cost_credits as number) ?? 5))
+  const costCredits = Math.max(0, Math.round((manifest.cost_credits as number) ?? 5))
+  const costUsdcVal = costCredits > 0 ? costCredits / 100 : 0.08
+  const costUsdc = ((costCredits || 8) / 100).toFixed(2)
+  const billable = !!userId && userId !== 'system-guest' && costUsdcVal > 0
 
-  if (userId && cost > 0) {
-    try {
-      await chargeCredits({
-        userId,
-        amount: cost,
-        reason: `dispatch:${skill.name}`,
-        workflowId,
-      })
-    } catch (err) {
-      if (err instanceof InsufficientCreditsError) {
-        const errMsg = `Please top up credits to proceed (Requires ${cost} cr, currently have ${err.have} cr).`
+  let buyerAddress = '0x0000...0000'
+  if (userId && userId !== 'system-guest') {
+    const [u] = await db
+      .select({ wallet: users.wallet, usdcBalance: users.usdcBalance })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    if (u?.wallet) buyerAddress = u.wallet
+
+    if (billable) {
+      const have = parseFloat(u?.usdcBalance ?? '0')
+      if (!Number.isFinite(have) || have < costUsdcVal) {
         const completedAt = new Date()
         await db
           .update(nodes)
@@ -305,7 +348,7 @@ async function executeSingleNodeParallel(opts: {
             status: 'failed',
             completedAt,
             timing: { durationMs: completedAt.getTime() - startedAt.getTime() },
-            output: { error: 'insufficient_credits', need: cost, have: err.have },
+            output: { error: 'insufficient_usdc', need: costUsdcVal, have },
           })
           .where(eq(nodes.id, nodeId))
 
@@ -313,36 +356,82 @@ async function executeSingleNodeParallel(opts: {
           workflowId,
           role: 'brain',
           nodeId,
-          content: `❌ **System:** Insufficient credits to run Agent **${skill.name}**. ${errMsg}`,
+          content:
+            `❌ **System:** Insufficient USDC vault balance to run Agent **${skill.name}**. ` +
+            `Requires $${costUsdcVal.toFixed(2)} USDC, currently have $${have.toFixed(2)} USDC.`,
         })
         return
       }
     }
   }
 
-  // Record x402 nanopayment event for tracking and budget calculations
-  const costUsdc = ((cost || 8) / 100).toFixed(2)
-  let buyerAddress = '0x0000...0000'
-  if (userId && userId !== 'system-guest') {
-    const [u] = await db.select({ wallet: users.wallet }).from(users).where(eq(users.id, userId)).limit(1)
-    if (u?.wallet) buyerAddress = u.wallet
+  /**
+   * Charge for a node that actually delivered: debit the off-chain
+   * ledger, then settle the same amount on-chain from the user's vault
+   * (x402). If the on-chain leg fails the ledger debit is rolled back so
+   * the two never disagree.
+   *
+   * Called only on the success path. A failed or timed-out agent is free.
+   */
+  const settleNodePayment = async (): Promise<void> => {
+    if (!billable || !userId) return
+    try {
+      await chargeUsdcBalance({
+        userId,
+        amountUsdc: costUsdcVal,
+        reason: `dispatch:${skill.name}`,
+        workflowId,
+      })
+    } catch (err) {
+      // Raced another node down to zero between the gate and here.
+      const have = err instanceof InsufficientUsdcError ? err.have : 0
+      console.warn(`[executor] skipping charge for ${skill.name}: balance ${have} < ${costUsdcVal}`)
+      return
+    }
+
+    try {
+      const { txHash } = await settleSkillPaymentOnChain({ userId, amountUsdc: costUsdcVal })
+      await db
+        .insert(nanopaymentEvents)
+        .values({
+          workflowId,
+          stepId: nodeId,
+          skillName: skill.name,
+          amountUsdc: costUsdc,
+          buyerAddress,
+          status: 'settled',
+          txHash,
+        })
+        .catch((e) => console.error('[executor] failed to insert nanopayment event:', e))
+    } catch (err) {
+      const msg = err instanceof NanopaymentSettlementError ? err.message : String(err)
+      await depositUsdcBalance({
+        userId,
+        amountUsdc: costUsdcVal,
+        reason: `refund:settlement_failed:${skill.name}`,
+      }).catch((refundErr) =>
+        console.error('[executor] refund after failed settlement also failed:', refundErr),
+      )
+      await db
+        .insert(nanopaymentEvents)
+        .values({
+          workflowId,
+          stepId: nodeId,
+          skillName: skill.name,
+          amountUsdc: costUsdc,
+          buyerAddress,
+          status: 'failed',
+        })
+        .catch((e) => console.error('[executor] failed to insert failed nanopayment event:', e))
+      console.error(`[executor] on-chain settlement failed for ${skill.name}: ${msg}`)
+    }
   }
-  await db
-    .insert(nanopaymentEvents)
-    .values({
-      workflowId,
-      skillName: skill.name,
-      amountUsdc: costUsdc,
-      buyerAddress,
-      status: 'settled',
-    })
-    .catch((err) => console.error('[executor] failed to insert nanopayment event:', err))
 
   // 4. Inject profile credentials
   const inputParams = { ...((node.input as Record<string, unknown> | null) ?? {}) }
 
   if (userId && (skill.name === 'email-sender' || skill.name === 'telegram-sender')) {
-    const [profile] = await db
+    const [profileRow] = await db
       .select({
         notifyEmail: users.notifyEmail,
         emailApiKey: users.emailApiKey,
@@ -353,6 +442,8 @@ async function executeSingleNodeParallel(opts: {
       .from(users)
       .where(eq(users.id, userId))
       .limit(1)
+    // Secrets are encrypted at rest — see lib/notifications/secrets.ts.
+    const profile = decryptProfileSecrets(profileRow)
 
     if (skill.name === 'email-sender') {
       if (!inputParams.to && profile?.notifyEmail) inputParams.to = profile.notifyEmail
@@ -371,12 +462,18 @@ async function executeSingleNodeParallel(opts: {
     inputParams.data = parentOutputs
   }
 
-  // Determine Timeout Limit
+  // Determine Timeout Limit.
+  // `report-composer` needs the composer budget just as much as
+  // `report-composer-fast` does — it makes a real LLM synthesis call that
+  // routinely takes ~10s and its own internal HTTP timeout is 30s. Only
+  // the -fast variant was listed here, so the plain composer was killed
+  // by the 15s node timeout every single time and every run fell back to
+  // the deterministic template while still being charged.
   let timeoutLimit = workflowRuntimeConfig.nodeTimeoutMs || 8_000
   if (skill.name === 'market-data-bundle' || skill.name === 'social-lite-bundle') {
     timeoutLimit = workflowRuntimeConfig.bundleTimeoutMs || 12_000
-  } else if (skill.name === 'report-composer-fast') {
-    timeoutLimit = workflowRuntimeConfig.composerTimeoutMs || 8_000
+  } else if (skill.name === 'report-composer' || skill.name === 'report-composer-fast') {
+    timeoutLimit = workflowRuntimeConfig.composerTimeoutMs || 45_000
   }
 
   // 6. Execute the skill call
@@ -386,6 +483,9 @@ async function executeSingleNodeParallel(opts: {
     })
 
     const completedAt = new Date()
+
+    // The agent delivered — now, and only now, take payment.
+    await settleNodePayment()
 
     // Complete node
     await db

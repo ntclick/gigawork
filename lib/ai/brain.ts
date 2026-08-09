@@ -18,7 +18,7 @@ import { buildBrainTools } from './tools'
 //   openai   → gpt-4.1-mini         via https://api.openai.com/v1
 //   kimi     → kimi-k2-0905-preview  via https://api.moonshot.ai/v1
 //   deepseek → deepseek-chat        via https://api.deepseek.com
-const PROVIDER = (process.env.AI_PROVIDER ?? 'openai').toLowerCase()
+const PROVIDER = (process.env.AI_PROVIDER ?? 'deepseek').toLowerCase()
 
 interface ProviderConfig {
   name: string
@@ -48,7 +48,8 @@ function resolveProvider(): ProviderConfig {
         name: 'deepseek',
         apiKey: process.env.DEEPSEEK_API_KEY ?? '',
         baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
-        model: process.env.DEEPSEEK_MODEL ?? 'deepseek-chat',
+        model: process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
+        fallbackModel: process.env.DEEPSEEK_FALLBACK_MODEL ?? 'deepseek-v4-pro',
       }
     case 'openai':
     default:
@@ -56,7 +57,7 @@ function resolveProvider(): ProviderConfig {
         name: 'openai',
         apiKey: process.env.OPENAI_API_KEY ?? '',
         baseURL: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
-        model: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini',
+        model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
         fallbackModel: process.env.OPENAI_FALLBACK_MODEL ?? 'gpt-4o-mini',
       }
   }

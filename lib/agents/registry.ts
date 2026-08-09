@@ -19,6 +19,10 @@ export interface AgentInfo {
   category: string
   pricePerCall: string         // USDC, string for precision
   reputation: number | null    // null if no attestation data
+  /** Real ERC-8004 identity NFT minted for this agent, or null. Every
+   *  seeded skill has one; the UI shows it so the claim "verified agent"
+   *  is checkable against the explorer rather than taken on trust. */
+  agentTokenId: string | null
   status: 'online' | 'busy' | 'offline' | 'unknown'
   totalEarnings: string        // USDC, "0.00" if no data
   totalCalls: number
@@ -100,6 +104,7 @@ async function fetchFromDbSkillsFallback(): Promise<AgentInfo[]> {
       category: m.category ?? 'general',
       pricePerCall: priceUsdc,
       reputation: s.reputationScore ?? null,
+      agentTokenId: s.agentTokenId ?? null,
       status,
       totalEarnings: '0.00',
       totalCalls: 0,
