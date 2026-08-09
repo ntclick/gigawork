@@ -283,8 +283,8 @@ async function prepareWorkflow({
   userId: string
   prompt: string
 }) {
-  const { runLocalWorkflowPlanningSimulation } = await import('@/lib/ai/simulation')
-  await runLocalWorkflowPlanningSimulation({ workflowId, userId, prompt })
+  const { planWorkflowForPrompt } = await import('@/lib/ai/simulation')
+  await planWorkflowForPrompt({ workflowId, userId, prompt })
 
   // Open + fund a real ERC-8183 job for this workflow when enabled.
   // Failure here MUST NOT block the workflow — the off-chain pipeline can

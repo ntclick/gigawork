@@ -3,7 +3,7 @@ import { type UIMessage } from 'ai'
 
 import { streamBrain } from '@/lib/ai/brain'
 import { failWorkflow } from '@/lib/ai/finalizeWorkflow'
-import { runLocalWorkflowPlanningSimulation } from '@/lib/ai/simulation'
+import { planWorkflowForPrompt } from '@/lib/ai/simulation'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
@@ -155,7 +155,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
   if (isQuotaOrAuthError) {
     console.warn(`[stream] LLM API error detected: "${msg}". Activating local planning simulation fallback...`)
     try {
-      const simulatedText = await runLocalWorkflowPlanningSimulation({
+      const simulatedText = await planWorkflowForPrompt({
         workflowId: id,
         userId: user.id,
         prompt: wf.prompt,

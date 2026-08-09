@@ -77,8 +77,9 @@ function selectMockPlan(prompt: string) {
 }
 
 import { analyzeUserPromptIntent } from '@/lib/ai/intentPlanner'
+import type { PlannedNode } from '@/lib/ai/llmPlanner'
 
-export async function runLocalWorkflowPlanningSimulation(opts: {
+export async function planWorkflowForPrompt(opts: {
   workflowId: string
   userId: string | null
   prompt: string
@@ -93,7 +94,29 @@ export async function runLocalWorkflowPlanningSimulation(opts: {
   const skillRows = await db.select().from(skills)
   const byName = new Map(skillRows.map((s) => [s.name, s]))
 
-  const { plan, title } = analyzeUserPromptIntent(prompt)
+  // Ask the model first. The keyword templates below are the fallback, not
+  // the plan: they cannot read parameters out of the objective, which is
+  // why "SOL/USDT" used to run against USDT/USDT.
+  let plan: PlannedNode[]
+  let title: string
+  let planSource: 'llm' | 'fallback' = 'llm'
+  let planModel: string | undefined
+  let fallbackReason: string | undefined
+
+  try {
+    const { planWithLLM } = await import('@/lib/ai/llmPlanner')
+    const r = await planWithLLM(prompt, skillRows)
+    plan = r.nodes
+    title = r.title
+    planModel = r.model
+  } catch (e) {
+    fallbackReason = e instanceof Error ? e.message : String(e)
+    console.warn('[planner] LLM planning failed, using keyword template:', fallbackReason)
+    planSource = 'fallback'
+    const t = analyzeUserPromptIntent(prompt)
+    plan = t.plan
+    title = t.title
+  }
 
   const rows = plan.map((p) => ({
     workflowId,
@@ -145,13 +168,26 @@ export async function runLocalWorkflowPlanningSimulation(opts: {
   // for the providers and for the client alike. The run simply reported
   // "reputation has not been written on-chain yet" forever.
 
-  const simulatedText = `⚠️ **[Simulation Mode Active]** LLM API key quota exceeded (suspended or out of balance). 
+  // The old text here claimed "LLM API key quota exceeded (suspended or
+  // out of balance)" and "Offline Simulation Mode". None of it was true —
+  // no LLM had been called, so no quota could have been exceeded, and the
+  // agents that ran were the real ones hitting real APIs. It was a fixed
+  // string dressed up as a diagnosis. Say what actually happened instead.
+  const steps = plan
+    .map(
+      (n, i) =>
+        `${i + 1}. **${n.label}** (${n.skill_name})${
+          n.depends_on.length > 0 ? ` — *after: ${n.depends_on.join(', ')}*` : ''
+        }`,
+    )
+    .join('\n')
 
-Hermes AI Planner has automatically activated **Offline Simulation Mode** and generated a plan for the **${title}** template:
+  const header =
+    planSource === 'llm'
+      ? `**${title}**\n\nPlanned by ${planModel} from your objective:`
+      : `⚠️ **Planned from a keyword template.** The model could not produce a usable plan (${fallbackReason ?? 'unknown reason'}), so this fell back to a preset for **${title}**. Its agent parameters come from the template, not from your wording — check them before running.`
 
-${plan.map((n, i) => `${i + 1}. **${n.label}** (${n.skill_name})${n.depends_on.length > 0 ? ` — *depends on: ${n.depends_on.join(', ')}*` : ''}`).join('\n')}
-
-Click **▶ Activate** or **▶ Run** below to execute this Multi-Agent graph using local simulator engines.`
+  const simulatedText = `${header}\n\n${steps}\n\nPress **▶ Run** to dispatch this workforce.`
 
   // Persist brain message for history
   await db.insert(messages).values({
