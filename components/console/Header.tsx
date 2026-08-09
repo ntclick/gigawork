@@ -9,7 +9,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useLogin, useLogout, usePrivy } from '@privy-io/react-auth'
-import { Fingerprint, Hexagon, LogOut, Wallet } from 'lucide-react'
+import { Fingerprint, LogOut, Wallet } from 'lucide-react'
+
+import { LogoMark } from '@/components/console/Logo'
 
 const NAV = [
   { href: '/', label: 'Home' },
@@ -56,10 +58,8 @@ export function Header() {
 
   return (
     <header className="gwt-header">
-      <Link href="/" className="gwt-mark">
-        <span className="gwt-mark-glyph">
-          <Hexagon size={13} strokeWidth={2.75} />
-        </span>
+      <Link href="/" className="gwt-mark" aria-label="GigaWork home">
+        <LogoMark size={24} id="gw-head" />
         <span className="gwt-mark-text">GIGAWORK</span>
       </Link>
 

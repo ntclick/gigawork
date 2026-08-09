@@ -1,0 +1,21 @@
+<svg width="128" height="128" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GigaWork">
+  <title>GigaWork</title>
+  <!--
+    Standalone copy of components/console/Logo.tsx for use outside the app
+    (README, social cards, decks). The in-app version inherits CSS accent
+    tokens; this one has the same colours written literally so it renders
+    identically with no stylesheet.
+    Keep the two in sync if the mark changes.
+  -->
+  <defs>
+    <linearGradient id="gw-stroke" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <path d="M16 1.8 28.4 8.9V23.1L16 30.2 3.6 23.1V8.9L16 1.8Z" stroke="url(#gw-stroke)" stroke-width="1.9" stroke-linejoin="round"/>
+  <path d="M10.6 12.4 16 20.4M21.4 12.4 16 20.4" stroke="url(#gw-stroke)" stroke-width="1.5" stroke-linecap="round" opacity="0.75"/>
+  <circle cx="10.6" cy="11.6" r="2.5" fill="#22d3ee"/>
+  <circle cx="21.4" cy="11.6" r="2.5" fill="#a855f7"/>
+  <circle cx="16" cy="21.2" r="2.9" fill="#eef2f7"/>
+</svg>

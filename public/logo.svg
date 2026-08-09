@@ -1,0 +1,39 @@
+<svg width="260" height="40" viewBox="0 0 260 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GigaWork">
+  <title>GigaWork</title>
+  <!--
+    Horizontal lockup: mark + wordmark. Mark geometry mirrors
+    public/mark.svg and components/console/Logo.tsx — keep all three in
+    sync if it changes.
+
+    The wordmark is live <text> on a system font stack, not outlined
+    paths. That means it renders with whatever grotesque the viewer has
+    rather than one fixed face, so letterfit shifts slightly between
+    platforms. Acceptable for a README or a deck; if this ever needs to be
+    pixel-identical everywhere (print, a partner's site), outline the text
+    first — do not just swap in a webfont name, which would fall back
+    silently wherever the font is absent.
+  -->
+  <defs>
+    <linearGradient id="gwl-stroke" x1="6" y1="5" x2="34" y2="35" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="gwl-word" x1="150" y1="12" x2="248" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(4 4) scale(1)">
+    <path d="M16 1.8 28.4 8.9V23.1L16 30.2 3.6 23.1V8.9L16 1.8Z" stroke="url(#gwl-stroke)" stroke-width="1.9" stroke-linejoin="round"/>
+    <path d="M10.6 12.4 16 20.4M21.4 12.4 16 20.4" stroke="url(#gwl-stroke)" stroke-width="1.5" stroke-linecap="round" opacity="0.75"/>
+    <circle cx="10.6" cy="11.6" r="2.5" fill="#22d3ee"/>
+    <circle cx="21.4" cy="11.6" r="2.5" fill="#a855f7"/>
+    <circle cx="16" cy="21.2" r="2.9" fill="#eef2f7"/>
+  </g>
+
+  <text x="46" y="26" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        font-size="17" font-weight="800" letter-spacing="3.4" fill="#eef2f7">GIGA</text>
+  <text x="139" y="26" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        font-size="17" font-weight="800" letter-spacing="3.4" fill="url(#gwl-word)">WORK</text>
+</svg>
