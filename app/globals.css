@@ -2131,3 +2131,30 @@ select.gwt-input { cursor: pointer; }
   background: rgba(34, 211, 238, 0.1);
   color: var(--gw-cyan);
 }
+
+/* Connected-wallet token grid on the vault page. */
+.gwt-purse {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+.gwt-purse-cell {
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.gwt-purse-v {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: #eef2f7;
+  overflow-wrap: anywhere;
+}
+.gwt-purse-k {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+}

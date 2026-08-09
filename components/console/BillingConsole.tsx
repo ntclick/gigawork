@@ -30,6 +30,7 @@ import {
 
 import { useSwap, type SwapToken } from '@/lib/hooks/useSwap'
 import { useTopup } from '@/lib/hooks/useTopup'
+import { useWalletTokens } from '@/lib/hooks/useWalletTokens'
 
 const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
 
@@ -126,10 +127,15 @@ export function BillingConsole() {
   )
 
   const swapper = useSwap()
+  const purse = useWalletTokens()
   const swapNum = parseFloat(swapAmount)
-  // Quoting needs only a sane pair; executing also needs a wallet to sign.
+  // Quoting needs only a sane pair; executing also needs a wallet to sign
+  // and enough of the input token to actually send. Letting the button
+  // through on an overdraft just moves the failure into the wallet popup.
+  const held = purse.tokens.find((x) => x.symbol === tokenIn)
+  const overdraft = !!held?.ok && Number.isFinite(swapNum) && swapNum > held.amount
   const pairValid = Number.isFinite(swapNum) && swapNum > 0 && tokenIn !== tokenOut
-  const swapValid = pairValid && swapper.connected
+  const swapValid = pairValid && swapper.connected && !overdraft
 
   // Quotes only. The swap itself is signed by the connected wallet in
   // useSwap — the server never holds a key for this action.
@@ -246,6 +252,62 @@ export function BillingConsole() {
             </a>
           </div>
         )}
+
+        {/* ── Connected wallet ──────────────────────────────────
+             A second, separate balance. Deposits come OUT of here and
+             swaps happen INSIDE here — neither touches the vault above,
+             so the page has to show both or the swap panel is asking for
+             an amount the user cannot see. */}
+        <section className="gwt-panel">
+          <div className="gwt-panel-bar">
+            <span>connected wallet · what you can swap</span>
+            {purse.address ? (
+              <span className="flex items-center gap-2">
+                <a
+                  className="gwt-addr"
+                  href={`${EXPLORER}/address/${purse.address}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {purse.address.slice(0, 8)}…{purse.address.slice(-6)}
+                </a>
+                <button className="gwt-token" disabled={purse.loading} onClick={purse.refresh}>
+                  <RefreshCw size={11} className={purse.loading ? 'gwt-spin' : ''} />
+                </button>
+              </span>
+            ) : (
+              <span className="text-white/25">not connected</span>
+            )}
+          </div>
+          <div className="p-3">
+            {!purse.address ? (
+              <div className="text-[12px] text-white/30">
+                Connect a wallet to see its balances. This is the wallet that signs swaps and funds
+                deposits — it is not the same wallet as the vault above.
+              </div>
+            ) : (
+              <div className="gwt-purse">
+                <div className="gwt-purse-cell">
+                  <div className="gwt-purse-v">
+                    {purse.native === null ? '—' : purse.native.toFixed(4)}
+                  </div>
+                  <div className="gwt-purse-k">native · gas</div>
+                </div>
+                {purse.tokens.map((t) => (
+                  <div key={t.symbol} className="gwt-purse-cell">
+                    <div className={`gwt-purse-v ${t.ok ? '' : 'text-white/25'}`}>
+                      {t.ok ? (t.amount === 0 ? '0' : t.amount.toFixed(t.amount < 1 ? 6 : 2)) : '?'}
+                    </div>
+                    <div className="gwt-purse-k">
+                      {t.symbol}
+                      {!t.ok && ' · unreadable'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
 
         <div className="gwt-stats">
           {/* These two are sums over the ledger window the API returns (the
@@ -384,6 +446,15 @@ export function BillingConsole() {
                 onChange={(e) => setSwapAmount(e.target.value.replace(/[^\d.]/g, ''))}
                 placeholder="1.00"
               />
+              {held?.ok && held.amount > 0 && (
+                <button
+                  className="gwt-token"
+                  onClick={() => setSwapAmount(String(held.amount))}
+                  title={`Use your full ${tokenIn} balance`}
+                >
+                  max
+                </button>
+              )}
               <button className="gwt-btn" disabled={!swapValid || swapping} onClick={runSwap}>
                 {swapping ? (
                   <>
@@ -409,6 +480,10 @@ export function BillingConsole() {
                 <span className="text-[var(--gw-amber)]">
                   Connect a wallet to swap — the transaction is signed by your wallet, not by the
                   server.
+                </span>
+              ) : overdraft ? (
+                <span className="text-[var(--gw-rose)]">
+                  Your wallet holds {held?.amount} {tokenIn} — less than you are trying to swap.
                 </span>
               ) : quoting ? (
                 <span className="flex items-center gap-1.5">
