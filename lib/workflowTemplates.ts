@@ -226,4 +226,145 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     slottedPrompt:
       'Retrieve OpenSea floor price and 24h volume stats for pudgypenguins collection using Floor Watch Agent and compile a report.',
   },
+
+  // ── Added to cover the skills the first six never touched ──────────
+  // web-intel, social-sentiment, social-lite-bundle, document-digest,
+  // wallet-risk-checker, dca-executor, market-data-bundle and the two
+  // notification senders all existed in the registry with no template
+  // exercising them, so a demo could never reach them.
+
+  {
+    id: 'web-research-brief',
+    emoji: '📰',
+    title: 'Web Research Brief',
+    desc: 'Search the live web on any topic, filter to recent sources, and return a short brief with the findings and where each came from.',
+    category: 'research',
+    skillName: 'web-intel',
+    defaults: { query: 'Ethereum L2 fee trends', max_results: 8, freshness_days: 14 },
+    followupSkills: ['report-composer'],
+    uses: ['web-intel', 'report-composer'],
+    prompt:
+      'Search the web for recent coverage of Ethereum L2 fee trends, take the 8 best sources from the last 14 days, and write a short brief.',
+  },
+  {
+    id: 'social-sentiment-scan',
+    emoji: '💬',
+    title: 'Social Sentiment Scan',
+    desc: 'Score how a topic is being talked about across social channels over a chosen window, then summarise the mood and what is driving it.',
+    category: 'research',
+    skillName: 'social-sentiment',
+    defaults: { topic: 'bitcoin', window_hours: 24 },
+    followupSkills: ['report-composer'],
+    uses: ['social-sentiment', 'report-composer'],
+    prompt:
+      'Score social sentiment for bitcoin over the last 24 hours and summarise the mood with what is driving it.',
+  },
+  {
+    id: 'document-digest',
+    emoji: '📄',
+    title: 'Document Digest',
+    desc: 'Point it at a URL — whitepaper, docs page, long article — and get the argument back in a few hundred words with the key quotes kept.',
+    category: 'research',
+    skillName: 'document-digest',
+    defaults: {
+      document_url: 'https://ethereum.org/en/roadmap/',
+      max_words: 400,
+      include_quotes: true,
+    },
+    followupSkills: ['report-composer'],
+    uses: ['document-digest', 'report-composer'],
+    prompt:
+      'Digest https://ethereum.org/en/roadmap/ into under 400 words, keeping the key quotes, and write it up.',
+  },
+  {
+    id: 'market-data-sweep',
+    emoji: '📊',
+    title: 'Market Data Sweep',
+    desc: 'One call pulls price, chart and market context for an asset, then a report ties the numbers into a single read on where it stands.',
+    category: 'analysis',
+    skillName: 'market-data-bundle',
+    defaults: { symbol: 'ETH/USDT', timeframe: '4h', chain: 'ethereum' },
+    followupSkills: ['report-composer'],
+    uses: ['market-data-bundle', 'report-composer'],
+    prompt:
+      'Pull the full market data bundle for ETH/USDT on the 4h timeframe and write a report on where it stands.',
+  },
+  {
+    id: 'social-vs-price',
+    emoji: '🔀',
+    title: 'Social Mood vs Price Action',
+    desc: 'Reads the crowd and the chart side by side, so you can see whether sentiment is leading the price or just following it.',
+    category: 'analysis',
+    skillName: 'social-lite-bundle',
+    defaults: { topic: 'ethereum', window_hours: 24 },
+    followupSkills: ['trading-signals', 'report-composer'],
+    uses: ['social-lite-bundle', 'trading-signals', 'report-composer'],
+    prompt:
+      'Compare social mood for ethereum over 24h against ETH/USDT 4h technical signals, and say whether sentiment is leading or following price.',
+  },
+  {
+    id: 'wallet-risk-check',
+    emoji: '🛡️',
+    title: 'Wallet Risk Check',
+    desc: 'Run an address through a risk screen before you deal with it, and get the verdict with the reasoning rather than just a score.',
+    category: 'on-chain',
+    skillName: 'wallet-risk-checker',
+    defaults: { query: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
+    followupSkills: ['report-composer'],
+    uses: ['wallet-risk-checker', 'report-composer'],
+    prompt:
+      'Run a risk check on wallet 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 and explain the verdict.',
+  },
+  {
+    id: 'whale-and-security',
+    emoji: '🐋',
+    title: 'Whale Flow + Token Security',
+    desc: 'Pairs who is moving size in a token with what the contract itself looks like, so a busy chart and a risky contract do not get confused.',
+    category: 'on-chain',
+    skillName: 'whale-tracker',
+    defaults: { chain: 'eth-mainnet', min_usd: 250000 },
+    followupSkills: ['crypto-scanner', 'report-composer'],
+    uses: ['whale-tracker', 'crypto-scanner', 'report-composer'],
+    prompt:
+      'Track whale transfers over $250k on Ethereum, scan the tokens involved for contract risk, and report on both together.',
+  },
+  {
+    id: 'dca-ladder-plan',
+    emoji: '🪜',
+    title: 'DCA Ladder Planner',
+    desc: 'Builds a tiered buy ladder around the current price — more size lower down, less near the top — with the bands written out.',
+    category: 'execution',
+    skillName: 'dca-executor',
+    defaults: { asset: 'ETH', frequency: 'weekly', budget_per_buy_usd: 100 },
+    followupSkills: ['trading-signals', 'report-composer'],
+    uses: ['dca-executor', 'trading-signals', 'report-composer'],
+    prompt:
+      'Build a weekly $100 DCA ladder for ETH, check it against current 4h signals, and write out the price bands.',
+  },
+  {
+    id: 'daily-digest-telegram',
+    emoji: '📲',
+    title: 'Daily Digest → Telegram',
+    desc: 'The one to schedule: sweeps the market each morning and pushes a short digest to your Telegram. Needs a bot token saved in Deploy.',
+    category: 'execution',
+    skillName: 'market-data-bundle',
+    defaults: { symbol: 'BTC/USDT', timeframe: '1d' },
+    followupSkills: ['report-composer', 'telegram-sender'],
+    uses: ['market-data-bundle', 'report-composer', 'telegram-sender'],
+    prompt:
+      'Sweep BTC/USDT daily market data, write a short digest, and send it to my Telegram.',
+  },
+  {
+    id: 'yield-report-email',
+    emoji: '✉️',
+    title: 'Yield Report → Email',
+    desc: 'Same yield hunt as the DeFi template, but the finished report lands in your inbox. Needs an email key saved in Deploy.',
+    category: 'execution',
+    skillName: 'defi-yields',
+    defaults: { top_n: 5, min_tvl_usd: 1000000, stablecoin_only: true },
+    followupSkills: ['report-composer', 'email-sender'],
+    uses: ['defi-yields', 'report-composer', 'email-sender'],
+    prompt:
+      'Find the top 5 stablecoin yield pools over $1M TVL, write a report, and email it to me.',
+  },
 ]

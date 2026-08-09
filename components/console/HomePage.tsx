@@ -13,14 +13,23 @@ import { useRouter } from 'next/navigation'
 import { useLogin, usePrivy } from '@privy-io/react-auth'
 import {
   Activity,
+  BarChart3,
   Bot,
   Check,
   Cpu,
+  FileText,
   Fingerprint,
   Gem,
+  ListOrdered,
   Loader2,
+  Mail,
+  MessagesSquare,
+  Newspaper,
   Play,
   ScanSearch,
+  Send,
+  ShieldCheck,
+  Shuffle,
   Sprout,
   TrendingUp,
   Wallet,
@@ -63,6 +72,16 @@ const TEMPLATE_ICON: Record<string, LucideIcon> = {
   'whale-tracker-report': Waves,
   'polymarket-pulse': Activity,
   'nft-floor-watch': Gem,
+  'web-research-brief': Newspaper,
+  'social-sentiment-scan': MessagesSquare,
+  'document-digest': FileText,
+  'market-data-sweep': BarChart3,
+  'social-vs-price': Shuffle,
+  'wallet-risk-check': ShieldCheck,
+  'whale-and-security': Waves,
+  'dca-ladder-plan': ListOrdered,
+  'daily-digest-telegram': Send,
+  'yield-report-email': Mail,
 }
 
 /** A launch the user has asked for but not yet paid for. */
@@ -180,6 +199,16 @@ const CAT_COLOR: Record<string, string> = {
   analysis: 'text-[var(--gw-violet)]',
 }
 
+const TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'research', label: 'Research' },
+  { key: 'analysis', label: 'Analysis' },
+  { key: 'on-chain', label: 'On-chain' },
+  { key: 'execution', label: 'Execution' },
+] as const
+
+type TabKey = (typeof TABS)[number]['key']
+
 /** Same mapping as CAT_COLOR, as a raw value for the `--accent` custom
  *  property that drives a tile's edge, icon tint and hover glow. */
 const CAT_ACCENT: Record<string, string> = {
@@ -199,6 +228,7 @@ export function HomePage() {
   )
   const [runs, setRuns] = useState<number | null>(null)
   const [proto, setProto] = useState<Protocol | null>(null)
+  const [tab, setTab] = useState<TabKey>('all')
   const [me, setMe] = useState<{
     usdcBalance: number
     escrowBudgetUsdc: string
@@ -348,6 +378,9 @@ export function HomePage() {
   // null and the dialog says so rather than quoting a made-up figure.
   const askFreeform = () =>
     ask({ prompt, title: prompt.trim().slice(0, 90), chain: [], agentCost: null })
+
+  const visibleTemplates =
+    tab === 'all' ? WORKFLOW_TEMPLATES : WORKFLOW_TEMPLATES.filter((t) => t.category === tab)
 
   const escrow = parseFloat(me?.escrowBudgetUsdc ?? '')
   const escrowCost = Number.isFinite(escrow) ? escrow : null
@@ -668,8 +701,37 @@ export function HomePage() {
 
         {/* ── Ready-made workflows ─────────────────────────────── */}
         <div className="gwt-h">Ready-made workflows</div>
+
+        {/* Category tabs. Sixteen templates in one flat grid gave a demo no
+            way to jump to the relevant one; counts come from the data so a
+            tab can never advertise more than it shows. */}
+        <div className="gwt-tabs">
+          {TABS.map((tb) => {
+            const n =
+              tb.key === 'all'
+                ? WORKFLOW_TEMPLATES.length
+                : WORKFLOW_TEMPLATES.filter((t) => t.category === tb.key).length
+            return (
+              <button
+                key={tb.key}
+                className="gwt-tab"
+                data-on={tab === tb.key ? '1' : '0'}
+                style={
+                  {
+                    '--accent': CAT_ACCENT[tb.key] ?? 'var(--gw-cyan)',
+                  } as CSSProperties
+                }
+                onClick={() => setTab(tb.key)}
+              >
+                {tb.label}
+                <span className="gwt-tab-n">{n}</span>
+              </button>
+            )
+          })}
+        </div>
+
         <div className="gwt-grid2">
-          {WORKFLOW_TEMPLATES.map((t) => {
+          {visibleTemplates.map((t) => {
             const chain = t.uses ?? []
             const cost = costOf(t)
             const Icon = TEMPLATE_ICON[t.id] ?? Cpu

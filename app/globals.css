@@ -2040,3 +2040,47 @@ button, a, .gw-transition {
   white-space: nowrap;
 }
 .gwt-client-v { color: rgba(226, 232, 240, 0.78); }
+
+/* Category tabs over the template grid. */
+.gwt-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.gwt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.45);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 160ms, border-color 160ms, background 160ms;
+}
+.gwt-tab:hover { color: rgba(255, 255, 255, 0.8); }
+.gwt-tab[data-on='1'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.gwt-tab-n {
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+}
+.gwt-tab[data-on='1'] .gwt-tab-n {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
