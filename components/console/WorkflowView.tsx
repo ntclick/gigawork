@@ -176,7 +176,12 @@ export function WorkflowView({ workflowId }: { workflowId: string }) {
   // own when the run settles, including when it fails, so a failed run can
   // still be retried.
   const inFlight = steps.some((s) => s.status === 'active')
-  const dispatchLocked = busy || inFlight
+  // Planning is now asynchronous — /api/workflow returns the id before the
+  // plan exists so the user lands here immediately. Until nodes appear
+  // there is nothing to dispatch, and pressing Run would execute an empty
+  // graph.
+  const planning = steps.length === 0
+  const dispatchLocked = busy || inFlight || planning
 
   const report = lines.find((l) => l.block?.kind === 'report')?.block?.markdown ?? null
   const payments = lines.filter((l) => l.tag === 'x402')
@@ -248,13 +253,24 @@ export function WorkflowView({ workflowId }: { workflowId: string }) {
               <button
                 className="gwt-btn"
                 disabled={dispatchLocked}
-                title={inFlight ? 'The workforce is running — wait for it to finish' : undefined}
+                title={
+                  planning
+                    ? 'Hermes is still planning this run'
+                    : inFlight
+                      ? 'The workforce is running — wait for it to finish'
+                      : undefined
+                }
                 onClick={execute}
               >
                 {busy ? (
                   <>
                     <Loader2 size={13} className="gwt-spin" />
                     Dispatching…
+                  </>
+                ) : planning ? (
+                  <>
+                    <Loader2 size={13} className="gwt-spin" />
+                    Planning…
                   </>
                 ) : inFlight ? (
                   <>

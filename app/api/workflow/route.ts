@@ -202,13 +202,6 @@ async function handlePost(req: Request) {
       { label: 'workflow:seed-message' },
     )
 
-    const { runLocalWorkflowPlanningSimulation } = await import('@/lib/ai/simulation')
-    await runLocalWorkflowPlanningSimulation({
-      workflowId: wf.id,
-      userId: user.id,
-      prompt: parsed.data.prompt,
-    })
-
   } catch (e) {
     console.error('[/api/workflow] db insert failed', e)
     return NextResponse.json(
@@ -216,6 +209,48 @@ async function handlePost(req: Request) {
       { status: 503 },
     )
   }
+
+  // ── Return the id now; plan and fund in the background ──────────
+  //
+  // Planning plus the on-chain escrow open+fund took ~15s, and the client
+  // could not navigate until this response arrived — so pressing Confirm
+  // left the user on the home page staring at a button while the run they
+  // had already paid for was being set up somewhere they could not see.
+  //
+  // Both gates that can REFUSE the run (ERC-8004 identity, vault balance)
+  // already ran above and returned their own status codes, so by this
+  // point the run is going to happen. Handing back the id immediately
+  // moves the whole wait onto the run surface, where it is a live log
+  // instead of a frozen button.
+  //
+  // Failures inside prepareWorkflow are recorded on the workflow row and
+  // surfaced by the run view's poll — they are not lost, they just no
+  // longer block the response.
+  const escrowMode: 'user-client' | 'admin' | 'off' = ERC8183_ENABLED ? 'admin' : 'off'
+  void prepareWorkflow({ workflowId: wf.id, userId: user.id, prompt: parsed.data.prompt }).catch(
+    (e) => console.error('[/api/workflow] background prepare failed', e),
+  )
+  return NextResponse.json({ id: wf.id, userId: user.id, escrow: escrowMode })
+}
+
+/**
+ * Plan the workflow and open its ERC-8183 escrow.
+ *
+ * Runs detached from the request that created the workflow. Every step
+ * writes its outcome to the workflow row or the event log, so the run
+ * view reflects progress without the client holding a connection open.
+ */
+async function prepareWorkflow({
+  workflowId,
+  userId,
+  prompt,
+}: {
+  workflowId: string
+  userId: string
+  prompt: string
+}) {
+  const { runLocalWorkflowPlanningSimulation } = await import('@/lib/ai/simulation')
+  await runLocalWorkflowPlanningSimulation({ workflowId, userId, prompt })
 
   // Open + fund a real ERC-8183 job for this workflow when enabled.
   // Failure here MUST NOT block the workflow — the off-chain pipeline can
@@ -229,11 +264,10 @@ async function handlePost(req: Request) {
   //  - ERC8183_USER_CLIENT=0 (legacy) → admin self-loops 4 tx.
   let escrowMode: 'user-client' | 'admin' | 'off' = 'off'
   if (ERC8183_ENABLED) {
-    escrowMode = 'admin'
     try {
-      await db.update(workflows).set({ status: 'funding' }).where(eq(workflows.id, wf.id))
+      await db.update(workflows).set({ status: 'funding' }).where(eq(workflows.id, workflowId))
       await emitWorkflowEvent({
-        workflowId: wf.id,
+        workflowId,
         type: 'erc8183.funding_started',
         status: 'funding',
         message: 'Opening and funding ERC-8183 escrow job on Arc Testnet',
@@ -244,10 +278,10 @@ async function handlePost(req: Request) {
       // wallet — see lib/payments/vault.ts + lib/chain/agenticCommerce.ts.
       // Provisioning is idempotent (no-op after the first call, which
       // already happened on this user's first /api/me hit).
-      await provisionUserVault(user.id)
-      const clientAccount = await getUserVaultAccount(user.id)
+      await provisionUserVault(userId)
+      const clientAccount = await getUserVaultAccount(userId)
       const res = await openAndFundJob({
-        description: `GigaWork workflow ${wf.id}: ${parsed.data.prompt.slice(0, 96)}`,
+        description: `GigaWork workflow ${workflowId}: ${prompt.slice(0, 96)}`,
         budgetUsdc: ERC8183_BUDGET,
         clientAccount,
       })
@@ -263,9 +297,9 @@ async function handlePost(req: Request) {
             erc8183FundTx: res.fundTx,
             erc8183BudgetUsdc: res.budgetUsdc,
           })
-          .where(eq(workflows.id, wf.id))
+          .where(eq(workflows.id, workflowId))
         await emitWorkflowEvent({
-          workflowId: wf.id,
+          workflowId,
           type: 'erc8183.funded',
           status: 'planning',
           message: 'ERC-8183 escrow funded on-chain; workflow ready to execute',
@@ -281,11 +315,25 @@ async function handlePost(req: Request) {
         })
       }
     } catch (e) {
-      console.warn('[workflow] On-chain ERC-8183 open+fund fallback warning:', e instanceof Error ? e.message : e)
+      const reason = e instanceof Error ? e.message : String(e)
+      console.warn('[workflow] On-chain ERC-8183 open+fund fallback warning:', reason)
       // If on-chain RPC fails transiently, keep workflow in planning so AI workforce still runs
-      await db.update(workflows).set({ status: 'planning' }).where(eq(workflows.id, wf.id))
+      await db.update(workflows).set({ status: 'planning' }).where(eq(workflows.id, workflowId))
+
+      // Say so on the run surface. This used to fail silently into a server
+      // log: the response had already gone out 200, the workflow ran fine
+      // off-chain, and the user was left with a run whose payment trail
+      // simply had no escrow in it and no reason given. Now that the whole
+      // wait happens on the run page, the failure belongs there too.
+      await emitWorkflowEvent({
+        workflowId,
+        type: 'erc8183.funding_failed',
+        status: 'planning',
+        message: 'Could not open the ERC-8183 escrow — the run continues without an on-chain job',
+        payload: { reason: reason.slice(0, 300), budgetUsdc: ERC8183_BUDGET },
+      }).catch(() => {
+        /* the run must not die because we failed to log why escrow did */
+      })
     }
   }
-
-  return NextResponse.json({ id: wf.id, userId: user.id, escrow: escrowMode })
 }
