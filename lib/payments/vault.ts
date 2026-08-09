@@ -123,6 +123,88 @@ export async function getUserVaultAccount(userId: string) {
 }
 
 /**
+ * Minimum native balance a vault must hold before a run is allowed to
+ * start, in whole USDC (Arc's native gas token, 18 decimals).
+ *
+ * Grounded in measurement rather than guessed: at the observed gas price
+ * a contract call on Arc Testnet costs ~0.0034 and a plain transfer
+ * ~0.00047. A run spends roughly eight of them — four to open and fund
+ * the ERC-8183 escrow, one x402 transfer per agent, one to settle — so
+ * ~0.03 covers it. The default leaves headroom for a gas spike without
+ * being so high it blocks a legitimately funded vault.
+ */
+const MIN_GAS_NATIVE = parseFloat(process.env.VAULT_MIN_GAS_USDC ?? '0.05')
+
+export interface VaultFunding {
+  ok: boolean
+  /** Native gas balance, whole units (18 decimals on Arc). */
+  nativeBalance: number
+  /** ERC-20 USDC balance, whole units (6 decimals). */
+  usdcBalance: number
+  requiredUsdc: number
+  requiredNative: number
+  /** Machine-readable reason when `ok` is false. */
+  reason: 'insufficient_usdc' | 'insufficient_gas' | null
+}
+
+/**
+ * Read what the vault ACTUALLY holds on-chain, and say whether a run can
+ * be paid for.
+ *
+ * The pre-existing gate read `users.usdc_balance` — a database cache of
+ * the ledger. That number can be perfectly healthy while the vault itself
+ * cannot pay: the ledger tracks USDC owed to the user, not the native gas
+ * the vault burns to move it. A run that passed that gate would create a
+ * workflow, fail to open its escrow, fail every x402 transfer, and still
+ * run all its agents and publish a report — the user got billed nothing
+ * and told nothing, and the agents worked for free.
+ *
+ * Both balances are read from the chain so the answer reflects the wallet
+ * that will actually sign, not what a cache believes.
+ */
+export async function checkVaultFunding(
+  userId: string,
+  requiredUsdc: number,
+): Promise<VaultFunding> {
+  const { createPublicClient, http, formatUnits, erc20Abi } = await import('viem')
+  const { arcTestnet } = await import('@/lib/chain/arcTestnet')
+
+  const account = await getUserVaultAccount(userId)
+  const client = createPublicClient({ chain: arcTestnet, transport: http() })
+  const usdcAddress = (process.env.NEXT_PUBLIC_USDC_ADDRESS ??
+    '0x3600000000000000000000000000000000000000') as `0x${string}`
+
+  const [nativeWei, usdc6] = await Promise.all([
+    client.getBalance({ address: account.address }),
+    client.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [account.address],
+    }) as Promise<bigint>,
+  ])
+
+  const nativeBalance = parseFloat(formatUnits(nativeWei, 18))
+  const usdcBalance = parseFloat(formatUnits(usdc6, 6))
+
+  const reason: VaultFunding['reason'] =
+    usdcBalance < requiredUsdc
+      ? 'insufficient_usdc'
+      : nativeBalance < MIN_GAS_NATIVE
+        ? 'insufficient_gas'
+        : null
+
+  return {
+    ok: reason === null,
+    nativeBalance,
+    usdcBalance,
+    requiredUsdc,
+    requiredNative: MIN_GAS_NATIVE,
+    reason,
+  }
+}
+
+/**
  * The vault's raw private key.
  *
  * Deliberately a separate, awkwardly-named export rather than a field on

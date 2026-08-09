@@ -6,8 +6,21 @@ import { chargeUsdcBalance, depositUsdcBalance, InsufficientUsdcError } from '@/
 import { settleSkillPaymentOnChain, NanopaymentSettlementError } from '@/lib/payments/nanopaymentSettlement'
 import { decryptProfileSecrets } from '@/lib/notifications/secrets'
 import { failWorkflow, publishFinalReport } from '@/lib/ai/finalizeWorkflow'
+import { emitWorkflowEvent } from '@/lib/workflow/events'
 import { withTimeout } from '@/lib/workflow/timing'
 import { workflowRuntimeConfig } from '@/lib/workflow/runtimeConfig'
+
+/**
+ * Thrown when the vault cannot settle an agent's fee, to abort the whole
+ * run rather than let the remaining agents work unpaid. Distinct from a
+ * skill failure: the agent did its job, we just could not pay for it.
+ */
+export class WorkflowPaymentHaltedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkflowPaymentHaltedError'
+  }
+}
 
 export async function executeWorkflowRun({ workflowId, userId }: { workflowId: string; userId: string | null }) {
   console.log(`[executor:${workflowId}] Starting parallel DAG execution...`)
@@ -50,12 +63,32 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
 
   const maxParallel = workflowRuntimeConfig.maxParallelNodes || 5
   const activeExecutions = new Map<string, Promise<void>>()
+  // Set by any node whose fee the vault could not settle. See
+  // WorkflowPaymentHaltedError.
+  const halt: { reason: string | null } = { reason: null }
 
   while (true) {
     const currentNodes = await db.select().from(nodes).where(eq(nodes.workflowId, workflowId))
 
     const allFinished = currentNodes.every((n) => n.status === 'completed' || n.status === 'failed')
     if (allFinished) {
+      break
+    }
+
+    // Stop dispatching once the vault has failed to pay. Nodes already in
+    // flight are left to finish — they are mid-request and stopping them
+    // would waste work that is about to arrive — but nothing new starts.
+    if (halt.reason) {
+      if (activeExecutions.size > 0) {
+        await Promise.race(activeExecutions.values())
+        continue
+      }
+      for (const pn of currentNodes.filter((n) => n.status === 'pending')) {
+        await db
+          .update(nodes)
+          .set({ status: 'failed', output: { error: 'Skipped: run halted, vault could not pay' } })
+          .where(eq(nodes.id, pn.id))
+      }
       break
     }
 
@@ -103,6 +136,7 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
         planToNodeId,
         workflowId,
         userId: userId ?? 'system-guest',
+        halt,
       }).finally(() => {
         activeExecutions.delete(node.id)
       })
@@ -154,6 +188,21 @@ export async function executeWorkflowRun({ workflowId, userId }: { workflowId: s
         skillMap.get(n.skillId ?? '') === 'report-composer-fast')
   )
 
+  // A halted run does not get a report. Publishing one would settle the
+  // escrow and tell the user the job was done, when in fact the agents
+  // that did run were never paid and the rest never started.
+  if (halt.reason) {
+    await emitWorkflowEvent({
+      workflowId,
+      type: 'workflow.payment_halted',
+      status: 'failed',
+      message: halt.reason,
+    }).catch(() => {})
+    await failWorkflow(workflowId, userId ?? 'system-guest')
+    console.log(`[executor:${workflowId}] Halted: ${halt.reason}`)
+    return
+  }
+
   if (composerCompleted && composerCompleted.output) {
     const out = composerCompleted.output as { markdown?: string; summary_markdown?: string; evidence_markdown?: string } | null
     const markdown = out?.markdown || out?.summary_markdown || out?.evidence_markdown || ''
@@ -198,8 +247,10 @@ async function executeSingleNodeParallel(opts: {
   planToNodeId: Map<string, string>
   workflowId: string
   userId: string
+  /** Shared across the run: set when payment fails so the DAG stops. */
+  halt: { reason: string | null }
 }) {
-  const { nodeId, planToNodeId, workflowId, userId } = opts
+  const { nodeId, planToNodeId, workflowId, userId, halt } = opts
 
   const startedAt = new Date()
 
@@ -424,6 +475,16 @@ async function executeSingleNodeParallel(opts: {
         })
         .catch((e) => console.error('[executor] failed to insert failed nanopayment event:', e))
       console.error(`[executor] on-chain settlement failed for ${skill.name}: ${msg}`)
+
+      // A vault that cannot pay this agent will not pay the next one
+      // either. Carrying on produced a run where every line read
+      // "failed $0.01 → …", every agent worked for nothing, and a report
+      // was published as if the run had been paid for. Stop, and say why.
+      if (/insufficient|exceeds balance|funds/i.test(msg)) {
+        throw new WorkflowPaymentHaltedError(
+          `Your vault could not pay ${skill.name} ($${costUsdc}). The run was stopped so the remaining agents are not asked to work unpaid. Top up your vault and run it again.`,
+        )
+      }
     }
   }
 
@@ -522,6 +583,10 @@ async function executeSingleNodeParallel(opts: {
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     const completedAt = new Date()
+
+    // A payment halt is not this agent's fault and must not be absorbed as
+    // just one more failed node — it stops the whole run.
+    if (err instanceof WorkflowPaymentHaltedError) halt.reason = err.message
 
     await db
       .update(nodes)

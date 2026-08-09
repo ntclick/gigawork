@@ -345,11 +345,15 @@ export function HomePage() {
             kind: 'mint',
             text: 'You need an ERC-8004 identity NFT before running a workflow.',
           })
-        } else if (j.error === 'insufficient_usdc') {
-          const bal = typeof j.usdcBalance === 'number' ? j.usdcBalance : 0
+        } else if (j.error === 'insufficient_usdc' || j.error === 'insufficient_gas') {
+          // The server refused before creating anything, and its message
+          // already names the real on-chain shortfall — pass it through
+          // rather than paraphrasing it into something less precise.
           setNotice({
             kind: 'topup',
-            text: `Your vault holds $${bal.toFixed(2)} USDC — not enough to open the escrow.`,
+            text: String(
+              j.message ?? 'Your vault cannot cover this run. Deposit more to continue.',
+            ),
           })
         } else {
           setNotice({

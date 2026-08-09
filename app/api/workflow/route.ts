@@ -10,7 +10,7 @@ import { db } from '@/lib/db/client'
 import { withDbRetry } from '@/lib/db/retry'
 import { messages, users, workflows, type User } from '@/lib/db/schema'
 import { emitWorkflowEvent } from '@/lib/workflow/events'
-import { provisionUserVault, getUserVaultAccount } from '@/lib/payments/vault'
+import { provisionUserVault, getUserVaultAccount, checkVaultFunding } from '@/lib/payments/vault'
 
 const ERC8183_BUDGET = process.env.ERC8183_BUDGET_USDC ?? '0.05'
 
@@ -162,22 +162,56 @@ async function handlePost(req: Request) {
     )
   }
 
-  const parsedUsdc = parseFloat(user.usdcBalance || '0')
-  const currentUsdc = Number.isNaN(parsedUsdc) ? 0 : parsedUsdc
-  // Was hardcoded to $0.50 while the actual ERC-8183 spend is
-  // ERC8183_BUDGET_USDC ($0.05 by default) — a pre-existing mismatch
-  // that gated workflow creation 10x stricter than what it actually
-  // spends. Gate on the real required amount instead.
+  // Refuse the run when the vault cannot actually pay for it.
+  //
+  // This used to read `users.usdc_balance`, a cache of the ledger. A run
+  // could clear that gate and then fail to open its escrow and fail every
+  // single x402 transfer while still executing all its agents and
+  // publishing a report — the log filled with "failed $0.01 → …", nobody
+  // got paid, and the user was never told. Gas is the reason that happens:
+  // the ledger tracks USDC owed to the user, and says nothing about the
+  // native balance the vault burns to move it.
+  //
+  // Both numbers now come from the chain, and a shortfall stops the run
+  // here instead of halfway through.
   const requiredUsdc = parseFloat(ERC8183_BUDGET)
-  if (identityRegistryConfigured && currentUsdc < requiredUsdc) {
-    return NextResponse.json(
-      {
-        error: 'insufficient_usdc',
-        message: `Deposit USDC into your vault to run workflows. Required: $${requiredUsdc.toFixed(2)} USDC, currently have $${currentUsdc.toFixed(2)} USDC.`,
-        usdcBalance: currentUsdc,
-      },
-      { status: 402 },
-    )
+  if (identityRegistryConfigured) {
+    let funding
+    try {
+      await provisionUserVault(user.id)
+      funding = await checkVaultFunding(user.id, requiredUsdc)
+    } catch (e) {
+      // A balance we cannot read is not a balance we may assume. Spending
+      // decisions fail closed.
+      console.error('[/api/workflow] vault funding check failed', e)
+      return NextResponse.json(
+        {
+          error: 'vault_check_failed',
+          message:
+            'Could not read your vault balance on-chain, so the run was not started. Try again in a moment.',
+          detail: e instanceof Error ? e.message.slice(0, 200) : undefined,
+        },
+        { status: 503 },
+      )
+    }
+
+    if (!funding.ok) {
+      const message =
+        funding.reason === 'insufficient_gas'
+          ? `Your vault holds $${funding.usdcBalance.toFixed(2)} USDC but only ${funding.nativeBalance.toFixed(4)} in native gas — it cannot pay the transaction fees for a run. Deposit at least ${funding.requiredNative} more into your vault.`
+          : `Your vault holds $${funding.usdcBalance.toFixed(2)} USDC. A run needs $${funding.requiredUsdc.toFixed(2)} for the escrow plus the agent fees. Deposit more to continue.`
+      return NextResponse.json(
+        {
+          error: funding.reason,
+          message,
+          usdcBalance: funding.usdcBalance,
+          nativeBalance: funding.nativeBalance,
+          requiredUsdc: funding.requiredUsdc,
+          requiredNative: funding.requiredNative,
+        },
+        { status: 402 },
+      )
+    }
   }
 
   let wf: typeof workflows.$inferSelect
