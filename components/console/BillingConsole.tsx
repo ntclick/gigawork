@@ -1,205 +1,512 @@
 'use client'
 
 /**
- * BillingConsole — vault balance, address, and real money movement.
+ * Billing — the vault surface.
  *
- * Two balances are shown separately and never summed: the vault balance
- * (spendable — what actually pays agents) and the connected wallet's
- * on-chain USDC (what you can deposit FROM). Conflating them is what the
- * old finance page did.
+ * This was a command console: you typed `topup 5` and `ls` at a prompt.
+ * Handling real money that way is hostile, so it is now a normal page —
+ * a balance card, a deposit form, a swap panel and a ledger table.
+ *
+ * Every figure comes from the server. The balance is the reconciled
+ * on-chain vault balance from /api/me, the ledger rows are real deposits
+ * and real x402 spends, and swap quotes come from /api/appkit rather than
+ * being computed here. Nothing on this page is estimated locally.
+ *
+ * Two different wallets are in play, and the copy says which is which:
+ * the DEPOSIT moves USDC from the connected wallet into the server-held
+ * vault that pays agents, while the SWAP happens entirely in the
+ * connected wallet and never touches the vault.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  ArrowDownUp,
+  Check,
+  Copy,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Wallet,
+} from 'lucide-react'
 
-import { LogStream } from '@/components/console/LogStream'
-import { PromptInput } from '@/components/console/PromptInput'
+import { useSwap, type SwapToken } from '@/lib/hooks/useSwap'
 import { useTopup } from '@/lib/hooks/useTopup'
-import { useUSDCBalance } from '@/lib/hooks/useUSDCBalance'
-import type { ConsoleLine } from '@/lib/workflow/consoleLog'
 
-interface LedgerEntry {
+const EXPLORER = process.env.NEXT_PUBLIC_ARC_EXPLORER ?? 'https://testnet.arcscan.app'
+
+/** Tokens routable on Arc Testnet — mirrors useSwap's address map. */
+const TOKENS: SwapToken[] = ['USDC', 'USYC', 'EURC', 'cirBTC']
+type Token = SwapToken
+
+const PRESETS = [1, 5, 10, 25]
+
+interface LedgerRow {
   id: string
   amountUsdc: number
   kind: 'topup' | 'spend'
   label: string
-  workflowId: string | null
   txHash: string | null
-  status: string | null
   createdAt: string
 }
 
-const HELP = [
-  'commands:',
-  '  status          vault address + balances',
-  '  ledger          deposits and agent payments',
-  '  topup <amt>     deposit USDC into your vault (opens your wallet)',
-  '  escrows         ERC-8183 job trail per run',
-].join('\n')
+interface Me {
+  usdcBalance: number
+  dedicatedVaultAddress: string | null
+}
+
+function Card({
+  title,
+  sub,
+  children,
+}: {
+  title: string
+  sub?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="gwt-panel">
+      <div className="gwt-panel-bar">
+        <span>{title}</span>
+        {sub && <span className="text-white/25">{sub}</span>}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  )
+}
 
 export function BillingConsole() {
-  const { user } = usePrivy()
-  const wallet = user?.wallet?.address ?? null
-  const usdc = useUSDCBalance(wallet)
-  const topup = useTopup()
-  const [lines, setLines] = useState<ConsoleLine[]>([])
-  const [busy, setBusy] = useState(false)
-  const bootedRef = useRef(false)
+  const [me, setMe] = useState<Me | null>(null)
+  const [ledger, setLedger] = useState<LedgerRow[] | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const say = useCallback(
-    (
-      text: string,
-      opts: Partial<Pick<ConsoleLine, 'tag' | 'severity' | 'txHash'>> = {},
-    ) => {
-      setLines((prev) => [
-        ...prev,
-        {
-          key: `b:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-          ts: Date.now(),
-          seq: 1,
-          tag: opts.tag ?? 'SYS',
-          severity: opts.severity ?? 'info',
-          text,
-          txHash: opts.txHash,
-        },
-      ])
-    },
-    [],
+  const topup = useTopup()
+  const [amount, setAmount] = useState('5')
+
+  const load = useCallback(async () => {
+    const [m, l] = await Promise.all([
+      fetch('/api/me', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/me/ledger', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ])
+    if (m && typeof m.usdcBalance === 'number') {
+      setMe({ usdcBalance: m.usdcBalance, dedicatedVaultAddress: m.dedicatedVaultAddress ?? null })
+    }
+    // The route returns `{ ledger: [...] }` — verified against
+    // app/api/me/ledger/route.ts, not guessed.
+    if (l) setLedger(l.ledger ?? [])
+  }, [])
+
+  useEffect(() => {
+    void load()
+    const on = () => void load()
+    window.addEventListener('gw:credits-changed', on)
+    return () => window.removeEventListener('gw:credits-changed', on)
+  }, [load])
+
+  const topupBusy = ['signing', 'confirming', 'granting'].includes(topup.step)
+  const amountNum = parseFloat(amount)
+  const amountValid = Number.isFinite(amountNum) && amountNum > 0
+
+  const runTopup = async () => {
+    if (!amountValid || topupBusy) return
+    await topup.topup(amountNum)
+    void load()
+  }
+
+  // ── Swap ────────────────────────────────────────────────────────
+  const [tokenIn, setTokenIn] = useState<Token>('USDC')
+  const [tokenOut, setTokenOut] = useState<Token>('USYC')
+  const [swapAmount, setSwapAmount] = useState('1')
+  const [quote, setQuote] = useState<string | null>(null)
+  const [quoting, setQuoting] = useState(false)
+  const [swapping, setSwapping] = useState(false)
+  const [swapMsg, setSwapMsg] = useState<{ kind: 'ok' | 'err'; text: string; tx?: string } | null>(
+    null,
   )
 
-  const status = useCallback(async () => {
-    const r = await fetch('/api/me', { cache: 'no-store' })
-    if (!r.ok) {
-      say(`could not load account (${r.status})`, { tag: 'ERR', severity: 'error' })
-      return
-    }
-    const me = await r.json()
-    say(`vault address   ${me.dedicatedVaultAddress ?? '—'}`)
-    say(
-      `vault balance   ${typeof me.usdcBalance === 'number' ? `$${me.usdcBalance.toFixed(2)} USDC` : '…'}  (spendable — pays agents)`,
-      { severity: 'success' },
-    )
-    say(
-      `wallet balance  ${usdc.loading ? '…' : `$${usdc.formatted} USDC`}  (on-chain, deposit from here)`,
-      { severity: 'muted' },
-    )
-  }, [say, usdc.loading, usdc.formatted])
+  const swapper = useSwap()
+  const swapNum = parseFloat(swapAmount)
+  // Quoting needs only a sane pair; executing also needs a wallet to sign.
+  const pairValid = Number.isFinite(swapNum) && swapNum > 0 && tokenIn !== tokenOut
+  const swapValid = pairValid && swapper.connected
 
-  const ledger = useCallback(async () => {
-    const r = await fetch('/api/me/ledger', { cache: 'no-store' })
-    if (!r.ok) {
-      say(`could not load ledger (${r.status})`, { tag: 'ERR', severity: 'error' })
+  // Quotes only. The swap itself is signed by the connected wallet in
+  // useSwap — the server never holds a key for this action.
+  const quoteSwap = useCallback(async () => {
+    const r = await fetch('/api/appkit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'estimateSwap', amount: swapAmount, tokenIn, tokenOut }),
+    })
+    const j = await r.json().catch(() => ({}) as Record<string, unknown>)
+    if (!r.ok) throw new Error(String(j.detail ?? j.error ?? `HTTP ${r.status}`))
+    return j as Record<string, unknown>
+  }, [swapAmount, tokenIn, tokenOut])
+
+  // Re-quote whenever the pair or amount changes. Debounced so typing an
+  // amount doesn't fire a request per keystroke.
+  useEffect(() => {
+    if (!pairValid) {
+      setQuote(null)
       return
     }
-    const { ledger: rows } = (await r.json()) as { ledger: LedgerEntry[] }
-    if (!rows.length) {
-      say('no movement yet — topup 5 to fund your vault', { severity: 'muted' })
-      return
+    let alive = true
+    setQuoting(true)
+    const t = setTimeout(() => {
+      quoteSwap()
+        .then((j) => {
+          if (!alive) return
+          // `estimatedOutput` is what /api/appkit actually returns.
+          setQuote(j.estimatedOutput == null ? null : String(j.estimatedOutput))
+        })
+        .catch(() => alive && setQuote(null))
+        .finally(() => alive && setQuoting(false))
+    }, 400)
+    return () => {
+      alive = false
+      clearTimeout(t)
     }
-    for (const row of rows) {
-      const when = new Date(row.createdAt).toISOString().slice(0, 16).replace('T', ' ')
-      const amt = `${row.amountUsdc > 0 ? '+' : '−'}$${Math.abs(row.amountUsdc).toFixed(3)}`
-      say(`${when}  ${amt.padStart(9)}  ${row.kind.padEnd(6)} ${row.label}`, {
-        tag: row.kind === 'topup' ? 'SYS' : 'x402',
-        severity: row.amountUsdc > 0 ? 'success' : 'info',
-        txHash: row.txHash ?? undefined,
+  }, [pairValid, quoteSwap])
+
+  const runSwap = async () => {
+    if (!swapValid || swapping) return
+    setSwapping(true)
+    setSwapMsg(null)
+    try {
+      const { txHash } = await swapper.swap(tokenIn, tokenOut, swapAmount)
+      setSwapMsg({
+        kind: 'ok',
+        text: `Swapped ${swapAmount} ${tokenIn} → ${tokenOut}`,
+        tx: txHash ?? undefined,
       })
+      void load()
+    } catch (e) {
+      setSwapMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setSwapping(false)
     }
-  }, [say])
+  }
 
-  // Narrate the top-up state machine.
-  const lastStep = useRef(topup.step)
-  useEffect(() => {
-    if (topup.step === lastStep.current) return
-    lastStep.current = topup.step
-    if (topup.step === 'signing') say('awaiting wallet signature…')
-    else if (topup.step === 'confirming') say('tx broadcast · confirming on Arc Testnet')
-    else if (topup.step === 'granting') say('verifying deposit server-side…')
-    else if (topup.step === 'done' && topup.result) {
-      say(
-        `deposited $${topup.result.grantedUsdc.toFixed(2)} · vault $${topup.result.balanceUsdc.toFixed(2)}`,
-        { severity: 'success', txHash: topup.result.txHash },
-      )
-    } else if (topup.step === 'error') {
-      say(`topup failed: ${topup.error ?? 'unknown error'}`, { tag: 'ERR', severity: 'error' })
-    }
-  }, [topup.step, topup.result, topup.error, say])
-
-  useEffect(() => {
-    if (bootedRef.current) return
-    bootedRef.current = true
-    say('billing · vault and spend history · type help', { severity: 'muted' })
-    status()
-  }, [say, status])
-
-  const handle = useCallback(
-    async (input: string) => {
-      say(input, { tag: 'YOU' })
-      setBusy(true)
-      try {
-        const [cmd, ...rest] = input.trim().split(/\s+/)
-        switch (cmd) {
-          case 'help':
-            say(HELP)
-            break
-          case 'status':
-            await status()
-            break
-          case 'ledger':
-            await ledger()
-            break
-          case 'clear':
-            setLines([])
-            break
-          case 'escrows': {
-            const r = await fetch('/api/me/escrows', { cache: 'no-store' })
-            const j = await r.json().catch(() => ({ escrows: [] }))
-            const list = (j.escrows ?? []) as {
-              jobId: string
-              stage: string
-              budgetUsdc: string | null
-              prompt: string
-            }[]
-            if (!list.length) {
-              say('no escrow jobs yet', { severity: 'muted' })
-              break
-            }
-            for (const e of list) {
-              say(
-                `job ${e.jobId.padEnd(8)} ${e.stage.padEnd(10)} $${e.budgetUsdc ?? '0.00'}  ${e.prompt.slice(0, 44)}`,
-                { tag: 'ERC-8183', severity: e.stage === 'completed' ? 'success' : 'info' },
-              )
-            }
-            break
-          }
-          case 'topup': {
-            const amount = Number(rest[0])
-            if (!Number.isFinite(amount) || amount <= 0) {
-              say('usage: topup <amount in USDC>, e.g. topup 5', {
-                tag: 'ERR',
-                severity: 'error',
-              })
-              break
-            }
-            say(`depositing $${amount.toFixed(2)} USDC into your vault…`)
-            await topup.topup(amount)
-            break
-          }
-          default:
-            say(`unknown: ${cmd} — try help`, { tag: 'ERR', severity: 'error' })
-        }
-      } catch (e) {
-        say(e instanceof Error ? e.message : String(e), { tag: 'ERR', severity: 'error' })
-      } finally {
-        setBusy(false)
-      }
-    },
-    [ledger, say, status, topup],
+  const spent = useMemo(
+    () => (ledger ?? []).filter((r) => r.kind === 'spend').reduce((s, r) => s + Math.abs(r.amountUsdc), 0),
+    [ledger],
+  )
+  const deposited = useMemo(
+    () => (ledger ?? []).filter((r) => r.kind === 'topup').reduce((s, r) => s + Math.abs(r.amountUsdc), 0),
+    [ledger],
   )
 
   return (
-    <main className="gwt-page flex flex-col">
-      <LogStream lines={lines} />
-      <PromptInput onSubmit={handle} busy={busy} placeholder="status · ledger · topup 5 · help" />
+    <main className="gwt-page">
+      <div className="gwt-wrap space-y-4">
+        {/* ── Balance ───────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">Vault</div>
+            <div className="mt-1 text-[34px] font-bold leading-none tabular-nums text-white">
+              {me ? `$${me.usdcBalance.toFixed(2)}` : '—'}
+              <span className="ml-2 text-[13px] font-medium text-white/35">USDC</span>
+            </div>
+          </div>
+          <button
+            className="gwt-token"
+            disabled={refreshing}
+            onClick={async () => {
+              setRefreshing(true)
+              await load()
+              setRefreshing(false)
+            }}
+          >
+            <RefreshCw size={11} className={refreshing ? 'gwt-spin' : ''} /> refresh
+          </button>
+        </div>
+
+        {me?.dedicatedVaultAddress && (
+          <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-white/40">
+            <span>Your vault address</span>
+            <code className="gwt-addr">{me.dedicatedVaultAddress}</code>
+            <button
+              className="gwt-token"
+              onClick={() => {
+                navigator.clipboard.writeText(me.dedicatedVaultAddress!)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              }}
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'copied' : 'copy'}
+            </button>
+            <a
+              className="gwt-token"
+              href={`${EXPLORER}/address/${me.dedicatedVaultAddress}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink size={11} /> explorer
+            </a>
+          </div>
+        )}
+
+        <div className="gwt-stats">
+          {/* These two are sums over the ledger window the API returns (the
+              most recent 50 deposits and 100 spends), NOT lifetime totals —
+              so they are labelled as such. Left unqualified they would not
+              reconcile against the balance and would read as a bug. */}
+          <div className="gwt-stat">
+            <div className="gwt-stat-v">${deposited.toFixed(2)}</div>
+            <div className="gwt-stat-k">deposits shown</div>
+          </div>
+          <div className="gwt-stat">
+            <div className="gwt-stat-v">${spent.toFixed(2)}</div>
+            <div className="gwt-stat-k">agent spend shown</div>
+          </div>
+          <div className="gwt-stat">
+            <div className="gwt-stat-v">{ledger ? ledger.length : '—'}</div>
+            <div className="gwt-stat-k">entries shown</div>
+          </div>
+          <div className="gwt-stat">
+            <div className="gwt-stat-v">{me ? `$${me.usdcBalance.toFixed(2)}` : '—'}</div>
+            <div className="gwt-stat-k">spendable now</div>
+          </div>
+        </div>
+
+        <div className="gwt-proto">
+          {/* ── Deposit ─────────────────────────────────────────── */}
+          <Card title="Deposit USDC" sub="from your connected wallet">
+            <div className="flex flex-wrap gap-1.5">
+              {PRESETS.map((p) => (
+                <button
+                  key={p}
+                  className="gwt-token"
+                  data-on={amount === String(p) ? '1' : '0'}
+                  onClick={() => setAmount(String(p))}
+                >
+                  ${p}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-white/30">$</span>
+              <input
+                className="gwt-input flex-1"
+                inputMode="decimal"
+                value={amount}
+                disabled={topupBusy}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="5.00"
+              />
+              <button className="gwt-btn" disabled={!amountValid || topupBusy} onClick={runTopup}>
+                {topupBusy ? (
+                  <>
+                    <Loader2 size={13} className="gwt-spin" />
+                    {topup.step === 'signing'
+                      ? 'Check your wallet…'
+                      : topup.step === 'confirming'
+                        ? 'Confirming…'
+                        : 'Crediting…'}
+                  </>
+                ) : (
+                  <>
+                    <Wallet size={13} /> Deposit
+                  </>
+                )}
+              </button>
+            </div>
+
+            <p className="mt-2.5 text-[11.5px] leading-relaxed text-white/35">
+              Sends USDC from the wallet you connected to your vault, then credits the ledger once
+              the transfer is confirmed on-chain. Your wallet will ask you to approve it.
+            </p>
+
+            {topup.error && <p className="mt-2 text-[11.5px] text-[var(--gw-rose)]">{topup.error}</p>}
+            {topup.step === 'done' && topup.result && (
+              <p className="mt-2 text-[11.5px] text-[var(--gw-emerald)]">
+                Credited ${topup.result.grantedUsdc.toFixed(2)} — balance $
+                {topup.result.balanceUsdc.toFixed(2)}
+                {topup.txHash && (
+                  <a
+                    className="ml-2 text-[var(--gw-cyan)] hover:underline"
+                    href={`${EXPLORER}/tx/${topup.txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    ↗ tx
+                  </a>
+                )}
+              </p>
+            )}
+          </Card>
+
+          {/* ── Swap ────────────────────────────────────────────── */}
+          <Card title="Swap" sub="Arc Testnet · signed by your wallet">
+            <div className="flex items-center gap-2">
+              <select
+                className="gwt-input"
+                value={tokenIn}
+                onChange={(e) => setTokenIn(e.target.value as Token)}
+              >
+                {TOKENS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="gwt-token"
+                title="Flip"
+                onClick={() => {
+                  setTokenIn(tokenOut)
+                  setTokenOut(tokenIn)
+                }}
+              >
+                <ArrowDownUp size={12} />
+              </button>
+              <select
+                className="gwt-input"
+                value={tokenOut}
+                onChange={(e) => setTokenOut(e.target.value as Token)}
+              >
+                {TOKENS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                className="gwt-input flex-1"
+                inputMode="decimal"
+                value={swapAmount}
+                disabled={swapping}
+                onChange={(e) => setSwapAmount(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="1.00"
+              />
+              <button className="gwt-btn" disabled={!swapValid || swapping} onClick={runSwap}>
+                {swapping ? (
+                  <>
+                    <Loader2 size={13} className="gwt-spin" />
+                    {swapper.stage === 'approving'
+                      ? 'Approve in wallet…'
+                      : swapper.stage === 'signing'
+                        ? 'Sign in wallet…'
+                        : 'Confirming…'}
+                  </>
+                ) : (
+                  <>
+                    <ArrowDownUp size={13} /> Swap
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="mt-2.5 text-[11.5px] text-white/40">
+              {tokenIn === tokenOut ? (
+                <span className="text-[var(--gw-amber)]">Pick two different tokens.</span>
+              ) : !swapper.connected ? (
+                <span className="text-[var(--gw-amber)]">
+                  Connect a wallet to swap — the transaction is signed by your wallet, not by the
+                  server.
+                </span>
+              ) : quoting ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 size={11} className="gwt-spin" /> quoting…
+                </span>
+              ) : quote ? (
+                <>
+                  Estimated out{' '}
+                  <span className="font-semibold text-white/75">
+                    {quote} {tokenOut}
+                  </span>{' '}
+                  — quoted by the router, not by this page.
+                </>
+              ) : (
+                'No quote available for this pair right now.'
+              )}
+            </div>
+
+            {swapMsg && (
+              <p
+                className={`mt-2 text-[11.5px] ${
+                  swapMsg.kind === 'ok' ? 'text-[var(--gw-emerald)]' : 'text-[var(--gw-rose)]'
+                }`}
+              >
+                {swapMsg.text}
+                {swapMsg.tx && (
+                  <a
+                    className="ml-2 text-[var(--gw-cyan)] hover:underline"
+                    href={`${EXPLORER}/tx/${swapMsg.tx}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    ↗ tx
+                  </a>
+                )}
+              </p>
+            )}
+          </Card>
+        </div>
+
+        {/* ── Ledger ────────────────────────────────────────────── */}
+        <div className="gwt-h">Ledger</div>
+        <p className="-mt-1 mb-2 text-[11.5px] text-white/30">
+          Most recent 50 deposits and 100 agent payments. Older entries exist on-chain but are not
+          listed here, so the totals above will not always reconcile against the balance.
+        </p>
+        <div className="gwt-panel overflow-x-auto p-3">
+          {ledger === null ? (
+            <div className="text-[12px] text-white/30">loading…</div>
+          ) : ledger.length === 0 ? (
+            <div className="text-[12px] text-white/30">
+              Nothing yet — deposit above to fund your first run.
+            </div>
+          ) : (
+            <table className="gwt-list">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Entry</th>
+                  <th className="text-right">Amount</th>
+                  <th>Proof</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.map((r) => (
+                  <tr key={r.id}>
+                    <td className="whitespace-nowrap text-white/35">
+                      {new Date(r.createdAt).toLocaleString()}
+                    </td>
+                    <td className="text-white/70">{r.label}</td>
+                    <td
+                      className={`text-right tabular-nums ${
+                        r.kind === 'topup' ? 'text-[var(--gw-emerald)]' : 'text-white/60'
+                      }`}
+                    >
+                      {r.kind === 'topup' ? '+' : '−'}${Math.abs(r.amountUsdc).toFixed(2)}
+                    </td>
+                    <td>
+                      {r.txHash ? (
+                        <a
+                          className="gwt-addr"
+                          href={`${EXPLORER}/tx/${r.txHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {r.txHash.slice(0, 10)}…
+                        </a>
+                      ) : (
+                        <span className="text-white/20">off-chain</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </main>
   )
 }

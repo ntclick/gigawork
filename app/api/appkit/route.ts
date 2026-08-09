@@ -1,17 +1,22 @@
 /**
- * /api/appkit — server-side proxy for Arc App-Kit bridge & swap.
+ * /api/appkit — Arc App-Kit quotes and bridging.
  *
  * Actions:
- *   { action: 'bridge', amount, fromChain?, speed? }
- *   { action: 'swap', amount, tokenIn, tokenOut }
- *   { action: 'estimateSwap', amount, tokenIn, tokenOut }
- *   { action: 'estimateBridge', amount, fromChain?, toChain?, speed? }
+ *   { action: 'estimateSwap', amount, tokenIn, tokenOut }    read-only
+ *   { action: 'estimateBridge', amount, fromChain?, ... }    read-only
+ *   { action: 'bridge', amount, fromChain?, speed? }         signs (vault)
+ *
+ * `swap` is deliberately NOT handled here — it is signed by the user's
+ * connected wallet in lib/hooks/useSwap.ts and returns 400 if posted, so
+ * there is only ever one way to move those tokens and it always shows the
+ * user a signature prompt.
  */
 import { NextResponse } from 'next/server'
 import { createPublicClient, createWalletClient, http, parseUnits, type Chain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 import { getCurrentUser, AuthRequiredError } from '@/lib/auth/session'
+import { getUserVaultPrivateKey } from '@/lib/payments/vault'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,8 +118,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  let user
   try {
-    await getCurrentUser()
+    user = await getCurrentUser()
   } catch (e) {
     if (e instanceof AuthRequiredError) {
       return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
@@ -137,9 +143,38 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing action' }, { status: 400 })
   }
 
-  const pk = process.env.ADMIN_PRIVATE_KEY
-  if (!pk) {
-    return NextResponse.json({ error: 'ADMIN_PRIVATE_KEY not configured' }, { status: 500 })
+  // Swapping is a wallet action, not a server action.
+  //
+  // It moves the user's own tokens between assets, so the user's wallet
+  // holds them and the user approves each transaction — see
+  // lib/hooks/useSwap.ts. Leaving a server-signed path alongside it would
+  // mean two ways to spend the same funds, one of them without a
+  // signature prompt. Estimates stay here because they are read-only.
+  if (action === 'swap') {
+    return NextResponse.json(
+      {
+        error: 'swap_is_client_signed',
+        detail:
+          'Swaps are signed by the connected wallet. Use useSwap() in the client; this route only quotes.',
+      },
+      { status: 400 },
+    )
+  }
+
+  // Whatever still signs here signs with the CALLER'S OWN vault, never the
+  // admin key. This route used to load ADMIN_PRIVATE_KEY, which under the
+  // per-user vault model is the wrong wallet entirely — it would have moved
+  // the platform treasury instead of the user's funds, and since every user
+  // shares that one key, it let any authenticated account spend everyone
+  // else's balance.
+  //
+  // Loaded lazily, only by branches that actually sign. `estimateSwap` runs
+  // on every keystroke in the swap form; decrypting a private key to answer
+  // a read-only quote would be exposure for no purpose.
+  let pkCache: `0x${string}` | null = null
+  const pkFor = async (): Promise<`0x${string}`> => {
+    if (!pkCache) pkCache = await getUserVaultPrivateKey(user.id)
+    return pkCache
   }
 
   const kitKey = process.env.CIRCLE_KIT_KEY ?? ''
@@ -166,7 +201,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
       }
 
-      const account = privateKeyToAccount(pk as `0x${string}`)
+      const account = privateKeyToAccount(await pkFor())
       const publicClient = createPublicClient({ chain: arcTestnet as Chain, transport: http() })
       const walletClient = createWalletClient({
         account,
@@ -287,7 +322,7 @@ export async function POST(req: Request) {
     const createViemAdapter = await getAdapter()
 
     const kit = new AppKitClass()
-    const adapter = createViemAdapter({ privateKey: pk })
+    const adapter = createViemAdapter({ privateKey: await pkFor() })
 
     // Helper interface for AppKit target chain typing
     type BridgeTarget = {

@@ -2084,3 +2084,50 @@ button, a, .gw-transition {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--accent);
 }
+
+/* Skeleton bar for loading shells. Deliberately low-contrast — it marks
+   where content will land without pretending to be content. */
+.gwt-skel {
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.045),
+    rgba(255, 255, 255, 0.085),
+    rgba(255, 255, 255, 0.045)
+  );
+  background-size: 200% 100%;
+  animation: gwt-skel 1.4s ease-in-out infinite;
+}
+@keyframes gwt-skel {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gwt-skel { animation: none; }
+}
+
+/* Form input used on the vault surface. */
+.gwt-input {
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(6, 8, 14, 0.75);
+  color: var(--gw-text);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  transition: border-color 160ms, box-shadow 160ms;
+}
+.gwt-input:focus {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.08);
+}
+.gwt-input:disabled { opacity: 0.5; }
+select.gwt-input { cursor: pointer; }
+.gwt-token[data-on='1'] {
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--gw-cyan);
+}

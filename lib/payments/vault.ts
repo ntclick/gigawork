@@ -119,6 +119,38 @@ export async function getUserVaultAccount(userId: string) {
   if (!row?.vaultWalletId) {
     throw new Error(`user ${userId} has no provisioned vault — call provisionUserVault() first`)
   }
-  const privateKey = decryptSecret(row.vaultWalletId)
-  return privateKeyToAccount(privateKey.startsWith('0x') ? (privateKey as `0x${string}`) : `0x${privateKey}`)
+  return privateKeyToAccount(await getUserVaultPrivateKey(userId, row.vaultWalletId))
+}
+
+/**
+ * The vault's raw private key.
+ *
+ * Deliberately a separate, awkwardly-named export rather than a field on
+ * the account above: almost everything should sign through the viem
+ * Account and never see this. It exists only for third-party SDKs that
+ * insist on a raw key — currently Circle's viem adapter in /api/appkit.
+ * Every call site is a place to check before adding another.
+ */
+export async function getUserVaultPrivateKey(
+  userId: string,
+  known?: string,
+): Promise<`0x${string}`> {
+  let stored = known
+  if (!stored) {
+    const [row] = await withDbRetry(
+      () =>
+        db
+          .select({ vaultWalletId: users.vaultWalletId })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1),
+      { label: 'getUserVaultPrivateKey:read' },
+    )
+    if (!row?.vaultWalletId) {
+      throw new Error(`user ${userId} has no provisioned vault — call provisionUserVault() first`)
+    }
+    stored = row.vaultWalletId
+  }
+  const privateKey = decryptSecret(stored)
+  return (privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`) as `0x${string}`
 }
