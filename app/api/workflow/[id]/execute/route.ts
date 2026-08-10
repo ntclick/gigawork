@@ -36,8 +36,22 @@ export async function POST(req: Request, ctx: RouteCtx) {
     })
   }
 
-  if (wf.status === 'completed' || wf.status === 'running' || wf.status === 'settling' || wf.status === 'queued') {
-    return new Response(JSON.stringify({ ok: true, status: wf.status, message: 'Workflow already queued, running or completed' }), {
+  // `queued` used to short-circuit here on the theory that a standalone
+  // worker would pick it up. It doesn't — no such worker runs in this
+  // deployment — and since workflow creation now returns the id before
+  // planning finishes (see prepareWorkflow in app/api/workflow/route.ts),
+  // `queued` is no longer a fleeting state: it persists for however long
+  // LLM planning takes, 8-22s measured. The console's auto-dispatch fires
+  // the instant nodes appear, which is well within that window, so it was
+  // calling this endpoint while status was still 'queued' — hitting this
+  // no-op branch every time and never scheduling the fallback below. The
+  // workflow sat funded and planned forever with nothing to ever run it.
+  //
+  // The CAS below (`WHERE status = 'queued'`) already makes double-firing
+  // safe — a second call here just fails to claim and does nothing — so
+  // there is nothing to protect by returning early for 'queued'.
+  if (wf.status === 'completed' || wf.status === 'running' || wf.status === 'settling') {
+    return new Response(JSON.stringify({ ok: true, status: wf.status, message: 'Workflow already running or completed' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
