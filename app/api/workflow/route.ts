@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
@@ -11,6 +11,15 @@ import { withDbRetry } from '@/lib/db/retry'
 import { messages, users, workflows, type User } from '@/lib/db/schema'
 import { emitWorkflowEvent } from '@/lib/workflow/events'
 import { provisionUserVault, getUserVaultAccount, checkVaultFunding } from '@/lib/payments/vault'
+
+// `after()`'s callback runs for the ROUTE's configured maxDuration, not
+// the (fast) time the main response took — and the unconfigured default
+// is 10s, far short of what prepareWorkflow needs (LLM planning alone
+// measured 8-22s, before the ERC-8183 open+fund sequence's several
+// on-chain transactions). 60 is the ceiling Vercel Hobby allows; this
+// would need a Pro plan to go higher if that ever proves insufficient.
+export const maxDuration = 60
+export const dynamic = 'force-dynamic'
 
 const ERC8183_BUDGET = process.env.ERC8183_BUDGET_USDC ?? '0.05'
 
@@ -260,10 +269,23 @@ async function handlePost(req: Request) {
   // Failures inside prepareWorkflow are recorded on the workflow row and
   // surfaced by the run view's poll — they are not lost, they just no
   // longer block the response.
+  //
+  // Scheduled via `after()`, not a bare `void promise.catch(...)`. On
+  // Vercel a serverless invocation's execution environment can be frozen
+  // as soon as the response finishes sending — a fire-and-forget promise
+  // that hasn't settled yet is not guaranteed to get the CPU time to
+  // finish (this is undocumented, platform-dependent behavior; it visibly
+  // worked in some runs and silently didn't in others, which is exactly
+  // the failure mode of relying on it). `after()` registers with Vercel's
+  // `waitUntil`, which keeps the invocation alive until the promise
+  // settles. See the same fix in workflow/[id]/execute/route.ts, where
+  // the equivalent setTimeout-based fallback never fired at all.
   const escrowMode: 'user-client' | 'admin' | 'off' = ERC8183_ENABLED ? 'admin' : 'off'
-  void prepareWorkflow({ workflowId: wf.id, userId: user.id, prompt: parsed.data.prompt }).catch(
-    (e) => console.error('[/api/workflow] background prepare failed', e),
-  )
+  after(async () => {
+    await prepareWorkflow({ workflowId: wf.id, userId: user.id, prompt: parsed.data.prompt }).catch(
+      (e) => console.error('[/api/workflow] background prepare failed', e),
+    )
+  })
   return NextResponse.json({ id: wf.id, userId: user.id, escrow: escrowMode })
 }
 

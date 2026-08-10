@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm'
+import { after } from 'next/server'
 import { AuthRequiredError, getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema'
@@ -63,8 +64,25 @@ export async function POST(req: Request, ctx: RouteCtx) {
     .set({ status: 'queued' })
     .where(eq(workflows.id, workflowId))
 
-  // Non-blocking execution fallback in case standalone worker process isn't running
-  setTimeout(async () => {
+  // Non-blocking execution fallback in case standalone worker process isn't
+  // running.
+  //
+  // This used to be `setTimeout(fn, 100)`. On a persistent process (the
+  // local dev server) that works — the Node process just keeps running.
+  // On Vercel, a serverless function's execution environment is frozen the
+  // moment the response finishes sending; a freshly-scheduled `setTimeout`
+  // callback needs the event loop to advance 100ms AFTER that point, which
+  // is precisely the window the platform reclaims. It never fires. This is
+  // exactly why runs on gigawork.xyz got past the queued-race fix, showed
+  // escrow funded on-chain, then produced nothing — dispatch reported
+  // success and the timer that would have actually run it was discarded
+  // with the frozen container.
+  //
+  // `after()` is Next's supported answer to this: on Vercel it registers
+  // the callback with the platform's `waitUntil`, which keeps the
+  // invocation alive (up to `maxDuration`) until the promise settles,
+  // instead of racing a timer against a container freeze.
+  after(async () => {
     try {
       const { executeWorkflowRun } = await import('@/lib/workflow/executor')
       const [claimed] = await db
@@ -78,7 +96,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
     } catch (err) {
       console.error('[execute] Background execution error:', err)
     }
-  }, 100)
+  })
 
   return new Response(JSON.stringify({ ok: true, message: 'Workflow queued for execution' }), {
     status: 200,
