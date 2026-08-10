@@ -523,6 +523,57 @@ async function executeSingleNodeParallel(opts: {
     inputParams.data = parentOutputs
   }
 
+  // 5b. Senders get the report their upstream composer produced.
+  //
+  // Nothing was supplying it. The planner can't — at plan time the report
+  // does not exist yet — and the executor only injected credentials here,
+  // not content. telegram-sender has a DB fallback that reads the composed
+  // report, but it is gated on `input.workflowId`, and callSkillEndpoint
+  // passes workflowId in its OPTIONS argument, never merging it into the
+  // input the local handler actually receives — so that fallback could
+  // never fire. email-sender has no fallback at all.
+  //
+  // Net effect on the two shipped templates: "Daily Digest → Telegram"
+  // sent the handler's generic "no customized message body was composed"
+  // placeholder, and "Yield Report → Email" mailed an empty body. Both
+  // reported success.
+  //
+  // Taking it from parentOutputs (rather than re-querying) keeps this on
+  // the same data the DAG already resolved, and only fills a field the
+  // user or planner left empty.
+  if (skill.name === 'email-sender' || skill.name === 'telegram-sender') {
+    const composed = Object.values(parentOutputs).find((o) => {
+      const md = (o as Record<string, unknown> | null)?.markdown
+      return typeof md === 'string' && md.trim().length > 0
+    }) as { markdown?: string } | undefined
+
+    // "Empty" has to include the planner's invented placeholders. Asked for
+    // a sender body it cannot know yet, the model writes things like
+    // `{{report_composer.output}}` — a real string, so a plain `!value`
+    // guard treats it as user-supplied and leaves it alone, and that
+    // literal text is what gets delivered. (Verified: a Daily Digest run
+    // planned `message: "{{report_composer.output}}"`.) report-composer's
+    // `data` avoids this by overwriting unconditionally; senders can't
+    // quite do that, since a genuinely custom message is legitimate — so
+    // treat a lone {{…}} placeholder as the absence of one.
+    const isPlaceholder = (v: unknown) =>
+      typeof v === 'string' && /^\s*\{\{[^}]*\}\}\s*$/.test(v)
+    const needsBody = (v: unknown) => !v || isPlaceholder(v)
+
+    if (composed?.markdown) {
+      if (skill.name === 'telegram-sender' && needsBody(inputParams.message)) {
+        inputParams.message = composed.markdown
+      }
+      if (skill.name === 'email-sender' && needsBody(inputParams.body_markdown)) {
+        inputParams.body_markdown = composed.markdown
+      }
+    }
+    // The handler's own DB fallback is a second line of defence; give it
+    // the id it needs so it can actually run when parentOutputs is empty
+    // (e.g. a sender wired to depend on something other than the composer).
+    if (!inputParams.workflowId) inputParams.workflowId = workflowId
+  }
+
   // Determine Timeout Limit.
   // `report-composer` needs the composer budget just as much as
   // `report-composer-fast` does — it makes a real LLM synthesis call that

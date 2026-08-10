@@ -105,7 +105,7 @@ const SYSTEM = [
   '- skill_name: copy exactly from the catalogue. 2-4 nodes.',
   '- Data nodes have depends_on: []. The last node is report-composer with input {} and depends_on listing every other id.',
   '- input: only that agent\'s listed params, values taken from the objective. Pairs are "SOL/USDT", not "SOLUSDT". token_address is a 0x address only — given just a ticker, omit it and use a symbol/query param instead.',
-  '- Only plan email-sender or telegram-sender if the objective asks to send or notify.',
+  '- Only plan email-sender or telegram-sender if the objective asks to send or notify. Leave their message/body_markdown out entirely — the report is filled in automatically. Never write a {{placeholder}}.',
 ].join('\n')
 
 interface RawPlan {

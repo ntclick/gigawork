@@ -120,6 +120,8 @@ export function BillingConsole() {
   const [tokenOut, setTokenOut] = useState<Token>('USYC')
   const [swapAmount, setSwapAmount] = useState('1')
   const [quote, setQuote] = useState<string | null>(null)
+  /** null = unknown; false = the API echoed an assumption, not a real quote. */
+  const [quoted, setQuoted] = useState<boolean | null>(null)
   const [quoting, setQuoting] = useState(false)
   const [swapping, setSwapping] = useState(false)
   const [swapMsg, setSwapMsg] = useState<{ kind: 'ok' | 'err'; text: string; tx?: string } | null>(
@@ -165,6 +167,7 @@ export function BillingConsole() {
           if (!alive) return
           // `estimatedOutput` is what /api/appkit actually returns.
           setQuote(j.estimatedOutput == null ? null : String(j.estimatedOutput))
+          setQuoted(j.quoted === false ? false : true)
         })
         .catch(() => alive && setQuote(null))
         .finally(() => alive && setQuoting(false))
@@ -495,7 +498,13 @@ export function BillingConsole() {
                   <span className="font-semibold text-white/75">
                     {quote} {tokenOut}
                   </span>{' '}
-                  — quoted by the router, not by this page.
+                  {/* The USYC path does not query anything — the API echoes
+                      the input on a 1:1 assumption and now says so via
+                      `quoted:false`. Claiming "quoted by the router" for
+                      that was simply untrue. */}
+                  {quoted === false
+                    ? '— assumed 1:1, not a quote. The Teller sets the real rate on execution.'
+                    : '— quoted by the router, not by this page.'}
                 </>
               ) : (
                 'No quote available for this pair right now.'

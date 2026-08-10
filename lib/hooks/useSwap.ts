@@ -166,23 +166,59 @@ export function useSwap(onStage?: (s: SwapStage, detail?: string) => void) {
             await publicClient.waitForTransactionReceipt({ hash: tx })
           }
 
+          // Preflight. USYC is a permissioned RWA token: the Teller
+          // rejects callers outside its allow-list with a bare custom
+          // error (0x7f63bd0f — verified against a wallet holding ample
+          // USDC with allowance already granted). Without this check the
+          // user gets a wallet popup, signs, pays gas, and the tx reverts
+          // on-chain for nothing. Simulating first costs nothing and
+          // catches any other revert reason the same way.
+          const teller = ADDR.TELLER as `0x${string}`
+          const subscribing = tokenOut === 'USYC'
+
+          try {
+            if (subscribing) {
+              await publicClient.simulateContract({
+                account,
+                address: teller,
+                abi: TELLER_ABI,
+                functionName: 'deposit',
+                args: [amountWei, account],
+              })
+            } else {
+              await publicClient.simulateContract({
+                account,
+                address: teller,
+                abi: TELLER_ABI,
+                functionName: 'redeem',
+                args: [amountWei, account, account],
+              })
+            }
+          } catch (simErr) {
+            const raw = simErr instanceof Error ? simErr.message : String(simErr)
+            throw new Error(
+              `This swap would fail on-chain, so it was not submitted — no gas spent. ` +
+                `USYC is a permissioned token and the Teller only accepts allow-listed ` +
+                `wallets, which is the usual cause. (${raw.slice(0, 120)})`,
+            )
+          }
+
           emit('signing')
-          const hash =
-            tokenOut === 'USYC'
-              ? await walletClient.writeContract({
-                  account,
-                  address: ADDR.TELLER as `0x${string}`,
-                  abi: TELLER_ABI,
-                  functionName: 'deposit',
-                  args: [amountWei, account],
-                })
-              : await walletClient.writeContract({
-                  account,
-                  address: ADDR.TELLER as `0x${string}`,
-                  abi: TELLER_ABI,
-                  functionName: 'redeem',
-                  args: [amountWei, account, account],
-                })
+          const hash = subscribing
+            ? await walletClient.writeContract({
+                account,
+                address: teller,
+                abi: TELLER_ABI,
+                functionName: 'deposit',
+                args: [amountWei, account],
+              })
+            : await walletClient.writeContract({
+                account,
+                address: teller,
+                abi: TELLER_ABI,
+                functionName: 'redeem',
+                args: [amountWei, account, account],
+              })
 
           emit('confirming', hash)
           await publicClient.waitForTransactionReceipt({ hash: hash as Hex })

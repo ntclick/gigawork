@@ -141,9 +141,12 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     desc: 'Crypto Token Scanner scans verified on-chain metrics, DEX liquidity depth, and holder distribution from CoinGecko, DexScreener & Birdeye, analyzed by Trading Signals & compiled into an institutional report.',
     category: 'research',
     skillName: 'crypto-scanner',
+    // `symbol` was here too — crypto-scanner has no such param (its schema
+    // is chain + token_address, token_address required), so it was silently
+    // dropped on dispatch. Kept out rather than renamed: the address below
+    // already identifies the token.
     defaults: {
       token_address: '0x6982508145454ce325ddbe47a25d4ec3d2311933',
-      symbol: 'PEPE',
       chain: 'ethereum',
     },
     followupSkills: ['trading-signals', 'report-composer'],
@@ -198,8 +201,11 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     desc: 'Polymarket Pulse Agent extracts live market odds and liquidity depth across macro policy & crypto prediction markets for sentiment analysis.',
     category: 'analysis',
     skillName: 'polymarket-pulse',
+    // The param is `query` (and it is REQUIRED), not `topic`. With `topic`
+    // the required field never arrived, so the skill fell back to whatever
+    // it does with a missing query rather than searching crypto markets.
     defaults: {
-      topic: 'crypto',
+      query: 'crypto',
       limit: 10,
     },
     followupSkills: ['report-composer'],
@@ -216,8 +222,10 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     desc: 'Floor Watch Agent retrieves OpenSea floor prices, 24h trading volume, and listing velocity for top NFT collections.',
     category: 'research',
     skillName: 'nft-floor-watch',
+    // The param is `collection` (REQUIRED), not `collection_slug` — so the
+    // one field this skill cannot run without was never being passed.
     defaults: {
-      collection_slug: 'pudgypenguins',
+      collection: 'pudgypenguins',
     },
     followupSkills: ['report-composer'],
     uses: ['nft-floor-watch', 'report-composer'],
@@ -345,7 +353,12 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     id: 'daily-digest-telegram',
     emoji: '📲',
     title: 'Daily Digest → Telegram',
-    desc: 'The one to schedule: sweeps the market each morning and pushes a short digest to your Telegram. Needs a bot token saved in Deploy.',
+    // Wording matters here: the executor has a hard guard that SKIPS
+    // email-sender/telegram-sender on any manual run — they fire only from
+    // a scheduled Deploy. Saying "needs a bot token saved in Deploy"
+    // implied that saving credentials was enough, so clicking this card
+    // looked like it would deliver and never could.
+    desc: 'Sweeps the market and writes a short digest. Clicking runs it here; the Telegram send only fires once you schedule it from Deploy.',
     category: 'execution',
     skillName: 'market-data-bundle',
     defaults: { symbol: 'BTC/USDT', timeframe: '1d' },
@@ -358,7 +371,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     id: 'yield-report-email',
     emoji: '✉️',
     title: 'Yield Report → Email',
-    desc: 'Same yield hunt as the DeFi template, but the finished report lands in your inbox. Needs an email key saved in Deploy.',
+    desc: 'Same yield hunt as the DeFi template. Clicking shows the report here; the email only goes out once you schedule it from Deploy.',
     category: 'execution',
     skillName: 'defi-yields',
     defaults: { top_n: 5, min_tvl_usd: 1000000, stablecoin_only: true },

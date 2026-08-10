@@ -214,14 +214,17 @@ export async function POST(req: Request) {
 
       // ── Estimate only ──
       if (action === 'estimateSwap') {
-        // For USYC the rate is roughly 1:1 minus a small fee
-        // The Teller contract handles the exact conversion
+        // This is NOT a quote. It echoes the input amount on the
+        // assumption USYC trades ~1:1, without asking the Teller or the
+        // chain anything. Flagged as such (`quoted: false`) because the
+        // UI was presenting it as router-sourced, which it never was.
         return NextResponse.json({
           ok: true,
           action: 'estimateSwap',
-          estimatedOutput: amount, // ~1:1 for stablecoins
+          estimatedOutput: amount,
+          quoted: false,
           fees: [],
-          note: 'USYC uses Teller contract (deposit/redeem). Actual output may vary slightly.',
+          note: 'Assumed 1:1 — the Teller sets the real rate at execution time. Not a quote.',
         })
       }
 
