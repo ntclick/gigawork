@@ -103,8 +103,20 @@ export async function publishFinalReport({
     payload: { toolName },
   })
 
-  // Enqueue and execute on-chain settlement directly
-  settleWorkflowJob(workflowId, finalMarkdown).catch((err) => {
+  // Enqueue and execute on-chain settlement directly.
+  //
+  // Awaited — not fire-and-forget. This function's caller
+  // (executeWorkflowRun, invoked from the execute route's `after()`)
+  // extends the Vercel invocation's lifetime only until the promise IT is
+  // holding resolves. A bare `.catch()` here without `await` is a promise
+  // this function itself abandons, so the outer `after()` has nothing to
+  // wait for and can complete — and freeze the container — before
+  // settlement actually runs. This was the exact bug already fixed one
+  // layer up (setTimeout / void-promise not surviving serverless
+  // freezes); it recurred here because this call was never fixed with it.
+  // The `.catch()` is kept — a settlement failure must not crash
+  // publishFinalReport — but now the failure is awaited, not abandoned.
+  await settleWorkflowJob(workflowId, finalMarkdown).catch((err) => {
     console.warn('[publishFinalReport] Direct settleWorkflowJob warning:', err)
   })
 
@@ -122,15 +134,18 @@ export async function publishFinalReport({
   // It is idempotent (it bails if a `reputationUpdate` message already
   // exists for the workflow), so the worker and the reconcile endpoint
   // remain safe backstops rather than double-writers.
-  cacheReputation(workflowId, userId).catch((err) => {
+  await cacheReputation(workflowId, userId).catch((err) => {
     console.warn('[publishFinalReport] Direct cacheReputation warning:', err)
   })
 
   const { enqueueWorkflowSettlementJobs } = await import('@/lib/chain/jobs')
   await enqueueWorkflowSettlementJobs(workflowId, finalMarkdown, userId)
 
-  // Send a brief notification to user's saved Telegram bot upon successful deployment (completion)
-  sendTelegramNotification(workflowId, userId, finalMarkdown).catch((e) => {
+  // Send a brief notification to user's saved Telegram bot upon successful
+  // deployment (completion). Same fix, same reason — awaited so it
+  // actually gets to run inside the extended `after()` lifetime rather
+  // than racing a container freeze.
+  await sendTelegramNotification(workflowId, userId, finalMarkdown).catch((e) => {
     console.error('[Telegram Notification] error', e)
   })
 
