@@ -1,179 +1,168 @@
-# 🛰️ GigaWork v2 & Cosmic Name Raffle
+<p align="center">
+  <img src="public/logo.svg" alt="GigaWork" width="260" />
+</p>
 
-Agent orchestration platform with on-chain settlement on Arc Testnet, featuring a decentralized, provably-fair Cosmic Name Raffle campaign drawing engine.
-
----
-
-## 🏗️ Part 1: GigaWork v2 Core
-
-GigaWork v2 is an agent orchestration platform: submit a prompt → Hermes plans and dispatches the right skill agents → results settle automatically through ERC-8183 escrow → each agent's reputation is recorded on-chain via ERC-8004.
-
-The focus is making that flow usable by anyone — not just Web3-native builders. A first-time user never needs to know what ERC-8004, ERC-8183, or x402 mean to get value out of it: one input box, one clear result, plain-language status updates while agents work, and payment/settlement handled behind the scenes via Circle wallets.
-
-### How it works
-
-1. **User creates a workflow** — prompt goes in, identity NFT (ERC-8004) required.
-2. **Escrow funded** — user signs 3 txs (createJob → approve USDC → fund); USDC locks in ERC-8183 contract.
-3. **Hermes orchestrates** — plans a DAG of skill agents, dispatches them in parallel, and composes the final report.
-4. **On-chain settlement** — platform submits deliverable hash + completes job; USDC released.
-5. **Reputation recorded** — ERC-8004 `giveFeedback` for every agent that participated.
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full picture.
-
-### GigaWork Core Stack
-
-| Layer | Tech |
-|-------|------|
-| Frontend | Next.js 16 App Router, TypeScript strict, Tailwind CSS v4 |
-| Model | Vercel AI SDK 6, `@ai-sdk/openai-compatible` — default: OpenAI `gpt-4.1` |
-| Auth + Wallet | Privy (embedded + external), viem |
-| Chain | Arc Testnet (Chain ID 5042002, native gas = USDC) |
-| DB | Supabase Postgres + Drizzle ORM |
-| Canvas | `@xyflow/react` |
+<p align="center">
+  Hire verified AI agents, pay them per call, keep the receipts on-chain.<br/>
+  Built on Arc™ Network · Testnet
+</p>
 
 ---
 
-## 🌌 Part 2: Cosmic Name Raffle Dashboard
+GigaWork turns an objective in plain English into a small workforce of AI agents that
+actually get paid. You describe what you want, a planner picks the agents and their
+arguments, each one is settled individually the moment it delivers, and every payment
+leaves a transaction hash you can open in a block explorer.
 
-The **Cosmic Name Raffle** is the flagship provably-fair drawing engine built into the GigaWork v2 platform. It integrates physical space entropy via the **SpaceComputer Cosmic True Random Number Generator (cTRNG)** and secure smart contracts on the Arc Network.
+The point is that none of it is theatre. The agents hold real ERC-8004 identity NFTs,
+the money moves out of a wallet you control, and an agent that fails is never charged
+for.
 
-### cTRNG & Dual-Entropy Randomness Model
-- **Space Radiation Entropy:** Sourced from **SpaceComputer cTRNG**, leveraging satellite radiation detectors in low Earth orbit to gather physical, non-deterministic entropy.
-- **Terrestrial Block Hash:** The raffle assigns a unique future target block number on the Arc Network. The drawing cannot proceed until this block is mined.
-- **The Mix:** Once the target block is mined, the seed is derived on-chain using:
-  $$\text{Cosmic Seed} = \text{Keccak256}(\text{Block Hash} + \text{Space Radiation Entropy})$$
-This ensures that neither network miners nor space satellite operators can manipulate or front-run the drawing alone.
+## How a run works
 
-### Cryptographic Merkle Integrity & Verification
-- **Merkle Tree:** Contestant lists are parsed, sorted lexicographically, and compiled into a local Merkle Tree.
-- **Baseline Root:** The cryptographic **Merkle Root** is submitted and stored permanently on-chain when the campaign is created. No entries can be added, deleted, or substituted after creation.
-- **On-chain Proof Validation:** Winning index entries are cross-referenced with their Merkle sibling paths directly in the smart contract during the draw phase, storing absolute proof of fair play forever.
-- **Complete Decentralization (Host-Signed):** Contract execution permissions are strictly delegated to the campaign host (`require(msg.sender == host)`). Drawing is initiated directly on the frontend, prompting the host to sign and broadcast the `drawWinners` transaction via standard Web3 wallets (Metamask, OKX, Privy), removing centralized backend operators.
+```
+you                 "4h trading signals for SOL/USDT and a short report"
+  │
+  ├─ gate           ERC-8004 identity + vault balance checked on-chain.
+  │                 Cannot pay → refused here, nothing is created.
+  │
+  ├─ plan           DeepSeek picks agents and arguments from the live registry.
+  │                 Validated before it runs: real skill names, resolvable
+  │                 dependencies, no sender unless you asked to be notified.
+  │
+  ├─ escrow         ERC-8183 job opened and funded from your vault.
+  │
+  ├─ work           Agents run in parallel. Each is paid by x402 transfer the
+  │                 moment it delivers — a failed agent costs you nothing.
+  │
+  ├─ settle         Deliverable submitted on-chain, escrow released.
+  │
+  └─ score          Reputation written for every provider AND for you: under
+                    ERC-8004 the client is an agent too, and paying well is
+                    its own track record.
+```
 
----
+Typical cost of a three-agent run: **~$0.07 USDC** — $0.02 escrow plus per-call fees
+of $0.01–0.03.
 
-## 🛠️ Smart Contract Addresses (Arc Testnet)
+## What's real, and what isn't
 
-| Contract | Address / Link |
-|----------|---------|
-| ERC-8183 AgenticCommerce | `0x0747EEf0706327138c69792bF28Cd525089e4583` |
-| ERC-8004 ReputationRegistry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
-| ERC-8004 ValidationRegistry | `0x8004Cb1BF31DAf7788923b405b754f57acEB4272` |
-| CosmicRaffle | `0x3ea7ed77795acad23e414daea25af690810d6dbb` ([ArcScan Verified Code](https://testnet.arcscan.app/address/0x3ea7ed77795acad23e414daea25af690810d6dbb#code)) |
+Worth stating plainly, because "on-chain" is easy to claim:
+
+| | |
+|---|---|
+| Agent identities | Real. 17 ERC-8004 NFTs, minted, linked from the home page to the explorer. |
+| Payments | Real. Every settled call is an on-chain USDC transfer with a tx hash. |
+| Escrow | Real ERC-8183 jobs, opened and funded by your own vault. |
+| Agent data | Real APIs — Binance, CoinGecko, DeFiLlama, OpenSea, Alchemy, Apify. |
+| Reports | Written by an LLM from those outputs, never templated. |
+| The chain | **Arc Testnet.** Balances and payments are testnet value, not money. |
+
+If a data source is unreachable, the agent fails and says so. It does not invent a
+number to fill the gap.
+
+## Surfaces
+
+| Route | What it is |
+|---|---|
+| `/` | Objective box, 16 ready-made workflows in category tabs, live protocol readout, agent roster |
+| `/workflow/:id` | The run: deliverable first, then the agent roster, log, payment trail and ERC-8004 scoring |
+| `/billing` | Your vault and your connected wallet — deposit, swap, full ledger |
+| `/deploy` | Schedules and notification channels |
+| `/history` | Past runs |
+
+## Two wallets
+
+Easy to conflate, so:
+
+- **Your connected wallet** signs. Swaps happen inside it; deposits come out of it.
+- **Your vault** is a per-user wallet the server holds a key for. It pays the agents,
+  so a run does not need a signature per agent call. Provisioned automatically,
+  private key encrypted at rest with AES-256-GCM.
+
+Arc bills gas in USDC at 18 decimals, which is *not* the same as the 6-decimal USDC
+ERC-20. A vault can hold plenty of the latter and still be unable to transact. The run
+gate checks both.
+
+## Stack
+
+| Layer | |
+|---|---|
+| Frontend | Next.js 16 App Router, React 19, Tailwind v4, TypeScript strict |
+| Planner | DeepSeek `deepseek-v4-flash` (any OpenAI-compatible provider works) |
+| Chain | Arc Testnet — chain 5042002, viem |
+| Auth | Privy (embedded + external wallets) |
+| Data | Supabase Postgres, Drizzle ORM |
+| Swap | Circle App-Kit, Teller for USDC↔USYC |
+
+## Contracts (Arc Testnet)
+
+| Contract | Address |
+|---|---|
+| ERC-8004 Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
+| ERC-8183 Agentic Commerce | `0x0747EEf0706327138c69792bF28Cd525089e4583` |
+| Reputation Registry | `0x711b4dea9a717210591aac47a3ec92ef8e695944` |
+| ERC-8004 Validation Registry | `0x8004Cb1BF31DAf7788923b405b754f57acEB4272` |
 | USDC | `0x3600000000000000000000000000000000000000` |
 
----
+Explorer: [testnet.arcscan.app](https://testnet.arcscan.app)
 
-## 🛸 UI Visual Telemetry Features
-- **CRT Terminal Console:** A high-impact digital cyber scanner that autoscrolls participant entries at a fast 40ms interval with scanline overlays during drawing, outputting live blockchain interaction logs corresponding to block mining confirmations, cTRNG IPFS beacon fetching, and EVM contract transacting.
-- **Blockchain Telemetry Progress Bar:** Counts down block progression with glowing gauges, percentages, and block remaining estimates.
-- **Offline Provably-Fair Console:** Allows participants to copy their Merkle proof sibling path and verify their win status 100% offline in a monospace retro validation terminal running entirely in the local browser.
+## Running it
 
----
+Requires Node 20.9+ (Next 16's floor), pnpm, a Supabase Postgres URL, and an Arc
+Testnet RPC.
 
-## 🏃 Setup & Dev
-
-### 1. Environment
-
-Copy environment template:
 ```bash
-cp .env.example .env.local
+pnpm install
+cp .env.example .env.local     # then fill it in — see the notes below
+pnpm db:push                   # schema
+pnpm db:add-vault-cols         # per-user vault columns
+pnpm db:add-topup-deposits     # deposit replay protection
+pnpm db:seed                   # 17 skills
+pnpm dev                       # http://localhost:5555
 ```
 
-Make sure the following variables are defined in your `.env` or `.env.local`:
-```env
-# Database
-DATABASE_URL=postgresql://...
+Three variables are worth calling out:
 
-# Hermes model config
-OPENAI_API_KEY=sk-...
+- **`WALLET_ENCRYPTION_KEY`** — base64, 32 bytes. Encrypts vault and agent private
+  keys at rest. There is no default and the app refuses to start without it; that is
+  deliberate. Generate one with:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
+  Rotating it means re-encrypting: `pnpm security:reencrypt-wallets` and
+  `pnpm security:reencrypt-notify`.
+- **`ERC8183_BUDGET_USDC`** — escrow deposit per run. Default `0.05`; this deployment
+  uses `0.02`.
+- **`VAULT_MIN_GAS_USDC`** — native balance a vault must hold before a run may start.
+  Default `0.05`, which covers roughly eight transactions at observed gas prices.
 
-# Privy auth
-NEXT_PUBLIC_PRIVY_APP_ID=...
-NEXT_PUBLIC_PRIVY_CLIENT_ID=...
+## Scripts
 
-# Arc Testnet RPC
-ARC_RPC_URL=https://rpc.testnet.arc.network
-NEXT_PUBLIC_ARC_RPC=https://rpc.testnet.arc.network
-NEXT_PUBLIC_ARC_EXPLORER=https://testnet.arcscan.app
+| Command | |
+|---|---|
+| `pnpm dev` | Dev server on :5555 (Turbopack) |
+| `pnpm build` | Production build (webpack) |
+| `pnpm db:seed` | Seed the skill registry |
+| `pnpm security:reencrypt-wallets` | Re-encrypt wallet keys after a key rotation |
+| `pnpm security:reencrypt-notify` | Same, for notification secrets |
+| `pnpm worker:chain` | Optional worker draining the `chain_jobs` queue |
+| `pnpm worker:workflow` | Optional background workflow worker |
 
-# Smart Contracts
-IDENTITY_REGISTRY_ADDRESS=0x8004A818BFB912233c491871b3d84c89A494BD9e
-NEXT_PUBLIC_COSMIC_RAFFLE_ADDRESS=0x3ea7ed77795acad23e414daea25af690810d6dbb
-ADMIN_PRIVATE_KEY=0x...
-```
+The workers are a backstop, not a requirement — settlement and reputation both run
+inline after a workflow finishes. They exist so a deployment can move that work off
+the request path.
 
-### 2. Database Setup
-```bash
-pnpm db:generate
-pnpm db:push
-```
+## Architecture notes
 
-### 3. Seed Skills + Mint Agent NFTs
-```bash
-# Seed skills into Database
-pnpm db:seed
+- [`AGENTS.md`](AGENTS.md) — read before writing code. This is Next.js 16; several
+  APIs differ from what you may expect.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/ERC8004.md`](docs/ERC8004.md),
+  [`docs/ERC8183.md`](docs/ERC8183.md)
 
-# Mint ERC-8004 identity NFTs
-pnpm tsx scripts/mint-agents.ts
-```
+## Trademarks
 
-### 4. Dev Server
-```bash
-pnpm dev
-# App starts at http://localhost:3000
-```
-
----
-
-## 📦 Project Scripts & Commands
-
-| Command | Description |
-| :--- | :--- |
-| `pnpm dev` | Run the Next.js local development server (with Turbopack). |
-| `pnpm raffle:compile` | Compile `CosmicRaffle.sol` using local solc bindings and output ABI/Bytecode. |
-| `pnpm raffle:deploy` | Deploy the compiled contract to the Arc Testnet using the administrator private key. |
-| `pnpm raffle:verify` | Automatically submit source code and constructor parameters to verify the contract on ArcScan. |
-| `pnpm raffle:test` | Run the comprehensive E2E regression test checking Merkle Trees, block targets, and cTRNG mixing. |
-
----
-
-## 🧪 Cosmic Name Raffle E2E Integration Test
-
-To run the complete on-chain test suite verifying the compilation, deployment, space entropy IPFS fetching, block target alignment, and final Merkle proof validation:
-```bash
-pnpm raffle:test
-```
-
-### Expected Output
-```text
-🏁 Starting End-to-End Cosmic Raffle Integration Test...
-
-🏡 Contract Address: 0x3ea7ed77795acad23e414daea25af690810d6dbb
-👤 Parsed unique contestants: [ 'Alice', 'Bob', 'Charlie', 'Dave', 'Eve' ]
-🌳 Merkle Root computed: 0xd55bd9f9334753d1d179feb066b9b91527e54af99a1aab0b51087732689628e1
-📡 Creating raffle on-chain...
-   - Title: E2E Test Raffle
-   - Total Entries: 5
-   - Winner Count: 2
-   - Commit Block: 43618810
-✅ Raffle transaction confirmed in block 43618812!
-⏳ Waiting for block 43618810 to be mined...
-✅ Target block 43618810 reached!
-🛰️ Fetching Cosmic Seed from SpaceComputer cTRNG setup...
-✓ Blockchain block hash resolved: 0xa95a1d41b4892a3f4c13a36f04398428d49f98c4951a3a552759786fa145a230
-🌌 Successfully retrieved SpaceComputer cTRNG cosmic entropy: 234a3f1583bea5b83ad86122b9ca71adaccbb2cd20cfef5c977b277a0f10052d
-🔮 Mixed dual-entropy cosmic seed derived: 0x0b5ef4223d28afaf5c8ad40ea3151c5677cd5a7f59c716a373d528288352956a
-📡 Sending drawWinners transaction to blockchain...
-✅ On-chain draw successfully confirmed in block 43618823!
-🏆 Winning indices drawn by contract: [ 1, 0 ]
-
-🎉 --- VERIFIABLE DRAW RESULTS ---
-Winner #1: "Bob" (Ticket Index #1)
-  - Cryptographic Proof Valid: ✅ YES
-Winner #2: "Alice" (Ticket Index #0)
-  - Cryptographic Proof Valid: ✅ YES
-------------------------------------
-
-🏁 End-to-End Cosmic Raffle Integration Test completed successfully!
-```
+Built on Arc™ Network. Arc is a trademark of Circle Internet Group, Inc. and/or its
+affiliates. GigaWork is not affiliated with or endorsed by Circle. The Arc logo is
+deliberately not reproduced here — Circle's partner guidelines permit only unmodified
+assets from their own brand kit.
