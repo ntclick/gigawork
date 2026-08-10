@@ -262,8 +262,25 @@ export function useSwap(onStage?: (s: SwapStage, detail?: string) => void) {
         return { txHash: result.txHash ?? null, approvalTx }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        emit('error', /user rejected|denied/i.test(msg) ? 'signature cancelled' : msg)
-        throw e
+
+        // "Failed to fetch" out of the App-Kit SDK means the browser could
+        // not reach api.circle.com. Verified it is not our end: CORS is
+        // open (`access-control-allow-origin: *`), the kit key is present,
+        // and the identical call from our server returns a real quote. So
+        // the block is local to the browser — an extension, DNS, or a
+        // network filter. The raw SDK string ("Maximum retry attempts (3)
+        // exceeded: Failed to fetch") tells the user none of that.
+        const friendly = /failed to fetch|retry attempts/i.test(msg)
+          ? 'Could not reach the swap router (api.circle.com) from this browser. ' +
+            'Nothing was signed or spent. This is usually an ad-blocker, privacy ' +
+            'extension, or DNS filter — try another browser or disable extensions ' +
+            'for this site.'
+          : /user rejected|denied/i.test(msg)
+            ? 'signature cancelled'
+            : msg
+
+        emit('error', friendly)
+        throw new Error(friendly)
       } finally {
         busyRef.current = false
       }
