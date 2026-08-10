@@ -1,0 +1,14 @@
+# `vercel deploy` uploads the raw working directory and does NOT read
+# .gitignore the same way git does — a gitignored file still gets packed
+# into the upload unless it's listed here too. This is what made
+# `vercel deploy --prod` fail with "File size limit exceeded (100 MB)":
+# gigawork-v2.rar (1.4GB, a local backup archive, not part of the app)
+# was getting uploaded whole.
+*.rar
+*.zip
+*.7z
+
+# Local dev artifacts that have no business in a deploy upload.
+.next
+node_modules
+.git
