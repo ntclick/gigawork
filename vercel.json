@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/admin/cron/deployment-check",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     }
   ],
   "git": {
